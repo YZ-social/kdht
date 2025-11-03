@@ -1,0 +1,16 @@
+{
+  "name": "dht",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "npx jasmine --random=false"
+  },
+  "dependencies": {
+    "jasmine": "^5.12.0",
+    "uuid4": "^2.0.3"
+  }
+}
