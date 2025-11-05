@@ -41,49 +41,64 @@ export class SimulatedContact extends Contact {
   static fromKey(key) {
     return this.fromNode(Node.fromKey(key));
   }
-}
-export class SimulatedDirectContact extends SimulatedContact {
-  async sendPing(sender) { // Resolve true if still alive
+  async sendRpc(...rest) {
+    return await this.receiveRpc(...rest);
+  }
+  async receiveRpc(method, ...rest) {
+    return await this[method](...rest);
+  }
+  async ping(sender, key) { // Resolve true if still alive
     this.node.addToRoutingTable(sender);
     return !!this.node;
   }
-  async sendStore(sender, key, value) { // Tell Entry node to store identifier => value.
+  async store(sender, key, value) { // Tell Entry node to store identifier => value.
     this.node.addToRoutingTable(sender);
     this.node.storeLocally(key, value);
+    //console.log(`stored ${key}:${value} in ${this.key}:${this.name} for ${sender.key}:${sender.name}.`);
   }
-  async sendFindNodes(sender, key) { // Return k closest Contacts from routingTable.
+  async findNodes(sender, key) { // Return k closest Contacts from routingTable.
     // TODO: Currently, this answer a list of Helpers. For security, it should be changed to a list of serialized Contacts.
     // I.e., send back a list of verifiable signatures and let the receiver verify and then compute the distances.
     this.node.addToRoutingTable(sender);
     return this.node.findClosestHelpers(key);
   }
-  async sendFindValue(sender, key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
+  async findValue(sender, key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
     this.node.addToRoutingTable(sender);
     let value = this.node.retrieveLocally(key);
     if (value !== undefined) throw {value};
     return this.node.findClosestHelpers(key);
   }
 }
-export class SimulatedWebRtcContact extends SimulatedContact {
-  async sendPing(sender) { // Resolve true if still alive
-    this.node.addToRoutingTable(sender);
-    return !!this.node;
+
+export class SimulatedOverlayConnection {
+  static async create(contact, host) {
+    const overlay = new this();
+    overlay.contact = await SimulatedContact.fromNode(contact.node, host);
+    overlay.host = host;
+    return overlay;
   }
-  async sendStore(sender, key, value) { // Tell Entry node to store identifier => value.
-    this.node.addToRoutingTable(sender);
-    this.node.storeLocally(key, value);
+  async sendRpc(method, sender, targetKey, ...rest) {
+    const closest = this.contact.node.findClosestHelpers(targetKey)[0];
+    //console.log({closest, method, targetKey});
+    // If contact is the closest, then let then contact handle it.
+    if (closest.key === this.contact.key) return this.contact.receiveRpc(method, sender, targetKey, ...rest);
+    // Forward to whomever else is closest (which will either handle locally or forward through ITs overlay.
+    return closest.contact.sendRpc(method, sender, targetKey, ...rest);
   }
-  async sendFindNodes(sender, key) { // Return k closest Contacts from routingTable.
-    // TODO: Currently, this answer a list of Helpers. For security, it should be changed to a list of serialized Contacts.
-    // I.e., send back a list of verifiable signatures and let the receiver verify and then compute the distances.
-    this.node.addToRoutingTable(sender);
-    return this.node.findClosestHelpers(key);
-  }
-  async sendFindValue(sender, key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
-    this.node.addToRoutingTable(sender);
-    let value = this.node.retrieveLocally(key);
-    if (value !== undefined) throw {value};
-    return this.node.findClosestHelpers(key);
+}
+export class SimulatedOverlayContact extends SimulatedContact {
+  async sendRpc(method, sender, key, ...rest) {
+    const {bucketIndex} = this;
+    //console.log({bucketIndex, method, key});
+    // If it is us or we are not connected, then just handle it.
+    if ((bucketIndex === undefined) || (key === this.key)) return await this.receiveRpc(method, sender, key, ...rest);
+    // Otherwise, find (or make) an OverlayConenction and send the message through that.
+    let bucket = this.host.routingTable.get(bucketIndex);
+    if (!bucket.overlay) {
+      const overlayContact = bucket.contacts[0];
+      bucket.overlay = await SimulatedOverlayConnection.create(overlayContact, this.host);
+    }
+    return await bucket.overlay.sendRpc(method, sender, key, ...rest);
   }
 }
 
@@ -141,7 +156,7 @@ export class Node { // An actor within thin DHT.
   constructor(properties) { Object.assign(this, properties); }
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
-  log(...rest) { this.constructor.log(...rest); }
+  log(...rest) { this.constructor.log(this.name, ...rest); }
 
   /* Identifiers: A few operations accept string, which are hashed to keySize bits and represented internally as a BigInt. */
   static async sha256(string) { // Promises a Uint8Array.
@@ -208,7 +223,7 @@ export class Node { // An actor within thin DHT.
   }
   findClosestHelpers(targetKey, count = KBucket.k) { // Answer count closest Helpers to targetKey, not including ourself.
     const allContacts = this.contacts;
-    allContacts.push(this.contact); // Can include us!
+    allContacts.push(this.contact); // We are a candidate, too!
     const helpers = allContacts.map(contact => new Helper(contact, Node.distance(targetKey, contact.key)));
     helpers.sort(Helper.compare);
     return helpers.slice(0, count);
@@ -323,7 +338,7 @@ export class Node { // An actor within thin DHT.
   /* Active operations involving messages to other Nodes. */
   locateNodes(targetKey) { // Promise up to k best Contacts for targetKey (sorted closest first).
     // Side effect is to discover other nodes (and they us).
-    return this.iterate(targetKey, 'sendFindNodes');
+    return this.iterate(targetKey, 'findNodes');
   }
   async ensureKey(targetKey) {
     if (typeof(targetKey) !== 'bigint') targetKey = await this.constructor.key(targetKey);
@@ -338,18 +353,18 @@ export class Node { // An actor within thin DHT.
     // Maybe have iterate track these and stuff them into another property of the {value} object?
     // But doesn't that get thrown immediately and thus there might be a closer one that might fail?
     // And what does not returning the stored value mean? Returning [] indicating none closesr?
-    return this.iterate(targetKey, 'sendFindValue') // Throws {value} if found.
+    return this.iterate(targetKey, 'findValue') // Throws {value} if found.
       .then(ignoredEntries => ignoredEntries, ({value}) => value);
   }
   async storeValue(targetKey, value) { // Convert targetKey to a bigint if necessary, and store value there.
     targetKey = await this.ensureKey(targetKey);
     const helpers = await this.locateNodes(targetKey);
-    await Promise.all(helpers.map(helper => helper.contact.sendStore(this.contact, targetKey, value)));
+    await Promise.all(helpers.map(helper => helper.contact.sendRpc('store', this.contact, targetKey, value)));
   }
   async step1(targetKey, finder, helper, keysSeen) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     keysSeen.add(helper.key);
-    const helpers = await helper.contact[finder](this.contact, targetKey);
+    const helpers = await helper.contact.sendRpc(finder, this.contact, targetKey);
     // If it responds at all (no timeout) then it is live.
     if (helpers.length) this.addToRoutingTable(helper.contact); 
     const better = helpers.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
@@ -358,7 +373,7 @@ export class Node { // An actor within thin DHT.
     
   async iterate(targetKey, finder) { // Promise the best Contacts known by anyone in the network,
     // sorted by closest-first, by repeatedly trying to improve our closest known by applying
-    // finder. If the finder operation rejects (as 'sendFindValue' does), so will we.
+    // finder. If the finder operation rejects (as 'findValue' does), so will we.
     let candidates = this.findClosestHelpers(targetKey);
     const keysSeen = new Set();
     while (candidates.length) {
