@@ -1,4 +1,4 @@
-import { Node, KBucket } from '../index.js';
+import { Node, KBucket, SimulatedContact, Helper } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
 describe("DHT internals", function () {
@@ -26,26 +26,27 @@ describe("DHT internals", function () {
       });
     });
       
- //    describe("report", function () {
- //      beforeAll(async function () { // Add some data for which we know the expected internal structure.
- // 	example.storeLocally(await Identifier.create("foo"), 17); // May or may not have already been set to same value, depending on test order.
- // 	example.storeLocally(await Identifier.create("bar"), "baz");
- // 	example.routingTable[90] = [Entry.fromOtherNode(example, await Node.create(1)),
- // 				    Entry.fromOtherNode(example, await Node.create(2))];
- // 	example.replacementCache[90] = [await Node.create(3),
- // 					await Node.create(4)];
- //      });
- //      afterAll(function () {
- // 	example.routingTable[90] = example.replacementCache[90] = undefined;
- //      });
- //      it("includes name, routing/replacement names and stored items by bigInt key.", function () {
- // 	// The current implementation uses the classic "fixed size routing tables" - up to k at at each bit position.
- // 	let report = example.report(string => string); // No op for what to do with the report. Just return it.
- // 	expect(report).toBe(`Node 0
- // storing: [["58686998438798322974467776505749455156",17],["336119020696479164089214630533760195420","baz"]]
- // 90: 1, 2 replacements: 3, 4`);
- //      });
- //    });
+    describe("report", function () {
+      beforeAll(async function () { // Add some data for which we know the expected internal structure.
+	example.storeLocally(await Node.key("foo"), 17); // May or may not have already been set to same value, depending on test order.
+	example.storeLocally(await Node.key("bar"), "baz");
+	let bucket = new KBucket();
+	bucket.contacts.push(await SimulatedContact.fromKey(1));
+	bucket.contacts.push(await SimulatedContact.fromKey(2));
+	bucket.replacementCache.push(await SimulatedContact.fromKey(3));
+	bucket.replacementCache.push(await SimulatedContact.fromKey(4));
+	example.routingTable.set(90, bucket);
+      });
+      afterAll(function () {
+	example.routingTable.delete(90);
+      });
+      it("includes name, routing/replacement names and stored items by bigInt key.", function () {
+	let report = example.report(string => string); // No op for what to do with the report. Just return it.
+	expect(report).toBe(`Node: 0
+  storing: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
+  90: 1n, 2n replacements: 3n, 4n`);
+      });
+    });
 
     describe("constants", function () {
       it("alpha >= 3.", function () {
@@ -98,6 +99,21 @@ describe("DHT internals", function () {
 	expect(node.getBucketIndex(distance)).toBe(0);
       });
     });
+    describe("randomTargetInIndex", function () {
+      let node;
+      beforeAll(async function () {
+	node = await Node.create();
+      });
+      function test(bucketIndex) {
+	it(`computes random of ${bucketIndex}.`, function () {
+	  const random = node.randomTargetInBucket(bucketIndex);
+	  const computedBucket = node.getBucketIndex(random);
+	  expect(computedBucket).toBe(bucketIndex);
+	});
+      }
+      for (let i = 0; i < Node.keySize; i++) test(i);
+    });
+
     describe("examination", function () {
       const random = Array.from({length: 4}, () => BigInt(Math.floor(Math.random() * 1e10)));
       let node;
@@ -108,47 +124,54 @@ describe("DHT internals", function () {
 	// But for these test here, we're just testing structure and the keys are NOT being put in the right buckets.
 	const bucket0 = new KBucket();
 	const bucket60 = new KBucket();
-	bucket0.addKey(random[0]);
-	bucket0.addKey(random[1]);
-	bucket60.addKey(random[2]);
-	bucket60.addKey(random[3]);
+	const addTo = (bucket, index) => bucket.addContact(SimulatedContact.fromKey(random[index]));
+	addTo(bucket0, 0);
+	addTo(bucket0, 1);
+	addTo(bucket60, 2);
+	addTo(bucket60, 3);
 	node.routingTable.set(0, bucket0);
 	node.routingTable.set(60, bucket60);
+	SimulatedContact.fromNode(node);
       });
       it("is initially empty.", async function () {
 	const node = await Node.create();
-	expect(node.keys).toEqual([]);
+	expect(node.contacts).toEqual([]);
       });
       it("collects from all buckets.", function () {
-	expect(node.keys).toEqual(random);
+	const contacts = node.contacts;
+	const asKeys = contacts.map(c => c.key);
+	expect(asKeys).toEqual(random);
       });
       it("finds all ordered keys there are.", function () {
 	let target = node.key;
-	let keysAndDistances = random.map(key => ({key, distance: Node.distance(target, key)}));
-	keysAndDistances.sort(Node.compare);
-	expect(node.findClosestKeys(target)).toEqual(keysAndDistances.map(pair => pair.key));
+	let all = [node.key, ...random]; // Our findClosestHelpers includes ourself.
+	let keysAndDistances = all.map(key => ({key, distance: Node.distance(target, key)}));
+	keysAndDistances.sort(Helper.compare);
+	const closest = node.findClosestHelpers(target);
+	const mapped = closest.map(helper => ({key: helper.key, distance: helper.distance}));
+	expect(mapped).toEqual(keysAndDistances);
       });
       it("reports name and bucket contents.", function () {
 	let report = node.report(string => string);
 	let expected = `Node: ${node.name}
-  0: ${node.routingTable.get(0).keys.map(k => k.toString() + 'n').join(', ')}
-  60: ${node.routingTable.get(60).keys.map(k => k.toString() + 'n').join(', ')}`;
+  0: ${node.routingTable.get(0).contacts.map(c => c.key.toString() + 'n').join(', ')}
+  60: ${node.routingTable.get(60).contacts.map(c => c.key.toString() + 'n').join(', ')}`;
 	expect(report).toBe(expected);
       });
     });
     describe("discovery", function () {
       it("does not place self.", function () {
 	let node = Node.fromKey(Node.one);
-	expect(node.addToRoutingTable(Node.one)).toBeFalsy();
+	expect(node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeFalsy();
 	expect(node.routingTable.size).toBe(0);
       });
       it("places in bucket if room.", function () {
 	let node = Node.fromKey(Node.zero);
 	let other = Node.fromKey(Node.one); // Closest bucket
-	expect(node.addToRoutingTable(Node.one)).toBeTruthy();
+	expect(node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeTruthy();
 	expect(node.getBucketIndex(Node.one)).toBe(0);
 	const bucket = node.routingTable.get(0);
-	expect(bucket.keys[0]).toBe(Node.one);
+	expect(bucket.contacts[0].key).toBe(Node.one);
       });
       describe("examples", function () {
 	const nOthers = Node.k + 40; // k+31 will not overflow. k+40 would overflow to a replacementCache if we used one.
@@ -157,9 +180,10 @@ describe("DHT internals", function () {
 	  node = Node.fromKey(Node.zero);
 	  // These others are all constructed to have distances that increase by one from node.
 	  for (let i = 0; i < nOthers; i++) {
-	    let other = BigInt(i + 1);
+	    let other = SimulatedContact.fromKey(BigInt(i + 1));
 	    node.addToRoutingTable(other);
 	  }
+	  SimulatedContact.fromNode(node);
 	  //node.report();
 	});
 	it("places k in bucket and then into replacementCache.", function () {
@@ -175,20 +199,21 @@ describe("DHT internals", function () {
 	    // Now iterate through the entries in the bucket, up to expectCount or k.
 	    let i = 0;
 	    for (; i < Math.min(expectCount, Node.k); i++) {
-	      const key = bucket.keys[i];
-	      expect(key).toBe(otherBigInt++);
+	      const contact = bucket.contacts[i];
+	      expect(contact.key).toBe(otherBigInt++);
 	    }
 	    if (i >= Node.k) { // Now continue with replacementCache, if anyr
 	      const cache = bucket.replacementCache;
 	      for (i = 0; otherBigInt <= othersLast; i++) {
-		expect(cache[i]).toBe(otherBigInt++);
+		expect(cache[i].key).toBe(otherBigInt++);
 	      }
 	    }
 	  }
 	});
 	it('finds closest keys', function () {
-	  const closest = node.findClosestKeys(BigInt(40));
-	  expect(closest).toEqual([
+	  const closest = node.findClosestHelpers(BigInt(40));
+	  const keys = closest.map(helper => helper.key);
+	  expect(keys).toEqual([
   40n, 41n, 42n, 43n, 44n,
   45n, 46n, 47n, 32n, 33n,
   34n, 35n, 36n, 37n, 38n,

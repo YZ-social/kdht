@@ -3,7 +3,7 @@ const { describe, it, expect, BigInt } = globalThis; // For linters.
 
 describe("DHT Keys", function () {
 
-  describe("creation", function () {
+  describe("Node creation", function () {
 
     describe("from string", function () {
       it("keeps given name.", async function () {
