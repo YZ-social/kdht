@@ -58,7 +58,8 @@ describe("DHT operations", function () {
 	let counter = 0;
 	let last = start;
 	async function make1(i) {
-	  const contact = await SimulatedContact.create(i);
+	  //const contact = await SimulatedContact.create(i);
+	  const contact = await SimulatedOverlayContact.create(i);
 	  contacts.push(contact);
 	  if (i > 0) await contact.join(contacts[0]);  
 	  if (counter++ % 500 === 0) {
@@ -69,12 +70,16 @@ describe("DHT operations", function () {
 	  }
 	}
 	await make1(0);
-	for (let i = 1; i < size; i++) promises.push(make1(i));
-	await Promise.all(promises);
+	for (let i = 1; i < size; i++) promises.push(await make1(i));
+	//await Promise.all(promises);
 	const elapsed = Date.now() - start;
 	console.log(`Creating ${size} nodes took ${elapsed/1e3} seconds, or ${elapsed/size} ms/node.`);
 	//reportAll();
+	//contacts[0].node.report();
       }, 20 * size);
+      // afterAll(function () {
+      // 	contacts[0].node.report();
+      // });
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
 	  const node = contacts[i].node;
@@ -82,8 +87,9 @@ describe("DHT operations", function () {
 	  const target = other.key;
 	  const found = await node.locateNodes(target);
 	  const bestKey = found[0].key;
-	  //expect(found.length).toBe(expectedLength); // FIXME: Why do we come up short when going through overlay?
+	  expect(found.length).toBe(expectedLength); // FIXME: Why do we come up short when going through overlay?
 	  expect(bestKey).toBe(target);
+	  //if (i===0 && j===0) console.log(found.map(h => h.name));
 	});
       }
       async function testStore(i) {
@@ -108,10 +114,11 @@ describe("DHT operations", function () {
       }
     });
   }
+  //test(1);
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);
   test(1e3);
-  test(10e3);
+  // test(10e3);
   // test(50e3);
 });

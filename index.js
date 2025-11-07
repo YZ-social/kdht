@@ -23,11 +23,14 @@ const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
   TODO: there are few places where we return a list of Helpers (or Contacts?) that are described in the literature (or method name!) as returning Nodes. Let's do that, since we can get Nodes from Helpers/Contacts, and Contacts from Nodes.  
  */
 export class Contact {
+  // Represents an abstract contact from a host (a Node) to another node.
+  // The host calls aContact.sendRpc(...messageParameters) to send the message to node and promises the response.
+  // This could be wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
   join(other) { return this.node.join(other); }
 }
 export class SimulatedContact extends Contact {
-  get key() { return this.node.key; }
-  get name() { return this.node.name; }
+  get key() { return this.node.key; } // The "to" node's key.
+  get name() { return this.node.name; } // The "to" node's name.
   static fromNode(node, host = node) {
     const contact = new this();
     contact.node = node;
@@ -41,10 +44,12 @@ export class SimulatedContact extends Contact {
   static fromKey(key) {
     return this.fromNode(Node.fromKey(key));
   }
-  async sendRpc(...rest) {
+  async sendRpc(...rest) { // Send rest to node.
+    //console.log({op: 'sendRPC', self: this, rest});
     return await this.receiveRpc(...rest);
   }
-  async receiveRpc(method, ...rest) {
+  async receiveRpc(method, ...rest) { // Call the message method to act on the 'to' node side.
+    //console.log({op: 'receiveRPC', method, key: rest[1]});
     return await this[method](...rest);
   }
   async ping(sender, key) { // Resolve true if still alive
@@ -70,35 +75,27 @@ export class SimulatedContact extends Contact {
   }
 }
 
-export class SimulatedOverlayConnection {
-  static async create(contact, host) {
-    const overlay = new this();
-    overlay.contact = await SimulatedContact.fromNode(contact.node, host);
-    overlay.host = host;
-    return overlay;
-  }
-  async sendRpc(method, sender, targetKey, ...rest) {
-    const closest = this.contact.node.findClosestHelpers(targetKey)[0];
-    //console.log({closest, method, targetKey});
-    // If contact is the closest, then let then contact handle it.
-    if (closest.key === this.contact.key) return this.contact.receiveRpc(method, sender, targetKey, ...rest);
-    // Forward to whomever else is closest (which will either handle locally or forward through ITs overlay.
-    return closest.contact.sendRpc(method, sender, targetKey, ...rest);
-  }
-}
+
 export class SimulatedOverlayContact extends SimulatedContact {
-  async sendRpc(method, sender, key, ...rest) {
-    const {bucketIndex} = this;
-    //console.log({bucketIndex, method, key});
-    // If it is us or we are not connected, then just handle it.
-    if ((bucketIndex === undefined) || (key === this.key)) return await this.receiveRpc(method, sender, key, ...rest);
-    // Otherwise, find (or make) an OverlayConenction and send the message through that.
-    let bucket = this.host.routingTable.get(bucketIndex);
-    if (!bucket.overlay) {
-      const overlayContact = bucket.contacts[0];
-      bucket.overlay = await SimulatedOverlayConnection.create(overlayContact, this.host);
-    }
-    return await bucket.overlay.sendRpc(method, sender, key, ...rest);
+  sendRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
+    return this.constructor.forwardThroughOverlay(this.host, this.node.key, rest, 0);
+  }
+  static async forwardThroughOverlay(host, intendedContactKey, message, counter) {
+    //console.log({intendedContactKey, host: host.key, name: host.name, method: message[0]});
+    //if (counter++ > 10) throw new Error('looping');
+    // Pass the rest message through a simulated connection to the intendedContactKey, and promise the response.
+    // If our host end of the Contact is the intendedContactKey, then handle the message locally.
+    // Otherwise, find the closest bucket we have and forward through a simulated connection to one of its contacts.
+    // TODO: Simulate long-lived webrtc connections by caching the Contact for each bucket.
+
+    // If we are not connected or we are going to host, then just have the host handle it.
+    if (!host.routingTable.size || (intendedContactKey === host.key)) return await host.contact.receiveRpc(...message);
+
+    const bestHelpers = host.findClosestHelpers(intendedContactKey);
+    const bucketIndex = host.getBucketIndex(bestHelpers[0].key);
+    const bucket = host.routingTable.get(bucketIndex);
+    //console.log({label: 'computed', helpers: bestHelpers.map(h => h.name), bucketIndex, bucket: bucket.contacts.map(c => c.name)});
+    return await this.forwardThroughOverlay(bucket.contacts[0].node, intendedContactKey, message);
   }
 }
 
@@ -228,8 +225,8 @@ export class Node { // An actor within thin DHT.
     helpers.sort(Helper.compare);
     return helpers.slice(0, count);
   }
-  static commonPrefixLength(distance) { // Number of leading zeros for our keySize
-    if (distance === this.zero) return this.keySize;
+  static commonPrefixLength(distance) { // Number of leading zeros of distance (within fixed keySize).
+    if (distance === this.zero) return this.keySize; // I.e., zero distance => our own Node => 128 (i.e., one past the farthest bucket).
     
     let length = 0;
     let mask = this.one << BigInt(this.keySize - 1);
@@ -245,7 +242,7 @@ export class Node { // An actor within thin DHT.
     return this.keySize;
   }
   getBucketIndex(key) { // index of routingTable KBucket that should contain the given Node key.
-    // Bucket 0 is for closest key. Bucket (Node.keySize - 1) for farthest.
+    // Bucket 0 is for closest key (distance === 1). Bucket (Node.keySize - 1) for farthest.
     const distance = this.constructor.distance(this.key, key);
     const prefixLength = this.constructor.commonPrefixLength(distance);
     return 128 - prefixLength - 1;
@@ -256,7 +253,7 @@ export class Node { // An actor within thin DHT.
     let binary = '0'.repeat(nLeadingZeros);
     binary += '1'; // Next bit must be one to stay in bucket.
     // Now fill the rest (if any) with random bits.
-    for (let i = nLeadingZeros + 1; i < keySize; i++) binary += Math.round(Math.random());
+    for (let i = nLeadingZeros + 1; i < keySize; i++) binary += '1'; //FIXME restore: Math.round(Math.random());
     const distance = BigInt('0b' + binary);
     const target = this.constructor.distance(distance, this.key);
     return target;
@@ -292,9 +289,8 @@ export class Node { // An actor within thin DHT.
     bucket.contacts.forEach(add);
     bucket.replacementCache.forEach(add);
   }
-  setupContact(contact, bucketIndex) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
+  setupContact(contact) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
     if (contact.host !== this) contact = contact.constructor.fromNode(contact.node, this);
-    contact.bucketIndex = bucketIndex;
     return contact;
   }
   addToRoutingTable(contact) { // Return true and contact to the routing table if room, using adaptive bucket sizing.
@@ -310,7 +306,7 @@ export class Node { // An actor within thin DHT.
     const bucket = this.routingTable.get(bucketIndex);
     
     // Try to add to bucket
-    contact = this.setupContact(contact, bucketIndex);
+    contact = this.setupContact(contact);
     if (bucket.addContact(contact)) return true;
     
     // Bucket is full - handle adaptive splitting for unbalanced trees
@@ -391,7 +387,9 @@ export class Node { // An actor within thin DHT.
     throw new Error('Unable to find any candidates. This should not happen.');
   }    
   async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
-    const found = await this.locateNodes(this.randomTargetInBucket(bucketIndex));
+    const targetKey = this.randomTargetInBucket(bucketIndex);
+    //console.log({op: 'refresh', bucketIndex, targetKey});
+    const found = await this.locateNodes(targetKey);
     //console.log(`refresh bucket ${bucketIndex} found ${found.length} items.`);
   }
   async join(contact) {
@@ -404,7 +402,7 @@ export class Node { // An actor within thin DHT.
       const bucket = this.routingTable.get(index);
       if (!bucket && !started) continue;
       if (!started) started = true;
-      else if (!bucket) await this.refresh(index);
+      else if (!bucket) { await this.refresh(index); } // FIXME break/no-break
     }
     // TODO: Every refreshMS, refresh every bucket that has not had a lookup since last time.
   }
