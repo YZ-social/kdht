@@ -28,13 +28,15 @@ export class Contact {
   join(other) { return this.node.join(other); }
 }
 export class SimulatedContact extends Contact {
-  get key() { return this.node.key; } // The "to" node's key.
-  get name() { return this.node.name; } // The "to" node's name.
   static fromNode(node, host = node) {
     const contact = new this();
+    node.contact = contact;
     contact.node = node;
     contact.host = host; // In whose buckets does this contact live?
-    node.contact = contact;
+    // Cache these because we use contact.node undefined to indicate disconnection,
+    // and we will still need to know key in order to removeKey from bucket (and name for debugging).
+    contact.name = node.name;
+    contact.key = node.key;
     return contact;
   }
   static async create(properties) {
@@ -43,11 +45,15 @@ export class SimulatedContact extends Contact {
   static fromKey(key) {
     return this.fromNode(Node.fromKey(key));
   }
+  get isConnected() { // The contact.node may have been set empty, but the various internal Contacts
+    // Need to reference through their .node.contact in order to reach the node that was shut off.
+    return !!this.node?.contact.node;
+  }
   async sendRpc(...rest) { // Send rest to node.
     return await this.receiveRpc(...rest);  // TODO: add sender here instead of at each call site.
   }
   async receiveRpc(method, ...rest) { // Call the message method to act on the 'to' node side.
-    // FIXME: return falsy if disconnected
+    if (!this.isConnected) return undefined; // Simulating a disconnection.
     return await this[method](...rest);
   }
   async ping(sender, key) { // Resolve true if still alive
@@ -97,7 +103,6 @@ export class SimulatedOverlayContact extends SimulatedContact {
   }
 }
 
-
 export class Helper { // A Contact that is some distance from an assumed targetKey.
   constructor(contact, distance) {
     this.contact = contact;
@@ -126,12 +131,13 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     this.removeKey(contact.key); // If it exists.
     let added = true;
     if (this.isFull) {
-      const head = this.contacts[0];
-      this.removeKey(head.key);
-      if (await head.sendRpc('ping', head.host.contact, head.key)) { // Still alive
-	added = false;  // No room for new contact.
-	contact = head; // But add back head at end, below, instead of new contact.
-      }
+      return false; // fixme
+      // const head = this.contacts[0];
+      // this.removeKey(head.key);
+      // if (await head.sendRpc('ping', head.host.contact, head.key)) { // Still alive
+      // 	added = false;  // No room for new contact.
+      // 	contact = head; // But add back head at end, below, instead of new contact.
+      // } // Else there is room for new contact, having removed head.
     }
     this.contacts.push(contact);
     this.lastUpdated = Date.now();
@@ -139,9 +145,16 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
   }
 
   removeKey(key) { // Removes item specified by key (if present), and return boolean as to whether it was present.
-    const index = this.contacts.findIndex(item => item.key === key);
+    const { contacts, replacementCache } = this;
+    let index;
+    index = replacementCache.findIndex(item => item.key === key);
     if (index !== -1) {
-      this.contacts.splice(index, 1);
+      replacementCache.splice(index, 1);
+      return false; // It was not among contacts.
+    }
+    index = contacts.findIndex(item => item.key === key);
+    if (index !== -1) {
+      contacts.splice(index, 1);
       return true;
     }
     return false;
@@ -212,7 +225,7 @@ export class Node { // An actor within thin DHT.
     function contactsString(contacts) { return contacts.map(contact => contact.name).join(', '); }
     const storedKeys = Object.keys(this.storage);
     if (storedKeys.length) {
-      report += '\n  storing: ' + storedKeys.map(k => `${keyString(k)}: ${JSON.stringify(this.storage[k])}`).join(', ');
+      report += `\n  storing ${storedKeys.length}: ` + storedKeys.map(k => `${keyString(k)}: ${JSON.stringify(this.storage[k])}`).join(', ');
     }
     for (let index = 0; index < Node.keySize; index++) {
       const bucket = this.routingTable.get(index);
@@ -302,7 +315,7 @@ export class Node { // An actor within thin DHT.
     if (contact.host !== this) contact = contact.constructor.fromNode(contact.node, this);
     return contact;
   }
-  async addToRoutingTable(contact) { // Return true and contact to the routing table if room, using adaptive bucket sizing.
+  async addToRoutingTable(contact) { // Promise true and contact to the routing table if room, using adaptive bucket sizing.
     const key = contact.key;
     if (key === this.key) return false; // Don't add self
 
@@ -316,7 +329,7 @@ export class Node { // An actor within thin DHT.
     
     // Try to add to bucket
     contact = this.setupContact(contact);
-    if (await bucket.addContact(contact)) return true;
+    if (await bucket.addContact(contact)) return contact;
     
     // Bucket is full - handle adaptive splitting for unbalanced trees
     // Split only if this bucket contains keys that should be in our routing table
@@ -329,6 +342,16 @@ export class Node { // An actor within thin DHT.
     const replacements = bucket.replacementCache; // TODO? (in-order) dictionary instead of list?
     if (!replacements.find(contact => contact.key === key)) replacements.push(contact);
     return false;
+  }
+  async addToOverlays(contact) { // If successfully added (updated) to routing table, add to overlay and return Contact for us as host.
+    contact = await this.addToRoutingTable(contact); // If truthy, it is now a contact for this host.
+    if (!contact) return false;
+    const { key } = contact;
+    const bucket = this.routingTable.get(this.getBucketIndex(key));
+    const { overlayContacts } = bucket;
+    if (overlayContacts.find(c => c.key == key)) return contact; // Already present
+    overlayContacts.push(contact);
+    return contact;
   }
   // Storage
   storage = {};
@@ -372,9 +395,14 @@ export class Node { // An actor within thin DHT.
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     keysSeen.add(helper.key);
     const helpers = await helper.contact.sendRpc(finder, this.contact, targetKey);
-    // If it responds at all then it is live.
+    if (!helpers) { // Disconnected. Remove from bucket.
+      let key = helper.contact.key;
+      let bucketIndex = this.getBucketIndex(key);
+      let bucket = this.routingTable.get(bucketIndex);
+      bucket.removeKey(key);
+      return [];
+    }
     if (helpers.length) await this.addToRoutingTable(helper.contact);
-    // FIXME: What do we do if dead? Just []? Do we remove it from bucket?
     const better = helpers.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
     return better;
   }

@@ -43,7 +43,7 @@ describe("DHT internals", function () {
       it("includes name, routing/replacement names and stored items by bigInt key.", function () {
 	let report = example.report(string => string); // No op for what to do with the report. Just return it.
 	expect(report).toBe(`Node: 0
-  storing: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
+  storing 2: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
   90: 1n, 2n replacements: 3n, 4n`);
       });
     });
@@ -160,15 +160,15 @@ describe("DHT internals", function () {
       });
     });
     describe("discovery", function () {
-      it("does not place self.", function () {
+      it("does not place self.", async function () {
 	let node = Node.fromKey(Node.one);
-	expect(node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeFalsy();
+	expect(await node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeFalsy();
 	expect(node.routingTable.size).toBe(0);
       });
-      it("places in bucket if room.", function () {
+      it("places in bucket if room.", async function () {
 	let node = Node.fromKey(Node.zero);
 	let other = Node.fromKey(Node.one); // Closest bucket
-	expect(node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeTruthy();
+	expect(await node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeTruthy();
 	expect(node.getBucketIndex(Node.one)).toBe(0);
 	const bucket = node.routingTable.get(0);
 	expect(bucket.contacts[0].key).toBe(Node.one);
@@ -176,12 +176,12 @@ describe("DHT internals", function () {
       describe("examples", function () {
 	const nOthers = Node.k + 40; // k+31 will not overflow. k+40 would overflow to a replacementCache if we used one.
 	let node;
-	beforeAll(function () {
+	beforeAll(async function () {
 	  node = Node.fromKey(Node.zero);
 	  // These others are all constructed to have distances that increase by one from node.
 	  for (let i = 0; i < nOthers; i++) {
 	    let other = SimulatedContact.fromKey(BigInt(i + 1));
-	    node.addToRoutingTable(other);
+	    await node.addToRoutingTable(other);
 	  }
 	  SimulatedContact.fromNode(node);
 	  //node.report();
