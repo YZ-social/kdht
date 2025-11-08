@@ -58,8 +58,7 @@ describe("DHT operations", function () {
 	let counter = 0;
 	let last = start;
 	async function make1(i) {
-	  //const contact = await SimulatedContact.create(i);
-	  const contact = await SimulatedOverlayContact.create(i);
+	  const contact = await SimulatedOverlayContact.create(i); // Alternatively SimulatedContact
 	  contacts.push(contact);
 	  if (i > 0) await contact.join(contacts[0]);  
 	  if (counter++ % 500 === 0) {
@@ -70,16 +69,12 @@ describe("DHT operations", function () {
 	  }
 	}
 	await make1(0);
-	for (let i = 1; i < size; i++) promises.push(await make1(i));
-	//await Promise.all(promises);
+	for (let i = 1; i < size; i++) promises.push(make1(i));
+	await Promise.all(promises);
 	const elapsed = Date.now() - start;
 	console.log(`Creating ${size} nodes took ${elapsed/1e3} seconds, or ${elapsed/size} ms/node.`);
 	//reportAll();
-	//contacts[0].node.report();
-      }, 20 * size);
-      // afterAll(function () {
-      // 	contacts[0].node.report();
-      // });
+      }, 50 * size);
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
 	  const node = contacts[i].node;
@@ -87,9 +82,8 @@ describe("DHT operations", function () {
 	  const target = other.key;
 	  const found = await node.locateNodes(target);
 	  const bestKey = found[0].key;
-	  expect(found.length).toBe(expectedLength); // FIXME: Why do we come up short when going through overlay?
+	  expect(found.length).toBe(expectedLength);
 	  expect(bestKey).toBe(target);
-	  //if (i===0 && j===0) console.log(found.map(h => h.name));
 	});
       }
       async function testStore(i) {
@@ -102,23 +96,20 @@ describe("DHT operations", function () {
 	  expect(retrieved).toBe(value);
 	});
       }
-      for (let i = 0; i < size; i++) {
+      for (let i = 0; i < size; i++) { // Test that each node can reach stuff.
 	if (size <= 100) { // Test that node i can reach every node j.
-	  for (let j = 0; j < size; j++) {
-	    test1(i, j);
-	  }
-	} else { // Too many. Test against one random j
+	  for (let j = 0; j < size; j++) test1(i, j);
+	} else { // Too many nodes to test every combination. Just test against one random j.
 	  test1(i, Math.floor(Math.random() * size));
 	}
 	testStore(i);
       }
     });
   }
-  //test(1);
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);
   test(1e3);
   // test(10e3);
-  // test(50e3);
+  //test(50e3);
 });
