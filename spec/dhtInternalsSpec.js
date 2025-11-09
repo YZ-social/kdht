@@ -174,16 +174,16 @@ describe("DHT internals", function () {
 	expect(bucket.contacts[0].key).toBe(Node.one);
       });
       describe("examples", function () {
-	const nOthers = Node.k + 40; // k+31 will not overflow. k+40 would overflow to a replacementCache if we used one.
+	const nOthers = Node.k + 40; // k+31 will not overflow. k+40 would overflow to a replacementCache.
 	let node;
 	beforeAll(async function () {
-	  node = Node.fromKey(Node.zero);
+	  const host = SimulatedContact.fromKey(Node.zero);
+	  node = host.node;
 	  // These others are all constructed to have distances that increase by one from node.
-	  for (let i = 0; i < nOthers; i++) {
-	    let other = SimulatedContact.fromKey(BigInt(i + 1));
+	  for (let i = 1; i <= nOthers; i++) {
+	    let other = SimulatedContact.fromKey(BigInt(i), host);
 	    await node.addToRoutingTable(other);
 	  }
-	  SimulatedContact.fromNode(node);
 	  //node.report();
 	});
 	it("places k in bucket and then into replacementCache.", function () {
@@ -198,11 +198,22 @@ describe("DHT internals", function () {
 	    const bucket = node.routingTable.get(bucketIndex);
 	    // Now iterate through the entries in the bucket, up to expectCount or k.
 	    let i = 0;
-	    for (; i < Math.min(expectCount, Node.k); i++) {
-	      const contact = bucket.contacts[i];
-	      expect(contact.key).toBe(otherBigInt++);
-	    }
-	    if (i >= Node.k) { // Now continue with replacementCache, if anyr
+
+	    // Full bucket.contacts can be in a different order because each attempt to add to a full bucket
+	    // causes the head of the bucket to be pinged and (if alive) rotated to the back.
+	    // So, let's just collect the keys and the expected values, andnd sort the keys for comparison.
+	    let keys = bucket.contacts.map(c => c.key);
+	    let expecting = [];
+	    for (; i < Math.min(expectCount, Node.k); i++) expecting.push(otherBigInt++);
+	    const compare = (a, b) => {
+	      if (a < b) return -1;
+	      if (a > b) return 1;
+	      return 0;
+	    };
+	    keys.sort(compare);
+	    expect(keys).toEqual(expecting);
+
+	    if (i >= Node.k) { // Now continue with replacementCache, if any
 	      const cache = bucket.replacementCache;
 	      for (i = 0; otherBigInt <= othersLast; i++) {
 		expect(cache[i].key).toBe(otherBigInt++);

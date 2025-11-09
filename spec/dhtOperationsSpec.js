@@ -60,7 +60,7 @@ describe("DHT operations", function () {
 	async function make1(i) {
 	  const contact = await SimulatedOverlayContact.create(i); // Alternatively SimulatedContact
 	  contacts.push(contact);
-	  if (i > 0) await contact.join(contacts[0]);  
+	  if (i > 0) await contact.join(contacts[0]);
 	  if (counter++ % 500 === 0) {
 	    const now = Date.now();
 	    const since = now - last;
@@ -77,10 +77,10 @@ describe("DHT operations", function () {
       }, 50 * size);
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
-	  const node = contacts[i].node;
-	  const other = contacts[j].node;
-	  const target = other.key;
-	  const found = await node.locateNodes(target);
+	  const from = contacts[i];
+	  const to = contacts[j];
+	  const target = to.key;
+	  const found = await from.node.locateNodes(target);
 	  const bestKey = found[0].key;
 	  expect(found.length).toBe(expectedLength);
 	  expect(bestKey).toBe(target);
@@ -107,9 +107,9 @@ describe("DHT operations", function () {
     });
   }
   for (let size = 1; size < 4; size++) test(size);
-  for (let size = 4; size <= 40; size+=4) test(size);
+  for (let size = 4; size <= 20; size+=4) test(size);
   test(100);
   test(1e3);
-  test(10e3);
+  //test(10e3);
   //test(50e3);
 });

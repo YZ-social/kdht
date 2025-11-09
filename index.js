@@ -30,7 +30,7 @@ export class Contact {
 export class SimulatedContact extends Contact {
   static fromNode(node, host = node) {
     const contact = new this();
-    node.contact = contact;
+    node.contact ||= contact;
     contact.node = node;
     contact.host = host; // In whose buckets does this contact live?
     // Cache these because we use contact.node undefined to indicate disconnection,
@@ -42,8 +42,9 @@ export class SimulatedContact extends Contact {
   static async create(properties) {
     return this.fromNode(await Node.create(properties));
   }
-  static fromKey(key) {
-    return this.fromNode(Node.fromKey(key));
+  static fromKey(key, host) {
+    const node = Node.fromKey(key);
+    return this.fromNode(node, host || node);
   }
   get isConnected() { // The contact.node may have been set empty, but the various internal Contacts
     // Need to reference through their .node.contact in order to reach the node that was shut off.
@@ -58,7 +59,7 @@ export class SimulatedContact extends Contact {
   }
   async ping(sender, key) { // Resolve true if still alive
     await this.node.addToRoutingTable(sender);
-    return !!this.node;
+    return this.isConnected;
   }
   async store(sender, key, value) { // Tell Entry node to store identifier => value.
     await this.node.addToRoutingTable(sender);
@@ -131,13 +132,13 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     this.removeKey(contact.key); // If it exists.
     let added = true;
     if (this.isFull) {
-      return false; // fixme
-      // const head = this.contacts[0];
-      // this.removeKey(head.key);
-      // if (await head.sendRpc('ping', head.host.contact, head.key)) { // Still alive
-      // 	added = false;  // No room for new contact.
-      // 	contact = head; // But add back head at end, below, instead of new contact.
-      // } // Else there is room for new contact, having removed head.
+      const head = this.contacts[0];
+      const {key, host} = head;
+      this.removeKey(key);
+      if (await head.sendRpc('ping', host.contact, key)) { // still alive
+	added = false;  // New contact will not be added.
+	contact = head; // Add head back and update timestamp, below.
+      } // Else dead head, so there's room for the new contact after all.
     }
     this.contacts.push(contact);
     this.lastUpdated = Date.now();
@@ -159,7 +160,7 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     }
     return false;
   }
-  replacementCache = [];
+  replacementCache = []; // TODO: use these when needed!
 }
 
 export class Node { // An actor within thin DHT.
@@ -312,8 +313,8 @@ export class Node { // An actor within thin DHT.
     await Promise.all(bucket.replacementCache.forEach(add));
   }
   setupContact(contact) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
-    if (contact.host !== this) contact = contact.constructor.fromNode(contact.node, this);
-    return contact;
+    if (contact.host === this) return contact; // All good.
+    return contact.constructor.fromNode(contact.node, this);
   }
   async addToRoutingTable(contact) { // Promise true and contact to the routing table if room, using adaptive bucket sizing.
     const key = contact.key;
