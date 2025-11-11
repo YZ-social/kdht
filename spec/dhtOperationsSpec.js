@@ -59,6 +59,7 @@ describe("DHT operations", function () {
 	let last = start;
 	async function make1(i) {
 	  const contact = await SimulatedOverlayContact.create(i); // Alternatively SimulatedContact
+	  //const contact = await SimulatedContact.create(i); // Alternatively SimulatedContact
 	  contacts.push(contact);
 	  if (i > 0) await contact.join(contacts[0]);
 	  if (counter++ % 500 === 0) {
@@ -75,6 +76,10 @@ describe("DHT operations", function () {
 	console.log(`Creating ${size} nodes took ${elapsed/1e3} seconds, or ${elapsed/size} ms/node.`);
 	//reportAll();
       }, 50 * size);
+      afterAll(function () {
+	contacts[contacts.length - 1].host.report();
+	//reportAll();
+      });
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
 	  const from = contacts[i];
