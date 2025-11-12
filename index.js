@@ -78,7 +78,7 @@ export class SimulatedContact extends Contact {
     }
   }
   deserialize(requestResponse, sender) { // Set up any serialized contacts for the originating host Node.
-    return Array.isArray(requestResponse) ? 
+    return Node.isArrayResult(requestResponse) ?
       requestResponse.map(h => new Helper(h.contact.clone(sender.host), h.distance)) :
       requestResponse;
   }
@@ -89,9 +89,8 @@ export class SimulatedContact extends Contact {
       helper = reject;
       const sender = this.host.contact;
       let transmission = this.transmitRpc(method, sender, ...rest)
-	  .then(result => this.deserialize(result, sender))
+	  .then(result => this.isConnected ? this.deserialize(result, sender) : reject(new Error('disconnected')))
           .finally(() => this.endRequest(promise));
-      if (!this.isConnected) reject(new Error('disconnected'));
       resolve(transmission);
     });
     promise.reject = helper;
@@ -498,8 +497,9 @@ export class Node { // An actor within thin DHT.
     // But doesn't that get thrown immediately and thus there might be a closer one that might fail?
     // And what does not returning the stored value mean? Returning [] indicating none closesr?
     // FIXME: cache a value with a timeout at some node just outside of the k.
-    return this.iterate(targetKey, 'findValue') // Throws {value} if found.
-      .then(ignoredEntries => undefined, ({value}) => value);
+    const result = await this.iterate(targetKey, 'findValue');
+    if (Node.isValueResult(result)) return result.value;
+    return undefined;
   }
   async storeValue(targetKey, value) { // Convert targetKey to a bigint if necessary, and store value there.
     targetKey = await this.ensureKey(targetKey);
@@ -508,21 +508,29 @@ export class Node { // An actor within thin DHT.
     await Promise.all(helpers.map(helper => helper.contact.sendRpc('store', targetKey, value)));
   }
 
+  // There are only three kinds of rpc results: 'pong', [...helper], {value: something}
+  static isValueResult(rpcResult) {
+    return rpcResult !== 'pong' && 'value' in rpcResult;
+  }
+  static isArrayResult(rpcResult) {
+    return Array.isArray(rpcResult);
+  }
   async step1(targetKey, finder, helper, keysSeen) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     keysSeen.add(helper.key);
-    const helpers = await helper.contact.sendRpc(finder, targetKey);
-    if (!helpers) { // Disconnected. Remove helper from our bucket.
+    let results = await helper.contact.sendRpc(finder, targetKey).catch(() => undefined);
+    if (!results) { // Disconnected. Remove helper from our bucket.
       let key = helper.contact.key;
       let bucketIndex = this.getBucketIndex(key);
       let bucket = this.routingTable.get(bucketIndex);
       bucket?.removeKey(key); // We may have already removed it.
       return [];
     }
-    // If it doesn't tell us about anyone (even itself), it's useless.
-    if (helpers.length) await this.addToRoutingTable(helper.contact);
-    const better = helpers.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
-    return better;
+    await this.addToRoutingTable(helper.contact);
+    if (Node.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
+      results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
+    }
+    return results;
   }
   async iterate(targetKey, finder) { // Promise the best Contacts known by anyone in the network,
     // sorted by closest-first, by repeatedly trying to improve our closest known by applying
@@ -533,7 +541,10 @@ export class Node { // An actor within thin DHT.
       // TODO: try with alpha first, and then go to k if needed.
       let helpers = candidates.slice(0, this.constructor.k);
       let requests = helpers.map(helper => this.step1(targetKey, finder, helper, keysSeen));
-      let closer = [].concat(... await Promise.all(requests)); // By construction, these are closer than the ones we tried.
+      let results = await Promise.all(requests);
+      let found = results.find(Node.isValueResult);
+      if (found) return found;
+      let closer = [].concat(...results); // By construction, these are closer than the ones we tried.
       // TODO: return list of Contacts, not Helpers.
       if (!closer.length) return candidates.slice(0, this.constructor.k);;
       candidates = [...closer, ...candidates].sort(Helper.compare);
@@ -563,10 +574,10 @@ export class Node { // An actor within thin DHT.
   }
 
   // The four methods we recevieve through RPCs:
-  async ping(sender, key) { // Resolve true.
+  async ping(sender, key) { // Respond with 'pong'.
     // If we're disconnected, the RPC machinery will take care of it.
     await this.addToRoutingTable(sender);
-    return true;
+    return 'pong';
   }
   async store(sender, key, value) { // Tell Entry node to store identifier => value.
     await this.addToRoutingTable(sender);
@@ -581,7 +592,7 @@ export class Node { // An actor within thin DHT.
   async findValue(sender, key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
     await this.addToRoutingTable(sender);
     let value = this.retrieveLocally(key);
-    if (value !== undefined) throw {value};
+    if (value !== undefined) return {value};
     return this.findClosestHelpers(key);
   }
 }
