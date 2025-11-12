@@ -19,7 +19,9 @@ const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
 
   Some operations involve an ephemeral {contact, distance} Helper object, where distance has
   been computed between contact.key and some targetKey. 
-  TODO: there are few places where we return a list of Helpers (or Contacts?) that are described in the literature (or method name!) as returning Nodes. Let's do that, since we can get Nodes from Helpers/Contacts, and Contacts from Nodes.  
+
+  TODO: there are few places where we return a list of Helpers (or Contacts?) that are described in the literature (or method name!) as returning Nodes. Let's do that, since we can get Nodes from Helpers/Contacts, and Contacts from Nodes.
+  TODO: It would be convenient for bucket to cache their host and index. This would allow get rid of some/all? uses of contact.host, and move some operations (randomTargetInBucket, refresh) to KBucket.
  */
 
 export class Contact {
@@ -202,6 +204,10 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     }
     this.contacts.push(contact);
     this.lastUpdated = Date.now();
+    const { node, host } = contact;
+    // Every refereshMS, refresh every bucket that has not had a lookup since last time. (Keeps things fresh if no natural traffic.)
+    clearInterval(this.refreshTimer);
+    this.refreshTimer = setInterval(() => host.refresh(host.getBucketIndex(node.key)), host.fuzzyInterval());
     return added;
   }
 
@@ -549,14 +555,11 @@ export class Node { // An actor within thin DHT.
       if (!closer.length) return candidates.slice(0, this.constructor.k);;
       candidates = [...closer, ...candidates].sort(Helper.compare);
     }
-    ///FIXME throw new Error('Unable to find any candidates. This should not happen.');
     return [];
   }    
   async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
     const targetKey = this.randomTargetInBucket(bucketIndex);
     await this.locateNodes(targetKey); // Side-effect is to update this bucket.
-    // Every refereshMS, refresh every bucket that has not had a lookup since last time. (Keeps things fresh if no natural traffic.)
-    // FIXME: do that.
   }
   async join(contact) {
     await this.addToRoutingTable(contact);
