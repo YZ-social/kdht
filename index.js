@@ -88,27 +88,7 @@ export class SimulatedContact extends Contact {
     return this.receiveRpc(...rest);
   }
   async receiveRpc(method, ...rest) { // Call the message method to act on the 'to' node side.
-    return await this[method](...rest);
-  }
-  async ping(sender, key) { // Resolve true if still alive
-    await this.node.addToRoutingTable(sender);
-    return true;
-  }
-  async store(sender, key, value) { // Tell Entry node to store identifier => value.
-    await this.node.addToRoutingTable(sender);
-    this.node.storeLocally(key, value);
-  }
-  async findNodes(sender, key) { // Return k closest Contacts from routingTable.
-    // TODO: Currently, this answers a list of Helpers. For security, it should be changed to a list of serialized Contacts.
-    // I.e., send back a list of verifiable signatures and let the receiver verify and then compute the distances.
-    await this.node.addToRoutingTable(sender);
-    return this.node.findClosestHelpers(key);
-  }
-  async findValue(sender, key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
-    await this.node.addToRoutingTable(sender);
-    let value = this.node.retrieveLocally(key);
-    if (value !== undefined) throw {value};
-    return this.node.findClosestHelpers(key);
+    return await this.node[method](...rest);
   }
 }
 
@@ -566,5 +546,28 @@ export class Node { // An actor within thin DHT.
       if (!started) started = true;
       else if (!bucket) await this.refresh(index);
     }
+  }
+
+  // The four methods we recevieve through RPCs:
+  async ping(sender, key) { // Resolve true.
+    // If we're disconnected, the RPC machinery will take care of it.
+    await this.addToRoutingTable(sender);
+    return true;
+  }
+  async store(sender, key, value) { // Tell Entry node to store identifier => value.
+    await this.addToRoutingTable(sender);
+    this.storeLocally(key, value);
+  }
+  async findNodes(sender, key) { // Return k closest Contacts from routingTable.
+    // TODO: Currently, this answers a list of Helpers. For security, it should be changed to a list of serialized Contacts.
+    // I.e., send back a list of verifiable signatures and let the receiver verify and then compute the distances.
+    await this.addToRoutingTable(sender);
+    return this.findClosestHelpers(key);
+  }
+  async findValue(sender, key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
+    await this.addToRoutingTable(sender);
+    let value = this.retrieveLocally(key);
+    if (value !== undefined) throw {value};
+    return this.findClosestHelpers(key);
   }
 }

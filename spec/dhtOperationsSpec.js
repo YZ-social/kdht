@@ -1,8 +1,8 @@
 import { Node, SimulatedContact, SimulatedOverlayContact } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
-//const Contact = SimulatedContact;
-const Contact = SimulatedOverlayContact;
+const Contact = SimulatedContact;
+//const Contact = SimulatedOverlayContact;
 
 describe("DHT operations", function () {
   describe("solo system", function () {
