@@ -2,40 +2,34 @@ const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
 
 // See spec/*.js for API examples.
 
-function assert(ok, ...rest) { // If !ok, log rests and exit.
-  if (ok) return;
-  console.error(...rest, new Error("Error").stack);
-  process.exit(1);
-}
-
 /*
   A Node is an actor in the DHT, and it has a key - a BigNum of Node.keySize bits:
   - A typical client will have one Node instance through which it interacts with one DHT.
-  - A server or simulation might have many Node instances to interact with the same DHT.
+  - A server or simulation might have many Node instances to each interact with the same DHT.
   A Node has a Contact object to represent itself to another Node.
   A Node maintains KBuckets, which each have a list of Contacts to other Nodes.
 
   A Contact is the means through which a Node interacts with another Node instance:
   - When sending an RPC request, the Contact will "serialize" the sender Nodes's contact.
   - When receiving an RPC response, the sender "deserializes" a string (maybe using a cache)
-    to produce the Contact instance for the KBuckets.
+    to produce the Contact instance to be noted in the receiver's KBuckets.
   - In classic UDP Kademlia, a Contact would serialize as {key, ip, port}.
   - In a simulation, a Contact could "serialize" as just itself.
-  - Ultimately, I imagine that it will serialize as signature so that keys cannot be forged.
+  - In our system, I imagine that it will serialize as signature so that keys cannot be forged.
 
-  Some operations involve an ephemeral {contact, distance} object, where distance has
-  been computed between contact.key and some targetKey. We call this a Helper, and it used in sortable lists.
+  Some operations involve an ephemeral {contact, distance} Helper object, where distance has
+  been computed between contact.key and some targetKey. 
   TODO: there are few places where we return a list of Helpers (or Contacts?) that are described in the literature (or method name!) as returning Nodes. Let's do that, since we can get Nodes from Helpers/Contacts, and Contacts from Nodes.  
  */
+
 export class Contact {
   // Represents an abstract contact from a host (a Node) to another node.
   // The host calls aContact.sendRpc(...messageParameters) to send the message to node and promises the response.
-  // This could be wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
-  join(other) { return this.node.join(other); }
-}
-export class SimulatedContact extends Contact {
+  // This could be by wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
   static fromNode(node, host = node) {
     const contact = new this();
+    // Every Contact is unique to a host Node, from which it sends messages to a specific "far" node.
+    // Every Node caches a contact property for that Node as it's own host, and from which Contacts for other hosts may be cloned.
     node.contact ||= contact;
     contact.node = node;
     contact.host = host; // In whose buckets does this contact live?
@@ -52,25 +46,57 @@ export class SimulatedContact extends Contact {
     const node = Node.fromKey(key);
     return this.fromNode(node, host || node);
   }
-  get isConnected() { // The contact.node may have been set empty, but the various internal Contacts
-    // Need to reference through their .node.contact in order to reach the node that was shut off.
-    return this.node?.contact.node;
+  join(other) { return this.node.join(other); }
+}
+export class SimulatedContact extends Contact {
+  clone(hostNode) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
+    if (this.host === hostNode) return this; // All good.
+    return this.constructor.fromNode(this.node, hostNode);
   }
-  async sendRpc(...rest) { // Send rest to node.
-    return await this.receiveRpc(...rest);  // TODO: add sender here instead of at each call site.
+  get farHomeContact() {
+    return this.node.contact;
+  }
+  _connected = true;
+  inFlight = []; // All 
+  get isConnected() { // Ask our canonical home contact.
+    return this.farHomeContact._connected;
+  }
+  disconnect() { // Simulate a disconnection, marking as such and rejecting any RPCs in flight.
+    const { farHomeContact } = this;
+    farHomeContact._connected = false;
+    farHomeContact.inFlight.forEach(promise => promise.reject());
+  }
+  sendRpc(...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
+    const { farHomeContact } = this;
+    let helper;
+    const promise = new Promise(async (resolve, reject) => {
+      helper = reject;
+      let transmission = this.transmitRpc(...rest)
+	  .then(result => { // Remove from inFlight.
+	    farHomeContact.inFlight = farHomeContact.inFlight.filter(p => p !== promise);
+	    return result;
+	  });
+      if (!this.isConnected) reject();
+      resolve(transmission);
+    });
+    promise.reject = helper;
+    farHomeContact.inFlight.push(promise);
+    return promise;
+  }
+  transmitRpc(...rest) {
+    // TODO: add sender here instead of at each call site.
+    return this.receiveRpc(...rest);
   }
   async receiveRpc(method, ...rest) { // Call the message method to act on the 'to' node side.
-    if (!this.isConnected) return undefined; // Simulating a disconnection.
     return await this[method](...rest);
   }
   async ping(sender, key) { // Resolve true if still alive
     await this.node.addToRoutingTable(sender);
-    return this.isConnected;
+    return true;
   }
   async store(sender, key, value) { // Tell Entry node to store identifier => value.
     await this.node.addToRoutingTable(sender);
     this.node.storeLocally(key, value);
-    // FIXME: Every refreshMS, find the locate the k closest (network-side) and store value.
   }
   async findNodes(sender, key) { // Return k closest Contacts from routingTable.
     // TODO: Currently, this answers a list of Helpers. For security, it should be changed to a list of serialized Contacts.
@@ -88,25 +114,24 @@ export class SimulatedContact extends Contact {
 
 
 export class SimulatedOverlayContact extends SimulatedContact {
-  sendRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
+  transmitRPC(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     return this.constructor.forwardThroughOverlay(this.host, this.node.key, rest);
   }
   static async forwardThroughOverlay(node, intendedContactKey, message) {
     // Pass the rest message through a Node towards the intendedContactKey, and promise the response.
-    if (!node.contact.isConnected) return undefined;
 
     // If we are not connected or host is who we are intended to contact, then just have the host handle it.
-    assert(node?.routingTable, "No host?.routingTable", node);
+    Node.assert(node?.routingTable, "No host?.routingTable", node);
     if (!node.routingTable.size || (intendedContactKey === node.key)) return await node.contact.receiveRpc(...message);
 
     // Otherwise find the closest bucket we have to intendendedContactKey, and forward through a simulated connection servicing that bucket.
     const bestHelpers = node.findClosestHelpers(intendedContactKey, 1); // Best node knows of in its own data.
     const bucketIndex = node.getBucketIndex(bestHelpers[0].key); // After joining, node will have one.
     const bucket = node.routingTable.get(bucketIndex); // And will have a bucket at that index.
-    assert(bucket, "No bucket to forward through", node, bestHelpers, bucketIndex, bucket);
+    Node.assert(bucket, "No bucket to forward through", node, bestHelpers, bucketIndex, bucket);
     // Here we simulate a long lived connection by caching the overlay remote node for this bucket.
     const overlay = await bucket.ensureOverlay();
-    assert(overlay, 'No overlay for bucket', bucket);
+    Node.assert(overlay, 'No overlay for bucket', bucket);
     return await this.forwardThroughOverlay(overlay, intendedContactKey, message);
   }
   static maxOverlayConnections = 200;
@@ -127,11 +152,21 @@ export class SimulatedOverlayContact extends SimulatedContact {
     const outBound = await host.addToRoutingTable(contact);
     const inBound = await node.addToRoutingTable(host.contact);
     if (!force && (!outBound || !inBound)) return undefined;
-    if (tooManyHost) host.kickOverlayContact();
-    if (tooManyNode) node.kickOverlayContact();
-    ourBucket.overlayContacts.push(outBound);
+
+    // It is possible that the other end connected to us while we were awaiting addToRoutingTable.
+    const key = c => c.key;
+    const ourKeys = ourBucket.overlayContacts.map(key);
+    if (!ourKeys.includes(host.key)) {
+      if (tooManyHost) host.kickOverlayContact();
+      ourBucket.overlayContacts.push(outBound);
+    }
     // The other side has a bucket at this point(post node.addToRoutingTable), but we don't which bucket.
-    node.routingTable.get(node.getBucketIndex(host.key)).overlayContacts.push(inBound);
+    const theirBucket = node.routingTable.get(node.getBucketIndex(host.key));
+    const theirKeys = theirBucket.overlayContacts.map(key);
+    if (!theirKeys.includes(node.key)) {
+      if (tooManyNode) node.kickOverlayContact();
+      theirBucket.overlayContacts.push(inBound);
+    }
     return node;
   }
 }
@@ -218,7 +253,7 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
       const overlay = await candidate.host.contact.makeOverlay(candidate, this, force);
       if (overlay) return overlay;
     }
-    assert(true, "Unable to makeOverlay for bucket", this);
+    Node.assert(true, "Unable to makeOverlay for bucket", this);
     return null;
   }
 }
@@ -226,15 +261,21 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
 
 export class Node { // An actor within thin DHT.
   static alpha = 3; // How many lookup requests are initially tried in parallel. If no progress, we repeat with up to k more.
-  // TODDO: Let's make this as small as possible without flooding network. How do we determine that?
-  static refreshMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
-  // TODO: Original k=20 was chosen based on Gnutella desktop data. How do we figure out ours?
-  static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshMS.
+  // TODO: Let's make this as small as possible without flooding network. How do we determine that?
+  static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
+  static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
-  constructor(properties) { Object.assign(this, properties); }
+  constructor({refreshTimeIntervalMS = Node.refreshTimeIntervalMS, ...properties}) {
+    Object.assign(this, {refreshTimeIntervalMS, ...properties});
+  }
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
   log(...rest) { this.constructor.log(this.name, ...rest); }
+  static assert(ok, ...rest) { // If !ok, log rests and exit.
+    if (ok) return;
+    console.error(...rest, new Error("Error").stack);
+    process.exit(1);
+  }
 
   /* Identifiers: A few operations accept string, which are hashed to keySize bits and represented internally as a BigInt. */
   static async sha256(string) { // Promises a Uint8Array.
@@ -256,10 +297,12 @@ export class Node { // An actor within thin DHT.
     return key;
   }
   static counter = 0;
-  static async create(name = this.counter++) { // Create a node with a simple name and matching key.
+  static async create(nameOrProperties = {}) { // Create a node with a simple name and matching key.
+    if (['string', 'number'].includes(typeof nameOrProperties)) nameOrProperties = {name: nameOrProperties};
+    let {name = this.counter++, ...rest} = nameOrProperties;
     name = name.toString();
     const key = await this.key(name);  
-    return new this({name, key});
+    return new this({name, key, ...rest});
   }
   static fromKey(key) { // Forge specific key for testing.
     if (typeof(key) !== 'bigint') key = BigInt(key);
@@ -290,7 +333,7 @@ export class Node { // An actor within thin DHT.
     return n;
   }
   report(logger = console.log) { // return logger( a string description of node )
-    let report = `Node: ${this.name}`;
+    let report = `Node: ${this.name}${this.contact?.isConnected ? '' : ' disconnected'}`;
     function keyString(key) { return key.toString() + 'n'; }
     function contactsString(contacts) { return contacts.map(contact => contact.name).join(', '); }
     const storedKeys = Object.keys(this.storage);
@@ -307,12 +350,17 @@ export class Node { // An actor within thin DHT.
     }
     return logger ? logger(report) : report;
   }
-  findClosestHelpers(targetKey, count = KBucket.k) { // Answer count closest Helpers to targetKey, not including ourself.
-    const allContacts = this.contacts;
-    allContacts.push(this.contact); // We are a candidate, too!
-    const helpers = allContacts.map(contact => new Helper(contact, Node.distance(targetKey, contact.key)));
+  static findClosestHelpers(targetKey, contacts, count) { // Utility, useful for computing and debugging.
+    if (!contacts.map) console.log({targetKey, contacts, count});
+    const helpers = contacts.map(contact => new Helper(contact, Node.distance(targetKey, contact.key)));
     helpers.sort(Helper.compare);
     return helpers.slice(0, count);
+  }
+  findClosestHelpers(targetKey, count = KBucket.k) { // Answer count closest Helpers to targetKey, including ourself.
+    if (!this.contact?.isConnected) return [];
+    const {contacts} = this;
+    contacts.push(this.contact); // We are a candidate, too!
+    return this.constructor.findClosestHelpers(targetKey, contacts, count);
   }
   static commonPrefixLength(distance) { // Number of leading zeros of distance (within fixed keySize).
     if (distance === this.zero) return this.keySize; // I.e., zero distance => our own Node => 128 (i.e., one past the farthest bucket).
@@ -380,11 +428,7 @@ export class Node { // An actor within thin DHT.
     const add = contact => this.addToRoutingTable(contact);
     await Promise.all(bucket.contacts.map(add));
     await Promise.all(bucket.replacementCache.forEach(add));
-  }
-  setupContact(contact) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
-    if (contact.host === this) return contact; // All good.
-    return contact.constructor.fromNode(contact.node, this);
-  }
+  }  
   async addToRoutingTable(contact) { // Promise true and contact to the routing table if room, using adaptive bucket sizing.
     const key = contact.key;
     if (key === this.key) return false; // Don't add self
@@ -398,7 +442,7 @@ export class Node { // An actor within thin DHT.
     const bucket = this.routingTable.get(bucketIndex);
     
     // Try to add to bucket
-    contact = this.setupContact(contact);
+    contact = contact.clone(this);
     if (await bucket.addContact(contact)) return contact;
     
     // Bucket is full - handle adaptive splitting for unbalanced trees
@@ -422,8 +466,16 @@ export class Node { // An actor within thin DHT.
   }
   // Storage
   storage = {};
+  storageTimers = {}
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
     this.storage[key] = value;
+    // TODO: "This can be optimized to require far fewer than k2 messages, but a description is beyond the scope of this paper."
+    clearInterval(this.storageTimers[key]);
+    this.storageTimers[key] = setInterval(() => {
+      //console.log('restore', key); // fixme
+      this.storeValue(key, value);
+    },
+					  this.refreshTimeIntervalMS);
   }
   retrieveLocally(key) {     // Retrieve from memory.
     return this.storage[key];
@@ -442,8 +494,11 @@ export class Node { // An actor within thin DHT.
   async locateValue(targetKey) { // Promise value stored for targetKey, or undefined.
     // Side effect is to discover other nodes (and they us).
     targetKey = await this.ensureKey(targetKey);
-    const found = this.retrieveLocally(targetKey);
-    if (found !== undefined) return found;
+
+    // Optimization: Works, but can confuse testing as disconnected nodes will return a value.
+    // const found = this.retrieveLocally(targetKey);
+    // if (found !== undefined) return found;
+
     // FIXME: We need to store at the closest node to the key that did NOT return a value.
     // Maybe have iterate track these and stuff them into another property of the {value} object?
     // But doesn't that get thrown immediately and thus there might be a closer one that might fail?
@@ -455,20 +510,21 @@ export class Node { // An actor within thin DHT.
   async storeValue(targetKey, value) { // Convert targetKey to a bigint if necessary, and store value there.
     targetKey = await this.ensureKey(targetKey);
     const helpers = await this.locateNodes(targetKey);
-    // FIXME: What to do if dead? Remove from bucket and find another?
+    // TODO: Deal with any of the following that fail to store. (Maybe pre-seed them into keysSeen for locateNodes?)
     await Promise.all(helpers.map(helper => helper.contact.sendRpc('store', this.contact, targetKey, value)));
   }
   async step1(targetKey, finder, helper, keysSeen) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     keysSeen.add(helper.key);
     const helpers = await helper.contact.sendRpc(finder, this.contact, targetKey);
-    if (!helpers) { // Disconnected. Remove from bucket.
+    if (!helpers) { // Disconnected. Remove helper from our bucket.
       let key = helper.contact.key;
       let bucketIndex = this.getBucketIndex(key);
       let bucket = this.routingTable.get(bucketIndex);
-      bucket.removeKey(key);
+      bucket?.removeKey(key); // We may have already removed it.
       return [];
     }
+    // If it doesn't tell us about anyone (even itself), it's useless.
     if (helpers.length) await this.addToRoutingTable(helper.contact);
     const better = helpers.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
     return better;
@@ -488,12 +544,14 @@ export class Node { // An actor within thin DHT.
       if (!closer.length) return candidates.slice(0, this.constructor.k);;
       candidates = [...closer, ...candidates].sort(Helper.compare);
     }
-    throw new Error('Unable to find any candidates. This should not happen.');
+    ///FIXME throw new Error('Unable to find any candidates. This should not happen.');
+    return [];
   }    
   async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
     const targetKey = this.randomTargetInBucket(bucketIndex);
     await this.locateNodes(targetKey); // Side-effect is to update this bucket.
-    // FIXME: Every refreshMS, refresh every bucket that has not had a lookup since last time.
+    // Every refereshMS, refresh every bucket that has not had a lookup since last time. (Keeps things fresh if no natural traffic.)
+    // FIXME: do that.
   }
   async join(contact) {
     await this.addToRoutingTable(contact);

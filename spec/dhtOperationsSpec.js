@@ -1,6 +1,9 @@
 import { Node, SimulatedContact, SimulatedOverlayContact } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
+//const Contact = SimulatedContact;
+const Contact = SimulatedOverlayContact;
+
 describe("DHT operations", function () {
   describe("solo system", function () {
     let contact;
@@ -58,8 +61,7 @@ describe("DHT operations", function () {
 	let counter = 0;
 	let last = start;
 	async function make1(i) {
-	  const contact = await SimulatedOverlayContact.create(i); // Alternatively SimulatedContact
-	  //const contact = await SimulatedContact.create(i); // Alternatively SimulatedContact
+	  const contact = await Contact.create(i);
 	  contacts.push(contact);
 	  if (i > 0) await contact.join(contacts[0]);
 	  if (counter++ % 500 === 0) {
@@ -77,7 +79,7 @@ describe("DHT operations", function () {
 	//reportAll();
       }, 50 * size);
       afterAll(function () {
-	contacts[contacts.length - 1].host.report();
+	//contacts[contacts.length - 1].host.report();
 	//reportAll();
       });
       async function test1(i, j) {
@@ -114,7 +116,7 @@ describe("DHT operations", function () {
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);
-  test(1e3);
+  //test(1e3);
   //test(10e3);
   //test(50e3);
 });
