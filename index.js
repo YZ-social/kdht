@@ -53,38 +53,52 @@ export class SimulatedContact extends Contact {
     if (this.host === hostNode) return this; // All good.
     return this.constructor.fromNode(this.node, hostNode);
   }
-  get farHomeContact() {
+  get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
     return this.node.contact;
   }
-  _connected = true;
   inFlight = []; // All 
+  _connected = true;
+  startRequest(promise) { // Keep track of the request in flight, for use by disconnect()
+    this.farHomeContact.inFlight.push(promise);
+  }
+  endRequest(promise) { // The request has completed.
+    this.farHomeContact.inFlight = this.farHomeContact.inFlight.filter(p => p !== promise);
+  }
   get isConnected() { // Ask our canonical home contact.
     return this.farHomeContact._connected;
   }
   disconnect() { // Simulate a disconnection, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
     farHomeContact._connected = false;
-    farHomeContact.inFlight.forEach(promise => promise.reject());
+    const rejection = new Error('disconnected'); // Gathers stack trace.
+    try {
+      farHomeContact.inFlight.forEach(promise => promise.reject(rejection));
+    } catch (error) {
+      console.error(`Error during disconnect of ${this.farHomeContact.name}.`, error);
+    }
   }
-  sendRpc(...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
+  deserialize(requestResponse, sender) { // Set up any serialized contacts for the originating host Node.
+    return Array.isArray(requestResponse) ? 
+      requestResponse.map(h => new Helper(h.contact.clone(sender.host), h.distance)) :
+      requestResponse;
+  }
+  sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const { farHomeContact } = this;
     let helper;
     const promise = new Promise(async (resolve, reject) => {
       helper = reject;
-      let transmission = this.transmitRpc(...rest)
-	  .then(result => { // Remove from inFlight.
-	    farHomeContact.inFlight = farHomeContact.inFlight.filter(p => p !== promise);
-	    return result;
-	  });
-      if (!this.isConnected) reject();
+      const sender = this.host.contact;
+      let transmission = this.transmitRpc(method, sender, ...rest)
+	  .then(result => this.deserialize(result, sender))
+          .finally(() => this.endRequest(promise));
+      if (!this.isConnected) reject(new Error('disconnected'));
       resolve(transmission);
     });
     promise.reject = helper;
-    farHomeContact.inFlight.push(promise);
+    this.startRequest(promise);
     return promise;
   }
   transmitRpc(...rest) {
-    // TODO: add sender here instead of at each call site.
     return this.receiveRpc(...rest);
   }
   async receiveRpc(method, ...rest) { // Call the message method to act on the 'to' node side.
@@ -182,7 +196,7 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
       const head = this.contacts[0];
       const {key, host} = head;
       this.removeKey(key);
-      if (await head.sendRpc('ping', host.contact, key)) { // still alive
+      if (await head.sendRpc('ping', key).catch(() => false)) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back and update timestamp, below.
       } // Else dead head, so there's room for the new contact after all.
@@ -331,7 +345,6 @@ export class Node { // An actor within thin DHT.
     return logger ? logger(report) : report;
   }
   static findClosestHelpers(targetKey, contacts, count) { // Utility, useful for computing and debugging.
-    if (!contacts.map) console.log({targetKey, contacts, count});
     const helpers = contacts.map(contact => new Helper(contact, Node.distance(targetKey, contact.key)));
     helpers.sort(Helper.compare);
     return helpers.slice(0, count);
@@ -447,15 +460,16 @@ export class Node { // An actor within thin DHT.
   // Storage
   storage = {};
   storageTimers = {}
+  fuzzyInterval(target = this.refreshTimeIntervalMS, margin = this.refreshTimeIntervalMS/3) {
+    // Answer an interval from (target - margin) to target milliseconds. I.e., never more than target.
+    const adjustment = Math.floor(Math.random() * margin);
+    return target - adjustment;
+  }
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
     this.storage[key] = value;
     // TODO: "This can be optimized to require far fewer than k2 messages, but a description is beyond the scope of this paper."
     clearInterval(this.storageTimers[key]);
-    this.storageTimers[key] = setInterval(() => {
-      //console.log('restore', key); // fixme
-      this.storeValue(key, value);
-    },
-					  this.refreshTimeIntervalMS);
+    this.storageTimers[key] = setInterval(() => this.storeValue(key, value), this.fuzzyInterval());
   }
   retrieveLocally(key) {     // Retrieve from memory.
     return this.storage[key];
@@ -463,13 +477,13 @@ export class Node { // An actor within thin DHT.
   // TODO: also store/retrievePersistent locally.
 
   /* Active operations involving messages to other Nodes. */
-  locateNodes(targetKey) { // Promise up to k best Contacts for targetKey (sorted closest first).
-    // Side effect is to discover other nodes (and they us).
-    return this.iterate(targetKey, 'findNodes');
-  }
   async ensureKey(targetKey) { // If targetKey is not already a real key, hash it into one.
     if (typeof(targetKey) !== 'bigint') targetKey = await this.constructor.key(targetKey);
     return targetKey;
+  }
+  locateNodes(targetKey) { // Promise up to k best Contacts for targetKey (sorted closest first).
+    // Side effect is to discover other nodes (and they us).
+    return this.iterate(targetKey, 'findNodes');
   }
   async locateValue(targetKey) { // Promise value stored for targetKey, or undefined.
     // Side effect is to discover other nodes (and they us).
@@ -491,12 +505,13 @@ export class Node { // An actor within thin DHT.
     targetKey = await this.ensureKey(targetKey);
     const helpers = await this.locateNodes(targetKey);
     // TODO: Deal with any of the following that fail to store. (Maybe pre-seed them into keysSeen for locateNodes?)
-    await Promise.all(helpers.map(helper => helper.contact.sendRpc('store', this.contact, targetKey, value)));
+    await Promise.all(helpers.map(helper => helper.contact.sendRpc('store', targetKey, value)));
   }
+
   async step1(targetKey, finder, helper, keysSeen) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     keysSeen.add(helper.key);
-    const helpers = await helper.contact.sendRpc(finder, this.contact, targetKey);
+    const helpers = await helper.contact.sendRpc(finder, targetKey);
     if (!helpers) { // Disconnected. Remove helper from our bucket.
       let key = helper.contact.key;
       let bucketIndex = this.getBucketIndex(key);
@@ -509,7 +524,6 @@ export class Node { // An actor within thin DHT.
     const better = helpers.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
     return better;
   }
-    
   async iterate(targetKey, finder) { // Promise the best Contacts known by anyone in the network,
     // sorted by closest-first, by repeatedly trying to improve our closest known by applying
     // finder. If the finder operation rejects (as 'findValue' does), so will we.
