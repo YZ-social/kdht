@@ -72,11 +72,22 @@ export class SimulatedContact extends Contact {
   disconnect() { // Simulate a disconnection, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
     farHomeContact._connected = false;
+    for (const timer of Object.values(this.node.storageTimers)) clearInterval(timer);
+    for (let i = 0; i < Node.keySize; i++) clearInterval(this.node.routingTable.get(i)?.refreshTimer);
     const rejection = new Error('disconnected'); // Gathers stack trace.
     try {
       farHomeContact.inFlight.forEach(promise => promise.reject(rejection));
     } catch (error) {
       console.error(`Error during disconnect of ${this.farHomeContact.name}.`, error);
+    }
+    // Debugging: Report if we're killing the last one.
+    if (!Node.contacts) return;
+    for (const key in this.node.storage) {
+      let remaining = [];
+      for (const contact of Node.contacts) {
+	if (contact.isConnected && Object.hasOwn(contact.node.storage, key)) remaining.push(contact.node.name);
+      }
+      if (!remaining.length) console.log(`Disconnecting ${this.node.name}, last holder of ${key}: ${this.node.storage[key]}.`);
     }
   }
   deserialize(requestResponse, sender) { // Set up any serialized contacts for the originating host Node.
@@ -465,7 +476,7 @@ export class Node { // An actor within thin DHT.
   // Storage
   storage = {};
   storageTimers = {}
-  fuzzyInterval(target = this.refreshTimeIntervalMS, margin = this.refreshTimeIntervalMS/3) {
+  fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/3) {
     // Answer an interval from (target - margin) to target milliseconds. I.e., never more than target.
     const adjustment = Math.floor(Math.random() * margin);
     return target - adjustment;
@@ -486,9 +497,10 @@ export class Node { // An actor within thin DHT.
     if (typeof(targetKey) !== 'bigint') targetKey = await this.constructor.key(targetKey);
     return targetKey;
   }
-  locateNodes(targetKey) { // Promise up to k best Contacts for targetKey (sorted closest first).
+  async locateNodes(targetKey) { // Promise up to k best Contacts for targetKey (sorted closest first).
     // Side effect is to discover other nodes (and they us).
-    return this.iterate(targetKey, 'findNodes');
+    targetKey = await this.ensureKey(targetKey);
+    return await this.iterate(targetKey, 'findNodes');
   }
   async locateValue(targetKey) { // Promise value stored for targetKey, or undefined.
     // Side effect is to discover other nodes (and they us).
@@ -574,6 +586,7 @@ export class Node { // An actor within thin DHT.
       if (!started) started = true;
       else if (!bucket) await this.refresh(index);
     }
+    return this.contact;
   }
 
   // The four methods we recevieve through RPCs:

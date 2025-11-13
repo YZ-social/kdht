@@ -1,0 +1,115 @@
+import { Node, SimulatedContact, SimulatedOverlayContact } from '../index.js';
+const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
+
+
+describe("DHT stability", function () {
+  function test({networkSize, nBootstrapNodes = 1, refreshTimeIntervalMS = 100, runTimeMS = 10 * refreshTimeIntervalMS, Contact = SimulatedOverlayContact}) {
+    // Generates a test suite with the given parameters (most described in https://github.com/YZ-social/flag/issues/31).
+    nBootstrapNodes = Math.min(networkSize, nBootstrapNodes);
+    describe(`Network of size ${networkSize}`, function () {
+      Node.contacts = [];
+      let stopToggles = false;
+      function toggle(i) { // Start disconnect/reconnect timer on contact i.
+	setTimeout(async () => {
+	  const contact = Node.contacts[i];
+	  contact.disconnect();
+	  Node.contacts[i] = await make1(i);
+	  if (!stopToggles) toggle(i);
+	}, randomInteger(2 * refreshTimeIntervalMS));
+      }
+      function delay(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms));
+      }
+      // Jasmine collects the named suies and tests in some order, and then completely runs one before starting the next.
+      // But there are tests that we want to run "later" and we don't want to stall everything.
+      // To do this, we allow a suite or test to add a promise to deferred. The promise will run asynchronously and
+      // resolve whenever it is designed to do so, and the entire suite will wait for all of them before finally exiting.
+      const deferred = [];      
+      afterAll(async function () {
+	// The named tests have all run. Start thrashing.
+
+	console.log('starting toggles', new Date());
+	for (let i = nBootstrapNodes; i < networkSize; i++) toggle(i);
+	await delay(runTimeMS / 2);
+
+	console.log('stopping toggles', new Date());
+	stopToggles = true;
+	await delay(runTimeMS / 2);
+
+	console.log('running deferred tests', new Date());
+	await Promise.all(deferred.map(thunk => thunk()));
+
+	console.log('finished', new Date());
+      }, 2 * runTimeMS);
+      let reportedDeferred = false;
+      function randomInteger(max = Node.contacts.length) {
+	// Return a random number between 0 (inclusive) and max (exclusive), defaulting to the number of contacts made.
+	return Math.floor(Math.random() * max);
+      }
+      function randomContact(max = Node.contacts.length) { // Return a connected contact at randomInteger(max).
+	const contact = Node.contacts[randomInteger(max)];
+	if (contact?.isConnected) return contact;
+	return randomContact(max);
+      }
+      function randomNode(max = Node.contacts.length) {
+	return randomContact(max).node;
+      }
+      function reportAll() {
+	Node.contacts.forEach(c => c.node.report());
+      }
+      async function expectedNodes(target) {
+	const key = await Node.key(target);
+	let connected = Node.contacts.filter(c => c.isConnected);
+	return Node.findClosestHelpers(key, connected, 20).map(h => h.contact.node);
+      }
+      function make1(i) {
+	return Contact.create({name: i, refreshTimeIntervalMS})
+	  .then(contact => contact.join(randomContact(nBootstrapNodes)));
+      }
+      beforeAll(async function () {
+	const start = Date.now();
+
+	// First create the bootstrap nodes in full.
+	// For now, we'll create them one at a time.
+	// TODO: do all but the first in parallel.
+	for (let i = 0; i < nBootstrapNodes; i++) {
+	  let contact = await Contact.create({name: i, refreshTimeIntervalMS});
+	  if (i) await contact.join(Node.contacts[i - 1]);
+	  Node.contacts.push(contact);
+	}
+
+	// add all clients
+	const joins = [];
+	for (let i = nBootstrapNodes; i < networkSize; i++) joins.push(make1(i));
+	Node.contacts.push(...await Promise.all(joins));
+	// Write all keys
+	let writes = [];
+	for (let i = 0; i < networkSize; i++) writes.push(randomNode().storeValue(i, i));
+	await Promise.all(writes);
+	const elapsed = Date.now() - start;
+	console.log(`Setup ${networkSize} nodes complete in ${(elapsed/1e3).toFixed(1)} seconds (${Math.round(elapsed/networkSize)} ms/node).`);
+      }, (networkSize/100 + 1) * networkSize + 5e3);
+
+      it('initially reads.', async function () {
+	let done = [];
+	for (let i = 0; i < networkSize; i++) {
+	  done.push(randomNode().locateValue(i)
+		    .then(value => expect(value).toBe(i)));
+	  async function getLegit() {
+	    const node = randomNode();
+	    const response = await node.locateValue(i);
+	    if (node.contact.isConnected) {
+	      expect(response).toBe(i);
+	    } else {
+	      await getLegit();
+	    }
+	  }
+	  deferred.push(getLegit);
+	}
+	await Promise.all(done);
+      });
+    });
+  }
+  test({networkSize: 1000, nBootstrapNodes: 1, refreshTimeIntervalMS: 5e3, Contact: SimulatedContact});
+});
+
