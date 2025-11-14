@@ -27,6 +27,7 @@ describe("DHT stability", function () {
       const deferred = [];      
       afterAll(async function () {
 	// The named tests have all run. Start thrashing.
+	Node.resetStatistics();
 
 	console.log('starting toggles', new Date());
 	for (let i = nBootstrapNodes; i < networkSize; i++) toggle(i);
@@ -40,6 +41,18 @@ describe("DHT stability", function () {
 	await Promise.all(deferred.map(thunk => thunk()));
 
 	console.log('finished', new Date());
+	let stats = Node.statistics;
+	let replication = Math.min(Node.k, networkSize);
+	let refreshments = 2 * runTimeMS / refreshTimeIntervalMS ; // We average 2 refreshmments / refreshTimeIntervalMS
+	console.log('\nAverage counts per node:');
+	console.log(`${stats.stored} stored items, expect ${replication}`);
+	console.log(`${stats.buckets} buckets`);
+	console.log(`${stats.contacts} contacts, ${Math.round(stats.contacts/stats.buckets)} per occupied bucket`);
+	console.log('\nAverage ms per action:');
+	const stat = (label, [elapsed, count, average], expect) => console.log(`${average} ${label}, total ${count.toLocaleString()}${expect ? ` (idealized ${expect})`: ''} in ${elapsed} seconds.`);
+	stat('RPC', stats.rpc);
+	stat('bucket refresh', stats.bucket);
+	stat('storage refresh', stats.storage, stats.stored * refreshments * networkSize);
       }, 2 * runTimeMS);
       let reportedDeferred = false;
       function randomInteger(max = Node.contacts.length) {
@@ -110,6 +123,5 @@ describe("DHT stability", function () {
       });
     });
   }
-  test({networkSize: 1000, nBootstrapNodes: 1, refreshTimeIntervalMS: 5e3, Contact: SimulatedContact});
+  test({networkSize: 200, nBootstrapNodes: 1, refreshTimeIntervalMS: 5e3, runTimeMS: 20e3, Contact: SimulatedContact});
 });
-

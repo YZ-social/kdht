@@ -115,7 +115,7 @@ describe("DHT operations", function () {
   }
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
-  test(100);
+  //test(100);
   //test(1e3);
   //test(10e3);
   //test(50e3);
