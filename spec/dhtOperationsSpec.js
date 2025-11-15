@@ -55,7 +55,9 @@ describe("DHT operations", function () {
       function reportAll() {
 	for (let i = 0; i < size; i++) contacts[i].node.report();
       }
+      let defaultRefreshTimeIntervalMS = Node.refreshTimeIntervalMS;
       beforeAll(async function () {
+	Node.refreshTimeIntervalMS = 0; // These tests don't flog. Let's see how big we can get in the absence of flooding.
 	const start = Date.now();
 	const promises = [];
 	let counter = 0;
@@ -81,6 +83,7 @@ describe("DHT operations", function () {
       afterAll(function () {
 	//contacts[contacts.length - 1].host.report();
 	//reportAll();
+	Node.refreshTimeIntervalMS = defaultRefreshTimeIntervalMS;
       });
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
@@ -115,7 +118,7 @@ describe("DHT operations", function () {
   }
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
-  //test(100);
+  test(100);
   //test(1e3);
   //test(10e3);
   //test(50e3);
