@@ -104,7 +104,15 @@ export class SimulatedContact extends Contact {
       helper = reject;
       const sender = this.host.contact;
       let transmission = this.transmitRpc(method, sender, ...rest)
-	  .then(result => this.isConnected ? this.deserialize(result, sender) : reject(new Error('disconnected')))
+	  .then(result => {
+	    if (this.isConnected) return this.deserialize(result, sender);
+	    // TODO: this needs to be bottlenecked in Node
+	    let key = this.key;
+	    let bucketIndex = this.host.getBucketIndex(key);
+	    let bucket = this.host.routingTable.get(bucketIndex);
+	    bucket?.removeKey(key); // We may have already removed it.
+	    return reject(new Error('disconnected'));
+	  })
           .finally(() => {
 	    this.endRequest(promise);
 	    Node.noteStatistic(start, 'rpc');
@@ -190,6 +198,7 @@ export class Helper { // A Contact that is some distance from an assumed targetK
   get key() { return this.contact.key; }
   get name() { return this.contact.name; }
   get node() { return this.contact.node; }
+  get isConnected() { return this.contact.isConnected; }
   static compare = (a, b) => { // For sort, where a,b have a distance property returning a BigInt.
     // Sort expects a number, so bigIntA - bigIntB won't do.
     // This works for elements of a list that have a distance property -- they do not strictly have to be Helper instances.
@@ -222,7 +231,7 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     const { node, host } = contact;
     // Every refereshMS, refresh every bucket that has not had a lookup since last time. (Keeps things fresh if no natural traffic.)
     clearInterval(this.refreshTimer);
-    this.refreshTimer = setInterval(() => host.refresh(host.getBucketIndex(node.key)), host.fuzzyInterval());
+    if (this.refreshTimeIntervalMS) this.refreshTimer = setInterval(() => host.refresh(host.getBucketIndex(node.key)), host.fuzzyInterval());
     return added;
   }
 
@@ -498,7 +507,7 @@ export class Node { // An actor within thin DHT.
     // Try to add to bucket
     contact = contact.clone(this);
     if (await bucket.addContact(contact)) {
-      //FIXME this.replicateCloserStorage(contact); // Don't bother awaiting
+      this.replicateCloserStorage(contact); // Don't bother awaiting
       return contact;
     }
     
@@ -523,20 +532,17 @@ export class Node { // An actor within thin DHT.
   }
   // Storage
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
-  storageTimers = {}
-  fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/3) {
-  //FIXME fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/4) {
+  storageTimers = {};
+  fuzzyInterval(target = this.refreshTimeIntervalMS/3, margin = target/3) {
     // Answer a random integer uniformly distributed around target, +/- margin.
     const adjustment = Math.floor(Math.random() * margin);
-    //return target + margin/2 - adjustment;
-    return target - adjustment;
+    return target + margin/2 - adjustment;
   }
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
     if (this.storage.get(key) === value) return; // If not a new value, no need to change refresh schedule.
     this.storage.set(key, value);
     clearInterval(this.storageTimers[key]);
-    //FIXME this.storageTimers[key] = setInterval(() => this.storageRefresh(key, value), this.fuzzyInterval());
-    this.storageTimers[key] = setInterval(() => this.storeValue(key, value), this.fuzzyInterval());
+    if (this.refreshTimeIntervalMS) this.storageTimers[key] = setInterval(() => this.storageRefresh(key, value), this.fuzzyInterval());
   }
   retrieveLocally(key) {     // Retrieve from memory.
     return this.storage.get(key);
@@ -544,17 +550,10 @@ export class Node { // An actor within thin DHT.
   // TODO: also store/retrievePersistent locally.
   async storageRefresh(key, value) { // Periodically replicate this data to the next closest nodes.
     const start = Date.now();
-    // TODO: would it be enough to just do findClosestHelpers and save some messages?
-    // Or maybe cache the results?
-    //let helpers = await this.locateNodes(key);
-    // No need to republish in all k. Just the next farthest out.
-    // let ourIndex = helpers.findIndex(h => h.contact.key === this.key);
-    // let next = helpers[ourIndex + 1];
-    // if (!next) return;
-    // next.contact.store(key, value);
 
-    // The paper says this can be optimized. Claude.ai says the above should work, but it doesn't.
-    await this.storeValue(key, value), this.fuzzyInterval(); // Simple, but k^2 system-wide.
+    await this.storeValue(key, value); // Simple, but k^2 system-wide.
+    // TODO: The paper says this can be optimized.
+    // Claude.ai suggests just writing to the next in line, but that doesn't work.
 
     Node.noteStatistic(start, 'storage');
   }
@@ -585,30 +584,20 @@ export class Node { // An actor within thin DHT.
     // const found = this.retrieveLocally(targetKey);
     // if (found !== undefined) return found;
 
-    // FIXME: We need to store at the closest node to the key that did NOT return a value.
-    // Maybe have iterate track these and stuff them into another property of the {value} object?
-    // But doesn't that get thrown immediately and thus there might be a closer one that might fail?
-    // And what does not returning the stored value mean? Returning [] indicating none closesr?
-    // FIXME: cache a value with a timeout at some node just outside of the k.
     const result = await this.iterate(targetKey, 'findValue');
     if (Node.isValueResult(result)) return result.value;
     return undefined;
   }
-  async storeValue(targetKey, value) { // Convert targetKey to a bigint if necessary, and store value there.
+  async storeValue(targetKey, value) { // Convert targetKey to a bigint if necessary, and store k copies.
     targetKey = await this.ensureKey(targetKey);
-    const helpers = await this.locateNodes(targetKey);
-    await Promise.all(helpers.map(helper => helper.contact.sendRpc('store', targetKey, value)));
-
-    // FIXME
-    // let k = this.constructor.k, batchSize = k;
-    // let helpers = await this.locateNodes(targetKey, k * 2); // A bit more than k, in case we need it.
-    // let stored = 0; // Make sure we successfully store k.
-    // while (stored < k && helpers.length) {
-    //   const batch = helpers.splice(0, batchSize);
-    //   batchSize = 2;
-    //   const results = await Promise.all(batch.map(helper => helper.contact.store(targetKey, value)));
-    //   for (let result of results) result && stored++; // Only count successful stores.
-    // }
+    // Go until we are sure have written k.
+    let remaining = this.constructor.k;
+    let helpers = await this.locateNodes(targetKey, remaining * 2);
+    helpers = helpers.reverse(); // So we can pop off the end.
+    // TODO: batches in parallel, if the client and network can handle it. (For now, better to spread it out.)
+    while (helpers.length && remaining) {
+      if (await helpers.pop().contact.store(targetKey, value)) remaining--;
+    }
   }
 
   // There are only three kinds of rpc results: 'pong', [...helper], {value: something}
@@ -618,59 +607,88 @@ export class Node { // An actor within thin DHT.
   static isArrayResult(rpcResult) {
     return Array.isArray(rpcResult);
   }
-  async step1(targetKey, finder, helper, keysSeen) {
+  async step(targetKey, finder, helper, keysSeen) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
-    keysSeen.add(helper.key);
     let results = await helper.contact.sendRpc(finder, targetKey).catch(() => undefined);
-    if (!results) { // Disconnected. Remove helper from our bucket.
-      let key = helper.contact.key;
-      let bucketIndex = this.getBucketIndex(key);
-      let bucket = this.routingTable.get(bucketIndex);
-      bucket?.removeKey(key); // We may have already removed it.
-      return [];
-    }
-    await this.addToRoutingTable(helper.contact);
+    if (!results) return []; // disconnected
+    await this.addToRoutingTable(helper.contact); // Live. Update bucket.
     if (Node.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
     }
     return results;
   }
-  async iterate(targetKey, finder, k = this.constructor.k) { // Promise the best Contacts known by anyone in the network,
-    // sorted by closest-first, by repeatedly trying to improve our closest known by applying
-    // finder. If the finder operation rejects (as 'findValue' does), so will we.
-    let candidates = this.findClosestHelpers(targetKey, k);
-    const keysSeen = new Set();
-    const alpha = this.constructor.alpha;
-    let n = alpha;
-    while (candidates.length && this.contact.isConnected) {
-      let helpers = candidates.slice(0, this.constructor.k);
-      //FIXME let helpers = candidates.slice(0, n);
-      let requests = helpers.map(helper => this.step1(targetKey, finder, helper, keysSeen));
-      let results = await Promise.all(requests);
+  async iterate(targetKey, finder, k = this.constructor.k) { // Promise a best-first list of k Helpers
+    // from the network, by repeatedly trying to improve our closest known by applying finder.
+    // But if any finder operation answer isValueResult, answer that instead.
 
+    // Always k
+    // let candidates = this.findClosestHelpers(targetKey, k);
+    // const keysSeen = new Set(candidates.map(h => h.key));
+    // while (candidates.length && this.contact.isConnected) {
+    //   let helpers = candidates.slice(0, k);
+    //   let requests = helpers.map(helper => this.step(targetKey, finder, helper, keysSeen));
+    //   let results = await Promise.all(requests);
+
+    //   let found = results.find(Node.isValueResult);
+    //   if (found) {
+    // 	// Store at all the others that didn't have it.
+    // 	//helpers.forEach(h => h.contact.store(targetKey, found.value));
+    // 	return found;
+    //   }
+
+    //   let closer = [].concat(...results); // By construction, these are closer than the ones we tried.
+    //   if (!closer.length) return candidates.slice(0, this.constructor.k);;
+    //   candidates = [...closer, ...candidates].sort(Helper.compare);
+    // }
+    // return [];
+    
+    let pool = this.findClosestHelpers(targetKey, k); // The k best-first Helpers known so far, that we have NOT queried yet.
+    const alpha = Math.min(pool.length, this.constructor.alpha);
+    const keysSeen = new Set(pool.map(h => h.key));    // Every key we've seen at all (candidates and all responses).
+    let toQuery = pool.slice(0, alpha);
+    pool = pool.slice(alpha); // Yes, this could be done with splice instead of slice, above, but it makes things hard to trace.
+    let best = []; // The accumulated closest-first result.
+    let trace = [ [[this.contact], pool, toQuery] ];
+    while (toQuery.length && this.contact.isConnected) {
+      let requests = toQuery.map(helper => this.step(targetKey, finder, helper, keysSeen));
+      let results = await Promise.all(requests);
+      
       let found = results.find(Node.isValueResult);
       if (found) {
-	// Store at all the others that didn't have it.
-	//FIXME helpers.forEach(h => h.contact.store(targetKey, found.value));
+	// Store at closest result that didn't have it (if any). This can cause more than k copies in the network.
+	for (let i = 0; i < toQuery.length; i++) {
+	  if (!Node.isValueResult(results[i])) {
+	    toQuery[i].contact.store(targetKey, found.value);
+	    break;
+	  }
+	}
 	return found;
       }
 
-      let closer = [].concat(...results); // By construction, these are closer than the ones we tried.
-      // TODO: return list of Contacts, not Helpers.
-
-      if (!closer.length) return candidates.slice(0, this.constructor.k);;
-      candidates = [...closer, ...candidates].sort(Helper.compare);
-      // FIXME instead of above two lines
-      // if (!closer.length) {
-      // 	if (n === k) return candidates;
-      // 	n = k;
-      // } else {
-      // 	n = alpha;
-      // }
-      // candidates = [...closer, ...candidates].sort(Helper.compare).slice(0, k);
+      let closer = [].concat(...results); // Flatten results.
+      trace.push([toQuery, pool, closer]);
+      // closer might not be in order, and one or more toQuery might belong among them.
+      best = [...closer, ...toQuery, ...best].sort(Helper.compare).slice(0, k);
+      if (!closer.length) {
+	if (toQuery.length === alpha && pool.length) {
+	  toQuery = pool.slice(0, k);  // Try again with k more. (Interestingly, not k-alpha.)
+	  pool = pool.slice(k);
+	} else break; // We've tried everything and there's nothing better.
+      } else {
+	pool = [...closer, ...pool].slice(0, k); // k best-first nodes that we have not queried.
+	toQuery = pool.slice(0, alpha);
+	pool = pool.slice(alpha);
+      }
     }
-    return [];
-  }    
+    // if (finder === 'findValue') {
+    //   console.log(this.name, 'failed to find', targetKey);
+    //   trace.forEach(([query, pool, result]) =>
+    // 	//console.log(query, 'produced', result)
+    // 	console.log(query.map(h => h.node.report(null)), `with ${pool.length} remaining, produced`, result.map(h => h.node.report(null)))
+    //   );
+    // }
+    return best;
+  }
   async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
     const start = Date.now();
     const targetKey = this.randomTargetInBucket(bucketIndex);
