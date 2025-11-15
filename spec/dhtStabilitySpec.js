@@ -3,7 +3,7 @@ const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For 
 
 
 describe("DHT stability", function () {
-  function test({networkSize, nBootstrapNodes = 1, refreshTimeIntervalMS = 100, runTimeMS = 10 * refreshTimeIntervalMS, Contact = SimulatedOverlayContact}) {
+  function test({networkSize, nBootstrapNodes = 1, refreshTimeIntervalMS = 1e3, runTimeMS = 3 * refreshTimeIntervalMS, Contact = SimulatedOverlayContact}) {
     // Generates a test suite with the given parameters (most described in https://github.com/YZ-social/flag/issues/31).
     nBootstrapNodes = Math.min(networkSize, nBootstrapNodes);
     describe(`Network of size ${networkSize}`, function () {
@@ -24,7 +24,8 @@ describe("DHT stability", function () {
       // But there are tests that we want to run "later" and we don't want to stall everything.
       // To do this, we allow a suite or test to add a promise to deferred. The promise will run asynchronously and
       // resolve whenever it is designed to do so, and the entire suite will wait for all of them before finally exiting.
-      const deferred = [];      
+      const deferred = [];
+      let defaultRefreshTime = Node.refreshTimeIntervalMS;
       afterAll(async function () {
 	// The named tests have all run. Start thrashing.
 	Node.resetStatistics();
@@ -41,9 +42,11 @@ describe("DHT stability", function () {
 	await Promise.all(deferred.map(thunk => thunk()));
 
 	console.log('finished', new Date());
+	Node.refreshTimeIntervalMS = defaultRefreshTime;
 	let stats = Node.statistics;
 	let replication = Math.min(Node.k, networkSize);
 	let refreshments = 2 * runTimeMS / refreshTimeIntervalMS ; // We average 2 refreshmments / refreshTimeIntervalMS
+	//reportAll();
 	console.log('\nAverage counts per node:');
 	console.log(`${stats.stored} stored items, expect ${replication}`);
 	console.log(`${stats.buckets} buckets`);
@@ -80,6 +83,8 @@ describe("DHT stability", function () {
 	  .then(contact => contact.join(randomContact(nBootstrapNodes)));
       }
       beforeAll(async function () {
+	defaultRefreshTime = Node.refreshTimeIntervalMS;
+	Node.refreshTimeIntervalMS = refreshTimeIntervalMS;
 	const start = Date.now();
 
 	// First create the bootstrap nodes in full.
@@ -90,6 +95,8 @@ describe("DHT stability", function () {
 	  if (i) await contact.join(Node.contacts[i - 1]);
 	  Node.contacts.push(contact);
 	}
+	console.log('Refresh time is', Node.contacts[0].node.refreshTimeIntervalMS / 1e3, 'seconds.');
+	console.log('Run time is', runTimeMS / 1e3, 'seconds.');
 
 	// add all clients
 	const joins = [];
@@ -110,10 +117,12 @@ describe("DHT stability", function () {
 		    .then(value => expect(value).toBe(i)));
 	  async function getLegit() {
 	    const node = randomNode();
+	    if (!node.contact.isConnected) console.error('wtf', node.report(null));
 	    const response = await node.locateValue(i);
 	    if (node.contact.isConnected) {
 	      expect(response).toBe(i);
 	    } else {
+	      console.log(`${node.name} was still disconnected when trying to look up ${i}. Retrying.`);
 	      await getLegit();
 	    }
 	  }
@@ -123,5 +132,5 @@ describe("DHT stability", function () {
       });
     });
   }
-  test({networkSize: 200, nBootstrapNodes: 1, refreshTimeIntervalMS: 5e3, runTimeMS: 20e3, Contact: SimulatedContact});
+  test({networkSize: 300, nBootstrapNodes: 1, refreshTimeIntervalMS: 10e3, Contact: SimulatedContact});
 });

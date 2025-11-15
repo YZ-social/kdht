@@ -72,6 +72,10 @@ export class SimulatedContact extends Contact {
   }
   disconnect() { // Simulate a disconnection, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
+
+    // For debugging, report disconnect of the last (unlikely to be bootstrap node).
+    if (Node.contacts?.length && this.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', this.farHomeContact.name);
+
     farHomeContact._connected = false;
     for (const timer of Object.values(this.node.storageTimers)) clearInterval(timer);
     for (let i = 0; i < Node.keySize; i++) clearInterval(this.node.routingTable.get(i)?.refreshTimer);
@@ -399,7 +403,7 @@ export class Node { // An actor within thin DHT.
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.name}${this.contact?.isConnected ? '' : ' disconnected'}`;
     function keyString(key) { return key.toString() + 'n'; }
-    function contactsString(contacts) { return contacts.map(contact => contact.name).join(', '); }
+    function contactsString(contacts) { return contacts.map(contact => contact.name + (contact.isConnect ? '(d)' : '')).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
 	Array.from(this.storage.entries()).map(([k, v]) => `${keyString(k)}: ${JSON.stringify(v)}`).join(', ');
@@ -617,7 +621,7 @@ export class Node { // An actor within thin DHT.
     }
     return results;
   }
-  async iterate(targetKey, finder, k = this.constructor.k) { // Promise a best-first list of k Helpers
+  async iterate(targetKey, finder, k = this.constructor.k * 2) { // Promise a best-first list of k Helpers
     // from the network, by repeatedly trying to improve our closest known by applying finder.
     // But if any finder operation answer isValueResult, answer that instead.
 
@@ -641,7 +645,8 @@ export class Node { // An actor within thin DHT.
     //   candidates = [...closer, ...candidates].sort(Helper.compare);
     // }
     // return [];
-    
+
+    // We start with more than we need, because some will turn out to be disconnected.
     let pool = this.findClosestHelpers(targetKey, k); // The k best-first Helpers known so far, that we have NOT queried yet.
     const alpha = Math.min(pool.length, this.constructor.alpha);
     const keysSeen = new Set(pool.map(h => h.key));    // Every key we've seen at all (candidates and all responses).
@@ -671,7 +676,7 @@ export class Node { // An actor within thin DHT.
       best = [...closer, ...toQuery, ...best].sort(Helper.compare).slice(0, k);
       if (!closer.length) {
 	if (toQuery.length === alpha && pool.length) {
-	  toQuery = pool.slice(0, k);  // Try again with k more. (Interestingly, not k-alpha.)
+	  toQuery = pool.slice(0, k);  // Try again with k more. (Interestingly, not k - alpha.)
 	  pool = pool.slice(k);
 	} else break; // We've tried everything and there's nothing better.
       } else {
