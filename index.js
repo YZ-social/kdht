@@ -136,10 +136,10 @@ export class SimulatedContact extends Contact {
 
 
 export class SimulatedOverlayContact extends SimulatedContact {
-  transmitRPC(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
-    return this.constructor.forwardThroughOverlay(this.host, this.node.key, rest);
+  transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
+    return this.constructor.forwardThroughOverlay(this.host, this.node.key, rest, this.node.name);
   }
-  static async forwardThroughOverlay(node, intendedContactKey, message) {
+  static async forwardThroughOverlay(node, intendedContactKey, message, debugTargetName) {
     // Pass the rest message through a Node towards the intendedContactKey, and promise the response.
 
     // If we are not connected or host is who we are intended to contact, then just have the host handle it.
@@ -147,14 +147,20 @@ export class SimulatedOverlayContact extends SimulatedContact {
     if (!node.routingTable.size || (intendedContactKey === node.key)) return await node.contact.receiveRpc(...message);
 
     // Otherwise find the closest bucket we have to intendendedContactKey, and forward through a simulated connection servicing that bucket.
-    const bestHelpers = node.findClosestHelpers(intendedContactKey, 1); // Best node knows of in its own data.
-    const bucketIndex = node.getBucketIndex(bestHelpers[0].key); // After joining, node will have one.
-    const bucket = node.routingTable.get(bucketIndex); // And will have a bucket at that index.
-    Node.assert(bucket, "No bucket to forward through", node, bestHelpers, bucketIndex, bucket);
-    // Here we simulate a long lived connection by caching the overlay remote node for this bucket.
-    const overlay = await bucket.ensureOverlay();
-    Node.assert(overlay, 'No overlay for bucket', bucket);
-    return await this.forwardThroughOverlay(overlay, intendedContactKey, message);
+    const bestHelpers = node.findClosestHelpers(intendedContactKey); // Best node knows of in its own data.
+    for (const helper of bestHelpers) { // Find the best one that already has a bucket
+      const bucketIndex = node.getBucketIndex(helper.key);
+      const bucket = node.routingTable.get(bucketIndex);
+      if (!bucket) continue;
+      // Here we simulate a long lived connection by caching the overlay remote node for this bucket.
+      const overlay = await bucket.ensureOverlay();
+      Node.assert(overlay, 'No overlay for bucket', bucket);
+      const start = Date.now();
+      const result = await this.forwardThroughOverlay(overlay, intendedContactKey, message, debugTargetName);
+      Node.noteStatistic(start, 'overlay');
+      return result;
+    }
+    Node.assert(true, "No bucket to forward through", node, bestHelpers);
   }
   static maxOverlayConnections = 200;
   async makeOverlay(contact, ourBucket, force) {
@@ -338,6 +344,7 @@ export class Node { // An actor within thin DHT.
   /* Internal operations that do not talk to other nodes */
   static zero = 0n;
   static one = 1n;
+  static _stats = {};
   static get statistics() { // Return {bucket, storage, rpc}, where each value is [elapsedInSeconds, count, averageInMSToNearestTenth].
     // If Nodes.contacts is populated, also report average number of buckets and contacts.
     const { _stats } = this;
@@ -364,6 +371,7 @@ export class Node { // An actor within thin DHT.
       bucket: Object.assign({}, stat), // copy the model
       storage: Object.assign({}, stat),
       rpc: Object.assign({}, stat),
+      overlay: Object.assign({}, stat)
     };
   }
   static noteStatistic(startTimeMS, name) { // Given a startTimeMS, update statistics bucket for name.
@@ -550,8 +558,8 @@ export class Node { // An actor within thin DHT.
       await thunk();
       const lag = fired - scheduled - timeout;
       //Node.assert(lag < 5, "Cannot keep up with", statisticsKey);
-      if (statisticsKey) {
-	const status = Node._stats?.[statisticsKey];
+      const status = Node._stats?.[statisticsKey];
+      if (status) {
 	const elapsed = Date.now() - fired; // elapsed in thunk
 	status.count++;
 	status.elapsed += elapsed;
