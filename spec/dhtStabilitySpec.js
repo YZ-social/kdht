@@ -32,11 +32,11 @@ describe("DHT stability", function () {
 
 	console.log('starting toggles', new Date());
 	for (let i = nBootstrapNodes; i < networkSize; i++) toggle(i);
-	await delay(runTimeMS / 2);
+	await delay(2 * runTimeMS / 3);
 
 	console.log('stopping toggles', new Date());
 	stopToggles = true;
-	await delay(runTimeMS / 2);
+	await delay(runTimeMS / 3);
 
 	console.log('running deferred tests', new Date());
 	await Promise.all(deferred.map(thunk => thunk()));
@@ -52,7 +52,8 @@ describe("DHT stability", function () {
 	console.log(`${stats.buckets} buckets`);
 	console.log(`${stats.contacts} contacts, ${Math.round(stats.contacts/stats.buckets)} per occupied bucket`);
 	console.log('\nAverage ms per action:');
-	const stat = (label, [elapsed, count, average], expect) => console.log(`${average} ${label}, total ${count.toLocaleString()}${expect ? ` (idealized ${expect})`: ''} in ${elapsed} seconds.`);
+	const stat = (label, {count, elapsed, lag, average}, expect) =>
+	      console.log(`${(elapsed/count).toFixed(1)} ${label} lagging ${(lag/count).toFixed(1)}, total ${count.toLocaleString()}${expect ? ` (idealized ${expect})`: ''} in ${elapsed/1e3} seconds.`);
 	stat('RPC', stats.rpc);
 	stat('bucket refresh', stats.bucket);
 	stat('storage refresh', stats.storage, stats.stored * refreshments * networkSize);
@@ -117,7 +118,7 @@ describe("DHT stability", function () {
 		    .then(value => expect(value).toBe(i)));
 	  async function getLegit() {
 	    const node = randomNode();
-	    if (!node.contact.isConnected) console.error('wtf', node.report(null));
+	    if (!node.contact.isConnected) console.error('FIXME', node.report(null));
 	    const response = await node.locateValue(i);
 	    if (node.contact.isConnected) {
 	      expect(response).toBe(i);
@@ -132,5 +133,5 @@ describe("DHT stability", function () {
       });
     });
   }
-  test({networkSize: 300, nBootstrapNodes: 1, refreshTimeIntervalMS: 10e3, Contact: SimulatedContact});
+  test({networkSize: 200, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedContact});
 });

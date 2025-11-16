@@ -77,8 +77,7 @@ export class SimulatedContact extends Contact {
     if (Node.contacts?.length && this.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', this.farHomeContact.name);
 
     farHomeContact._connected = false;
-    for (const timer of Object.values(this.node.storageTimers)) clearInterval(timer);
-    for (let i = 0; i < Node.keySize; i++) clearInterval(this.node.routingTable.get(i)?.refreshTimer);
+    this.node.refreshTimeIntervalMS = 0; // Stops refresh timers.
     const rejection = new Error('disconnected'); // Gathers stack trace.
     try {
       farHomeContact.inFlight.forEach(promise => promise.reject(rejection));
@@ -233,9 +232,9 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     this.contacts.push(contact);
     this.lastUpdated = Date.now();
     const { node, host } = contact;
-    // Every refereshMS, refresh every bucket that has not had a lookup since last time. (Keeps things fresh if no natural traffic.)
+    // Refresh this bucket unless we addContact again before it goes off.
     clearInterval(this.refreshTimer);
-    if (this.refreshTimeIntervalMS) this.refreshTimer = setInterval(() => host.refresh(host.getBucketIndex(node.key)), host.fuzzyInterval());
+    this.refreshTimer = host.repeat(() => host.refresh(host.getBucketIndex(node.key)), 'bucket');
     return added;
   }
 
@@ -342,14 +341,6 @@ export class Node { // An actor within thin DHT.
   static get statistics() { // Return {bucket, storage, rpc}, where each value is [elapsedInSeconds, count, averageInMSToNearestTenth].
     // If Nodes.contacts is populated, also report average number of buckets and contacts.
     const { _stats } = this;
-    const average = stat => {
-      const [elapsed, count] = stat;
-      stat[2] = Math.round(1e3 * elapsed/count);
-      stat[0] = elapsed / 1e3;
-    };
-    average(_stats.bucket);
-    average(_stats.storage);
-    average(_stats.rpc);
     if (this.contacts?.length) {
       let buckets = 0, contacts = 0, stored = 0;
       for (const {node} of this.contacts) {
@@ -368,17 +359,18 @@ export class Node { // An actor within thin DHT.
     return _stats;
   }
   static resetStatistics() { // Reset statistics to zero.
+    const stat = {count:0, elapsed:0, lag:0};
     this._stats = {
-      bucket: [0, 0],
-      storage: [0, 0],
-      rpc: [0, 0]
+      bucket: Object.assign({}, stat), // copy the model
+      storage: Object.assign({}, stat),
+      rpc: Object.assign({}, stat),
     };
   }
-  static noteStatistic(startTimeMS, name) {
+  static noteStatistic(startTimeMS, name) { // Given a startTimeMS, update statistics bucket for name.
     const stat = this._stats?.[name];
     if (!stat) return;
-    stat[0] += Date.now() - startTimeMS;
-    stat[1]++;
+    stat.count++;
+    stat.elapsed += Date.now() - startTimeMS;
   }
   // Examination
   static distance(keyA, keyB) { // xor
@@ -536,31 +528,48 @@ export class Node { // An actor within thin DHT.
   }
   // Storage
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
-  storageTimers = {};
   fuzzyInterval(target = this.refreshTimeIntervalMS/3, margin = target/3) {
     // Answer a random integer uniformly distributed around target, +/- margin.
     const adjustment = Math.floor(Math.random() * margin);
-    return target + margin/2 - adjustment;
+    return Math.floor(target + margin/2 - adjustment);
+  }
+  repeat(thunk, statisticsKey, interval) {
+    // Clear previous, and return a timer that will go off in interval, and repeat.
+    // If not specified, interval computes a new fuzzyInterval each time it repeats.
+    // Does nothing if interval is zero.
+
+    // We use repeated setTimer rather than setInterval because it is important in the
+    // default case to use a different random interval each time, so that we don't have
+    // everything firing at once repeatedly.
+    const timeout = (interval === undefined) ?  this.fuzzyInterval() : interval;
+    if (!timeout) return null;
+    const scheduled = Date.now();
+    return setTimeout(async () => {
+      const fired = Date.now();
+      this.repeat(thunk, statisticsKey, interval); // Set it now, so as to not be further delayed by thunk.
+      await thunk();
+      const lag = fired - scheduled - timeout;
+      //Node.assert(lag < 5, "Cannot keep up with", statisticsKey);
+      if (statisticsKey) {
+	const status = Node._stats?.[statisticsKey];
+	const elapsed = Date.now() - fired; // elapsed in thunk
+	status.count++;
+	status.elapsed += elapsed;
+	status.lag += lag;
+      }
+    }, timeout);
   }
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
     if (this.storage.get(key) === value) return; // If not a new value, no need to change refresh schedule.
     this.storage.set(key, value);
-    clearInterval(this.storageTimers[key]);
-    if (this.refreshTimeIntervalMS) this.storageTimers[key] = setInterval(() => this.storageRefresh(key, value), this.fuzzyInterval());
+    // TODO: The paper says this can be optimized.
+    // Claude.ai suggests just writing to the next in line, but that doesn't work.
+    this.repeat(() => this.storeValue(key, value), 'storage');
   }
   retrieveLocally(key) {     // Retrieve from memory.
     return this.storage.get(key);
   }
   // TODO: also store/retrievePersistent locally.
-  async storageRefresh(key, value) { // Periodically replicate this data to the next closest nodes.
-    const start = Date.now();
-
-    await this.storeValue(key, value); // Simple, but k^2 system-wide.
-    // TODO: The paper says this can be optimized.
-    // Claude.ai suggests just writing to the next in line, but that doesn't work.
-
-    Node.noteStatistic(start, 'storage');
-  }
   async replicateCloserStorage(contact) { // Replicate to new contact any of our data for which contact is closer than us.
     const ourKey = this.key;
     for (const key in this.storage.keys()) {
@@ -695,10 +704,8 @@ export class Node { // An actor within thin DHT.
     return best;
   }
   async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
-    const start = Date.now();
     const targetKey = this.randomTargetInBucket(bucketIndex);
     await this.locateNodes(targetKey); // Side-effect is to update this bucket.
-    Node.noteStatistic(start, 'bucket');
   }
   async join(contact) {
     await this.addToRoutingTable(contact);
