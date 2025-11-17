@@ -2,6 +2,9 @@ import { Node, KBucket, SimulatedContact, Helper } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
 describe("DHT internals", function () {
+  afterAll(function () {
+    Node.stopRefresh();
+  });
 
   describe("structure", function () {
     let example;

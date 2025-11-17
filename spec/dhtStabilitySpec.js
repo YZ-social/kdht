@@ -7,9 +7,9 @@ describe("DHT stability", function () {
     // Generates a test suite with the given parameters (most described in https://github.com/YZ-social/flag/issues/31).
     nBootstrapNodes = Math.min(networkSize, nBootstrapNodes);
     describe(`Network of size ${networkSize}`, function () {
-      Node.contacts = [];
       let stopToggles = false;
       function toggle(i) { // Start disconnect/reconnect timer on contact i.
+	// TODO: use Node#repeat with a margin that does not produce a ridiculous short minimum uptime.
 	setTimeout(async () => {
 	  const contact = Node.contacts[i];
 	  contact.disconnect();
@@ -25,7 +25,7 @@ describe("DHT stability", function () {
       // To do this, we allow a suite or test to add a promise to deferred. The promise will run asynchronously and
       // resolve whenever it is designed to do so, and the entire suite will wait for all of them before finally exiting.
       const deferred = [];
-      let defaultRefreshTime = Node.refreshTimeIntervalMS;
+      let defaultRefreshTime;
       afterAll(async function () {
 	// The named tests have all run. Start thrashing.
 	Node.resetStatistics();
@@ -46,15 +46,17 @@ describe("DHT stability", function () {
 	let stats = Node.statistics;
 	let replication = Math.min(Node.k, networkSize);
 	let refreshments = 2 * runTimeMS / refreshTimeIntervalMS ; // We average 2 refreshmments / refreshTimeIntervalMS
-	//reportAll();
+	//Node.reportAll();
 	console.log('\nAverage counts per node:');
 	console.log(`${stats.stored} stored items, expect ${replication}`);
 	console.log(`${stats.buckets} buckets`);
-	console.log(`${stats.contacts} contacts, ${Math.round(stats.contacts/stats.buckets)} per occupied bucket`);
+	console.log(`${stats.contacts} contacts, ${Math.round(stats.contacts/stats.buckets)} per bucket`);
+	console.log(`${stats.overlays} webrtc connections, ${Math.round(stats.overlays/stats.buckets)} per bucket`);	
 	console.log('\nAverage ms per action:');
 	const stat = (label, {count, elapsed, lag, average}, expect) =>
 	      console.log(`${(elapsed/count).toFixed(1)} ${label} lagging ${(lag/count).toFixed(1)}, total ${count.toLocaleString()}${expect ? ` (idealized ${expect})`: ''} in ${elapsed/1e3} seconds.`);
 	stat('RPC', stats.rpc);
+	stat('overlay leg', stats.overlay);	
 	stat('bucket refresh', stats.bucket);
 	stat('storage refresh', stats.storage, stats.stored * refreshments * networkSize);
       }, 2 * runTimeMS);
@@ -71,9 +73,6 @@ describe("DHT stability", function () {
       function randomNode(max = Node.contacts.length) {
 	return randomContact(max).node;
       }
-      function reportAll() {
-	Node.contacts.forEach(c => c.node.report());
-      }
       async function expectedNodes(target) {
 	const key = await Node.key(target);
 	let connected = Node.contacts.filter(c => c.isConnected);
@@ -86,6 +85,7 @@ describe("DHT stability", function () {
       beforeAll(async function () {
 	defaultRefreshTime = Node.refreshTimeIntervalMS;
 	Node.refreshTimeIntervalMS = refreshTimeIntervalMS;
+	Node.contacts = [];
 	const start = Date.now();
 
 	// First create the bootstrap nodes in full.
@@ -108,7 +108,7 @@ describe("DHT stability", function () {
 	for (let i = 0; i < networkSize; i++) writes.push(randomNode().storeValue(i, i));
 	await Promise.all(writes);
 	const elapsed = Date.now() - start;
-	console.log(`Setup ${networkSize} nodes complete in ${(elapsed/1e3).toFixed(1)} seconds (${Math.round(elapsed/networkSize)} ms/node).`);
+	console.log(`Setup ${networkSize} ${Contact.name} complete in ${(elapsed/1e3).toFixed(1)} seconds (${Math.round(elapsed/networkSize)} ms/node).`);
       }, (networkSize/100 + 1) * networkSize + 5e3);
 
       it('initially reads.', async function () {
@@ -133,5 +133,5 @@ describe("DHT stability", function () {
       });
     });
   }
-  test({networkSize: 200, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedContact});
+  test({networkSize: 3, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
 });

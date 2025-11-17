@@ -35,10 +35,6 @@ export class Contact {
     node.contact ||= contact;
     contact.node = node;
     contact.host = host; // In whose buckets does this contact live?
-    // Cache these because we use contact.node undefined to indicate disconnection,
-    // and we will still need to know key in order to removeKey from bucket (and name for debugging).
-    contact.name = node.name;
-    contact.key = node.key;
     return contact;
   }
   static async create(properties) {
@@ -48,8 +44,18 @@ export class Contact {
     const node = Node.fromKey(key);
     return this.fromNode(node, host || node);
   }
+  get name() { return this.node.name; }
+  get key() { return this.node.key; }
   join(other) { return this.node.join(other); }
-  store(key, value) { return this.sendRpc('store', key, value).catch(() => undefined); }
+  sendCatchingRpc(...rest) {
+    return this.sendRpc(...rest)
+      .catch(error => {
+	return undefined;
+      });
+  }
+  store(key, value) {
+    return this.sendCatchingRpc('store', key, value);
+  }
 }
 export class SimulatedContact extends Contact {
   clone(hostNode) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
@@ -70,21 +76,23 @@ export class SimulatedContact extends Contact {
   get isConnected() { // Ask our canonical home contact.
     return this.farHomeContact._connected;
   }
-  disconnect() { // Simulate a disconnection, marking as such and rejecting any RPCs in flight.
+  disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
 
-    // For debugging, report disconnect of the last (unlikely to be bootstrap node).
+    // For debugging, show that disconnects are happening by reporting if the highest number Node.contacts is disconnecting.
+    // (The lower number Node.contacts might be bootstrap nodes.)
     if (Node.contacts?.length && this.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', this.farHomeContact.name);
 
     farHomeContact._connected = false;
-    this.node.refreshTimeIntervalMS = 0; // Stops refresh timers.
+    this.node.stopRefresh();
     const rejection = new Error('disconnected'); // Gathers stack trace.
     try {
       farHomeContact.inFlight.forEach(promise => promise.reject(rejection));
     } catch (error) {
       console.error(`Error during disconnect of ${this.farHomeContact.name}.`, error);
     }
-    // Debugging: Report if we're killing the last one.
+
+    // For debugging: Report if we're killing the last holder of our data.
     if (!Node.contacts) return;
     for (const key of this.node.storage.keys()) {
       let remaining = [];
@@ -100,21 +108,25 @@ export class SimulatedContact extends Contact {
       requestResponse;
   }
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
+    const sender = this.host.contact;
+    if (!sender.isConnected) return Promise.reject('RPC from closed sender');
+    
     const start = Date.now();
     const { farHomeContact } = this;
     let helper;
     const promise = new Promise(async (resolve, reject) => {
       helper = reject;
-      const sender = this.host.contact;
+      // Use of new Error here gets a better stack frame.
       let transmission = this.transmitRpc(method, sender, ...rest)
 	  .then(result => {
+	    if (!sender.isConnected) return reject(new Error('sender closed during RPC'));
 	    if (this.isConnected) return this.deserialize(result, sender);
-	    // TODO: this needs to be bottlenecked in Node
+	    // Note that recipient is gone. TODO: this needs to be bottlenecked in Node
 	    let key = this.key;
 	    let bucketIndex = this.host.getBucketIndex(key);
 	    let bucket = this.host.routingTable.get(bucketIndex);
-	    bucket?.removeKey(key); // We may have already removed it.
-	    return reject(new Error('disconnected'));
+	    bucket.removeKey(key); // We may have already removed it.
+	    return reject(new Error('RPC receiver disconnected'));
 	  })
           .finally(() => {
 	    this.endRequest(promise);
@@ -137,24 +149,41 @@ export class SimulatedContact extends Contact {
 
 export class SimulatedOverlayContact extends SimulatedContact {
   transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
+    //if (!this.node.contact.isConnected) console.log(this.host.name, 'trying to reach disconnected node', this.node.name);
     return this.constructor.forwardThroughOverlay(this.host, this.node.key, rest, this.node.name);
   }
   static async forwardThroughOverlay(node, intendedContactKey, message, debugTargetName) {
     // Pass the rest message through a Node towards the intendedContactKey, and promise the response.
 
-    // If we are not connected or host is who we are intended to contact, then just have the host handle it.
-    Node.assert(node?.routingTable, "No host?.routingTable", node);
-    if (!node.routingTable.size || (intendedContactKey === node.key)) return await node.contact.receiveRpc(...message);
+    if (!node.contact.isConnected) return Promise.reject(new Error('overlay through disconnected node'));
+    
+    // If we are not yet connected or host is who we are intended to contact, then just have the host handle it.
+    if (!node.routingTable.size || (intendedContactKey === node.key))
+      return await node.contact.receiveRpc(...message); // FIXME .then check if node.contact.isConnected
 
-    // Otherwise find the closest bucket we have to intendendedContactKey, and forward through a simulated connection servicing that bucket.
+    // Otherwise find the closest bucket we have to intendedContactKey, and forward through a simulated connection servicing that bucket.
     const bestHelpers = node.findClosestHelpers(intendedContactKey); // Best node knows of in its own data.
-    for (const helper of bestHelpers) { // Find the best one that already has a bucket
+    const helpersNotUs = bestHelpers.filter(h => h.key !== node.key);
+    //if (node.name === '0')
+      // console.log(node.name, node.contact.isConnected, 'to', debugTargetName,
+      // 		  bestHelpers.map(h => `${h.name}${h.isConnected ? '' : 'd'}`),
+      // 		  node.contacts.map(c => c.name + (c.isConnected ? '' : 'd')));
+    for (const helper of helpersNotUs) { // Find the best one that already has a bucket
       const bucketIndex = node.getBucketIndex(helper.key);
       const bucket = node.routingTable.get(bucketIndex);
       if (!bucket) continue;
       // Here we simulate a long lived connection by caching the overlay remote node for this bucket.
       const overlay = await bucket.ensureOverlay();
-      Node.assert(overlay, 'No overlay for bucket', bucket);
+
+      if (!overlay) continue;
+
+      // if (node.name === '0') {
+      //   console.log(node.name, node.contact.isConnected, 'overlay', overlay.name, 'to', debugTargetName,
+      // 		    node.constacts.map(c => c.name + (c.isConnected ? '' : 'd')),
+      // 		    bestHelpers.map(h => h.name + (h.isConnected ? '' : 'd')),
+      // 		    helpersNotUs.map(h => h.name + (h.isConnected ? '' : 'd')));
+      // 	Node.reportAll();
+      // }
       const start = Date.now();
       const result = await this.forwardThroughOverlay(overlay, intendedContactKey, message, debugTargetName);
       Node.noteStatistic(start, 'overlay');
@@ -230,7 +259,7 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
       const head = this.contacts[0];
       const {key, host} = head;
       this.removeKey(key);
-      if (await head.sendRpc('ping', key).catch(() => false)) { // still alive
+      if (await head.sendCatchingRpc('ping', key)) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back and update timestamp, below.
       } // Else dead head, so there's room for the new contact after all.
@@ -297,8 +326,8 @@ export class Node { // An actor within thin DHT.
   static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
-  constructor({refreshTimeIntervalMS = Node.refreshTimeIntervalMS, ...properties}) {
-    Object.assign(this, {refreshTimeIntervalMS, ...properties});
+  constructor({refreshIntervalMS = Node.refreshIntervalMS, ...properties}) {
+    Object.assign(this, {refreshIntervalMS, ...properties});
   }
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
@@ -349,7 +378,7 @@ export class Node { // An actor within thin DHT.
     // If Nodes.contacts is populated, also report average number of buckets and contacts.
     const { _stats } = this;
     if (this.contacts?.length) {
-      let buckets = 0, contacts = 0, stored = 0;
+      let buckets = 0, contacts = 0, stored = 0, overlays = 0;
       for (const {node} of this.contacts) {
 	stored += node.storage.size;
 	for (let i = 0; i < Node.keySize; i++) {
@@ -357,9 +386,11 @@ export class Node { // An actor within thin DHT.
 	  if (!bucket) continue;
 	  buckets++;
 	  contacts += bucket.contacts.length;
+	  overlays += bucket.overlayContacts.length;
 	}
       }
       _stats.contacts = Math.round(contacts/this.contacts.length);
+      _stats.overlays = Math.round(overlays/this.contacts.length);
       _stats.stored = Math.round(stored/this.contacts.length);
       _stats.buckets = Math.round(buckets/this.contacts.length);
     }
@@ -403,7 +434,7 @@ export class Node { // An actor within thin DHT.
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.name}${this.contact?.isConnected ? '' : ' disconnected'}`;
     function keyString(key) { return key.toString() + 'n'; }
-    function contactsString(contacts) { return contacts.map(contact => contact.name + (contact.isConnect ? '(d)' : '')).join(', '); }
+    function contactsString(contacts) { return contacts.map(contact => contact.name + (contact.isConnected ? '' : 'd')).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
 	Array.from(this.storage.entries()).map(([k, v]) => `${keyString(k)}: ${JSON.stringify(v)}`).join(', ');
@@ -418,6 +449,10 @@ export class Node { // An actor within thin DHT.
     }
     return logger ? logger(report) : report;
   }
+  static reportAll() { // Report every node -- only useful for simulations.
+    Node.contacts?.forEach(c => c.node.report());
+  }
+
   static findClosestHelpers(targetKey, contacts, count) { // Utility, useful for computing and debugging.
     const helpers = contacts.map(contact => new Helper(contact, Node.distance(targetKey, contact.key)));
     helpers.sort(Helper.compare);
@@ -541,16 +576,24 @@ export class Node { // An actor within thin DHT.
     const adjustment = Math.floor(Math.random() * margin);
     return Math.floor(target + margin/2 - adjustment);
   }
+  static stopRefresh() { // Stop all repeat timers in all instances the next time they come around.
+    this.constructor.refreshTimeIntervalMS = 0;
+  }
+  stopRefresh() { // Stop repeat timeers in this instance.
+    this.refreshTimeIntervalMS = 0;
+  }
   repeat(thunk, statisticsKey, interval) {
     // Clear previous, and return a timer that will go off in interval, and repeat.
     // If not specified, interval computes a new fuzzyInterval each time it repeats.
     // Does nothing if interval is zero.
+    if (0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS) return null; // regardless of interval
 
     // We use repeated setTimer rather than setInterval because it is important in the
     // default case to use a different random interval each time, so that we don't have
     // everything firing at once repeatedly.
     const timeout = (interval === undefined) ?  this.fuzzyInterval() : interval;
     if (!timeout) return null;
+
     const scheduled = Date.now();
     return setTimeout(async () => {
       const fired = Date.now();
@@ -617,7 +660,9 @@ export class Node { // An actor within thin DHT.
     helpers = helpers.reverse(); // So we can pop off the end.
     // TODO: batches in parallel, if the client and network can handle it. (For now, better to spread it out.)
     while (helpers.length && remaining) {
-      if (await helpers.pop().contact.store(targetKey, value)) remaining--;
+      const contact = helpers.pop().contact;
+      const stored = await contact.store(targetKey, value);
+      if (stored) remaining--;
     }
   }
 
@@ -630,7 +675,8 @@ export class Node { // An actor within thin DHT.
   }
   async step(targetKey, finder, helper, keysSeen) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
-    let results = await helper.contact.sendRpc(finder, targetKey).catch(() => undefined);
+    const contact = helper.contact;
+    let results = await contact.sendCatchingRpc(finder, targetKey);
     if (!results) return []; // disconnected
     await this.addToRoutingTable(helper.contact); // Live. Update bucket.
     if (Node.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.

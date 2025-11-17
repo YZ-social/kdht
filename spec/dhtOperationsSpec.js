@@ -1,10 +1,18 @@
 import { Node, SimulatedContact, SimulatedOverlayContact } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
-//const Contact = SimulatedContact;
-const Contact = SimulatedOverlayContact;
+const Contact = SimulatedContact;
+//const Contact = SimulatedOverlayContact;
 
 describe("DHT operations", function () {
+  let defaultRefreshTimeIntervalMS;
+  beforeAll(function () {
+    defaultRefreshTimeIntervalMS = Node.refreshTimeIntervalMS;
+    Node.refreshTimeIntervalMS = 0; // These tests don't flog. Let's see how big we can get in the absence of flooding.
+  });
+  afterAll(function () {
+    Node.refreshTimeIntervalMS = defaultRefreshTimeIntervalMS;
+  });
   describe("solo system", function () {
     let contact;
     beforeAll(async function () {
@@ -51,13 +59,9 @@ describe("DHT operations", function () {
   function test(size) {
     describe(`Network of size ${size}`, function () {
       let expectedLength = Math.min(size, Node.k);
-      let contacts = [];
-      function reportAll() {
-	for (let i = 0; i < size; i++) contacts[i].node.report();
-      }
-      let defaultRefreshTimeIntervalMS = Node.refreshTimeIntervalMS;
+      let contacts;
       beforeAll(async function () {
-	Node.refreshTimeIntervalMS = 0; // These tests don't flog. Let's see how big we can get in the absence of flooding.
+	contacts = [];
 	const start = Date.now();
 	const promises = [];
 	let counter = 0;
@@ -77,14 +81,8 @@ describe("DHT operations", function () {
 	for (let i = 1; i < size; i++) promises.push(make1(i));
 	await Promise.all(promises);
 	const elapsed = Date.now() - start;
-	console.log(`Creating ${size} nodes took ${elapsed/1e3} seconds, or ${elapsed/size} ms/node.`);
-	//reportAll();
+	console.log(`Creating ${size} ${Contact.name} took ${elapsed/1e3} seconds, or ${elapsed/size} ms/node.`);
       }, 50 * size);
-      afterAll(function () {
-	//contacts[contacts.length - 1].host.report();
-	//reportAll();
-	Node.refreshTimeIntervalMS = defaultRefreshTimeIntervalMS;
-      });
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
 	  const from = contacts[i];

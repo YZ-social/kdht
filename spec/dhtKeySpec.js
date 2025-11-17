@@ -1,7 +1,10 @@
 import { Node } from '../index.js';
-const { describe, it, expect, BigInt } = globalThis; // For linters.
+const { describe, it, expect, BigInt, afterAll } = globalThis; // For linters.
 
 describe("DHT Keys", function () {
+  afterAll(function () {
+    Node.stopRefresh();
+  });
 
   describe("Node creation", function () {
 
