@@ -109,34 +109,29 @@ export class SimulatedContact extends Contact {
   }
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
-    if (!sender.isConnected) return Promise.reject('RPC from closed sender');
+    if (!sender.isConnected) return Promise.reject('RPC from closed sender.');
     
     const start = Date.now();
-    const { farHomeContact } = this;
-    let helper;
-    const promise = new Promise(async (resolve, reject) => {
-      helper = reject;
-      // Use of new Error here gets a better stack frame.
-      let transmission = this.transmitRpc(method, sender, ...rest)
-	  .then(result => {
-	    if (!sender.isConnected) return reject(new Error('sender closed during RPC'));
-	    if (this.isConnected) return this.deserialize(result, sender);
-	    // Note that recipient is gone. TODO: this needs to be bottlenecked in Node
-	    let key = this.key;
-	    let bucketIndex = this.host.getBucketIndex(key);
-	    let bucket = this.host.routingTable.get(bucketIndex);
-	    bucket.removeKey(key); // We may have already removed it.
-	    return reject(new Error('RPC receiver disconnected'));
-	  })
-          .finally(() => {
-	    this.endRequest(promise);
-	    Node.noteStatistic(start, 'rpc');
-	  });
-      resolve(transmission);
-    });
-    promise.reject = helper;
+    let promise = this.transmitRpc(method, sender, ...rest); // The main event.
     this.startRequest(promise);
-    return promise;
+    return promise
+      .catch(rejection => {
+	// Note that recipient is gone.
+	// TODO: this common code for all implementations needs to be bottlenecked through Node
+	let key = this.key;
+	let bucketIndex = this.host.getBucketIndex(key);
+	let bucket = this.host.routingTable.get(bucketIndex);
+	bucket.removeKey(key); // We may have already removed it.
+	throw (new Error(rejection));
+      })
+      .then(result => {
+	if (!sender.isConnected) throw (new Error('Sender closed during RPC.')); // No need to remove recipient key from host bucket.
+	return this.deserialize(result, sender);
+      })
+      .finally(() => {
+	this.endRequest(promise);
+	Node.noteStatistic(start, 'rpc');
+      });
   }
   transmitRpc(...rest) {
     return this.receiveRpc(...rest);

@@ -133,5 +133,5 @@ describe("DHT stability", function () {
       });
     });
   }
-  test({networkSize: 3, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
+  test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 10e3, Contact: SimulatedContact});
 });

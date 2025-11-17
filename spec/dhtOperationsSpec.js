@@ -1,9 +1,6 @@
 import { Node, SimulatedContact, SimulatedOverlayContact } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
-const Contact = SimulatedContact;
-//const Contact = SimulatedOverlayContact;
-
 describe("DHT operations", function () {
   let defaultRefreshTimeIntervalMS;
   beforeAll(function () {
@@ -56,7 +53,7 @@ describe("DHT operations", function () {
       expect(found.map(helper => helper.key)).toEqual([contact.key, other.key]);
     });
   });
-  function test(size) {
+  function test(size, Contact = SimulatedOverlayContact) {
     describe(`Network of size ${size}`, function () {
       let expectedLength = Math.min(size, Node.k);
       let contacts;
@@ -114,6 +111,7 @@ describe("DHT operations", function () {
       }
     });
   }
+  //test(40, SimulatedOverlayContact);
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);
