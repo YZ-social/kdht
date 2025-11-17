@@ -36,18 +36,16 @@ describe("DHT internals", function () {
 	let bucket = new KBucket();
 	bucket.contacts.push(await SimulatedContact.fromKey(1));
 	bucket.contacts.push(await SimulatedContact.fromKey(2));
-	bucket.replacementCache.push(await SimulatedContact.fromKey(3));
-	bucket.replacementCache.push(await SimulatedContact.fromKey(4));
 	example.routingTable.set(90, bucket);
       });
       afterAll(function () {
 	example.routingTable.delete(90);
       });
-      it("includes name, routing/replacement names and stored items by bigInt key.", function () {
+      it("includes name, routing names and stored items by bigInt key.", function () {
 	let report = example.report(string => string); // No op for what to do with the report. Just return it.
 	expect(report).toBe(`Node: 0 disconnected
   storing 2: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
-  90: 1n, 2n replacements: 3n, 4n`);
+  90: 1n, 2n`);
       });
     });
 
@@ -177,7 +175,7 @@ describe("DHT internals", function () {
 	expect(bucket.contacts[0].key).toBe(Node.one);
       });
       describe("examples", function () {
-	const nOthers = Node.k + 40; // k+31 will not overflow. k+40 would overflow to a replacementCache.
+	const nOthers = Node.k + 40; // k+31 will not overflow. k+40 would overflow.
 	let node;
 	beforeAll(async function () {
 	  const host = SimulatedContact.fromKey(Node.zero);
@@ -189,10 +187,10 @@ describe("DHT internals", function () {
 	  }
 	  //node.report();
 	});
-	it("places k in bucket and then into replacementCache.", function () {
+	it("places k in bucket.", function () {
 	  // Checks the results of the discover() placement, each other should have filled in starting from the closest end.
 	  // Working backwards from the last kBucket, these will all fill in 1, 2, 4, 8, 16 nodes in each bucket.
-	  // The next bucket will then fill in k=20, and the rest are replacements for that same bucket index.
+	  // The next bucket will then fill in k=20
 
 	  // Iterate through the buckets, keeping track of the expectCount in each (1, 2, 4, ...)
 	  for (let bucketIndex = 0, expectCount = 1, otherBigInt = Node.one, othersLast = BigInt(nOthers );
@@ -216,10 +214,9 @@ describe("DHT internals", function () {
 	    keys.sort(compare);
 	    expect(keys).toEqual(expecting);
 
-	    if (i >= Node.k) { // Now continue with replacementCache, if any
-	      const cache = bucket.replacementCache;
+	    if (i >= Node.k) { // Now soak up those dropped, if any. (If we add a bucket replacement cache, it would be checked here.)
 	      for (i = 0; otherBigInt <= othersLast; i++) {
-		expect(cache[i].key).toBe(otherBigInt++);
+		otherBigInt++;
 	      }
 	    }
 	  }

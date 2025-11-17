@@ -76,21 +76,24 @@ export class SimulatedContact extends Contact {
   get isConnected() { // Ask our canonical home contact.
     return this.farHomeContact._connected;
   }
+  get report() { // Answer string of name, followed by * if disconnected
+    return this.node.name + (this.isConnected ? '' : '*');
+  }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
-
-    // For debugging, show that disconnects are happening by reporting if the highest number Node.contacts is disconnecting.
-    // (The lower number Node.contacts might be bootstrap nodes.)
-    if (Node.contacts?.length && this.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', this.farHomeContact.name);
-
     farHomeContact._connected = false;
     this.node.stopRefresh();
-    const rejection = new Error('disconnected'); // Gathers stack trace.
-    try {
-      farHomeContact.inFlight.forEach(promise => promise.reject(rejection));
-    } catch (error) {
-      console.error(`Error during disconnect of ${this.farHomeContact.name}.`, error);
-    }
+
+    // // For debugging, show that disconnects are happening by reporting if the highest number Node.contacts is disconnecting.
+    // // (The lower number Node.contacts might be bootstrap nodes.)
+    // if (Node.contacts?.length && this.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', this.farHomeContact.name);
+
+    // const rejection = new Error('disconnected'); // Gathers stack trace.
+    // try {
+    //   farHomeContact.inFlight.forEach(promise => promise.reject(rejection));
+    // } catch (error) {
+    //   console.error(`Error during disconnect of ${this.farHomeContact.name}.`, error);
+    // }
 
     // For debugging: Report if we're killing the last holder of our data.
     if (!Node.contacts) return;
@@ -109,7 +112,7 @@ export class SimulatedContact extends Contact {
   }
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
-    if (!sender.isConnected) return Promise.reject('RPC from closed sender.');
+    if (!sender.isConnected) throw new Error(`RPC from closed sender ${sender.host.name}.`);
     
     const start = Date.now();
     let promise = this.transmitRpc(method, sender, ...rest); // The main event.
@@ -118,10 +121,11 @@ export class SimulatedContact extends Contact {
       .catch(rejection => {
 	// Note that recipient is gone.
 	// TODO: this common code for all implementations needs to be bottlenecked through Node
-	let key = this.key;
-	let bucketIndex = this.host.getBucketIndex(key);
-	let bucket = this.host.routingTable.get(bucketIndex);
-	bucket.removeKey(key); // We may have already removed it.
+	const key = this.key;
+	const bucketIndex = this.host.getBucketIndex(key);
+	const bucket = this.host.routingTable.get(bucketIndex);
+	const removed = bucket.removeKey(key);
+	//if (hasDupes(bucket.contacts)) console.log(this.host.name, 'remove', rejection, removed, bucketIndex, bucket.contacts.map(c => c.report));
 	throw (new Error(rejection));
       })
       .then(result => {
@@ -136,11 +140,20 @@ export class SimulatedContact extends Contact {
   transmitRpc(...rest) {
     return this.receiveRpc(...rest);
   }
-  async receiveRpc(method, ...rest) { // Call the message method to act on the 'to' node side.
-    return await this.node[method](...rest);
+  receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
+    this.node.addToRoutingTable(sender).catch(() => null); // Asynchronously so as to not overlap. TODO: why do we need this catch?
+    return this.node[method](...rest);
   }
 }
 
+function hasDupes(contacts) {
+  const seen = new Set();
+  for (const contact of contacts) {
+    if (seen.has(contact.name)) return true;
+    seen.add(contact.name);
+  }
+  return false;
+}
 
 export class SimulatedOverlayContact extends SimulatedContact {
   transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
@@ -150,19 +163,15 @@ export class SimulatedOverlayContact extends SimulatedContact {
   static async forwardThroughOverlay(node, intendedContactKey, message, debugTargetName) {
     // Pass the rest message through a Node towards the intendedContactKey, and promise the response.
 
-    if (!node.contact.isConnected) return Promise.reject(new Error('overlay through disconnected node'));
+    if (!node.contact.isConnected) return Promise.reject(new Error('Forwarding through disconnected node.'));
     
     // If we are not yet connected or host is who we are intended to contact, then just have the host handle it.
     if (!node.routingTable.size || (intendedContactKey === node.key))
-      return await node.contact.receiveRpc(...message); // FIXME .then check if node.contact.isConnected
+      return await node.contact.receiveRpc(...message);
 
     // Otherwise find the closest bucket we have to intendedContactKey, and forward through a simulated connection servicing that bucket.
     const bestHelpers = node.findClosestHelpers(intendedContactKey); // Best node knows of in its own data.
     const helpersNotUs = bestHelpers.filter(h => h.key !== node.key);
-    //if (node.name === '0')
-      // console.log(node.name, node.contact.isConnected, 'to', debugTargetName,
-      // 		  bestHelpers.map(h => `${h.name}${h.isConnected ? '' : 'd'}`),
-      // 		  node.contacts.map(c => c.name + (c.isConnected ? '' : 'd')));
     for (const helper of helpersNotUs) { // Find the best one that already has a bucket
       const bucketIndex = node.getBucketIndex(helper.key);
       const bucket = node.routingTable.get(bucketIndex);
@@ -174,10 +183,10 @@ export class SimulatedOverlayContact extends SimulatedContact {
 
       // if (node.name === '0') {
       //   console.log(node.name, node.contact.isConnected, 'overlay', overlay.name, 'to', debugTargetName,
-      // 		    node.constacts.map(c => c.name + (c.isConnected ? '' : 'd')),
-      // 		    bestHelpers.map(h => h.name + (h.isConnected ? '' : 'd')),
-      // 		    helpersNotUs.map(h => h.name + (h.isConnected ? '' : 'd')));
-      // 	Node.reportAll();
+      // 		    node.contacts.map(c => c.report),
+      // 		    bestHelpers.map(h => h.contact.report),
+      // 		    helpersNotUs.map(h => h.contact.report))
+      // 	//Node.reportAll();
       // }
       const start = Date.now();
       const result = await this.forwardThroughOverlay(overlay, intendedContactKey, message, debugTargetName);
@@ -240,7 +249,7 @@ export class Helper { // A Contact that is some distance from an assumed targetK
     return 0;
   }
 }
-  
+
 export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys, plus a lastUpdated timestamp, as enforced by addContact().
   static k = 20; // System constant.
 
@@ -252,38 +261,38 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     let added = this.removeKey(contact.key) || 'added';
     if (this.isFull) {
       const head = this.contacts[0];
-      const {key, host} = head;
-      this.removeKey(key);
-      if (await head.sendCatchingRpc('ping', key)) { // still alive
+      //console.log('ping', contact.host.name, 'to', head.name, 'while adding', contact.name); // fixme
+      if (await head.sendCatchingRpc('ping', head.key)) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back and update timestamp, below.
-      } // Else dead head, so there's room for the new contact after all.
+      } 
+      // In either case (whether re-adding head to tail, or making room for a dead head), remove head now.
+      // Don't remove before waiting for the ping, as there can be overlap with other activity that could think there's room and
+      // thus add it twice.
+      this.removeKey(head.key);
+    }
+    const { node, host } = contact;
+    const bucketIndex = host.getBucketIndex(node.key);
+    if (this.contacts.find(c => c.name === contact.name)) {
+	console.log('\n\n\n**** wtf', host.name, added, contact.report, bucketIndex, this.contacts.map(c => c.report), ' ****\n\n');
     }
     this.contacts.push(contact);
     this.lastUpdated = Date.now();
-    const { node, host } = contact;
     // Refresh this bucket unless we addContact again before it goes off.
     clearInterval(this.refreshTimer);
-    this.refreshTimer = host.repeat(() => host.refresh(host.getBucketIndex(node.key)), 'bucket');
+    this.refreshTimer = host.repeat(() => host.refresh(bucketIndex), 'bucket');
     return added;
   }
 
   removeKey(key) { // Removes item specified by key (if present), and return 'present' if it was, else false.
-    const { contacts, replacementCache } = this;
-    let index;
-    index = replacementCache.findIndex(item => item.key === key);
-    if (index !== -1) {
-      replacementCache.splice(index, 1);
-      return false; // It was not among contacts.
-    }
-    index = contacts.findIndex(item => item.key === key);
+    const { contacts } = this;
+    let index = contacts.findIndex(item => item.key === key);
     if (index !== -1) {
       contacts.splice(index, 1);
       return 'present';
     }
     return false;
   }
-  replacementCache = []; // TODO: use these when needed!
 
   // Overlay connections.
   overlayContacts = []; // There can be several, from other nodes making an overlay connection to us.
@@ -295,7 +304,8 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
       const candidate = overlayContacts[0];
       if (candidate.isConnected) return candidate.node;
       overlayContacts.shift();
-      this.removeKey(candidate.key);
+      let removed = this.removeKey(candidate.key);
+      if (hasDupes(this.contacts)) console.log(this.name, 'remove dead overlay', candidate.name, removed, this.host.getBucketIndex(candidate.key), this.contacts.map(c => c.report));
     }
     return await this.makeOverlay(false) ||
       await this.makeOverlay(true);
@@ -416,7 +426,7 @@ export class Node { // An actor within thin DHT.
       if (bucket && !iterator(bucket)) return;
     }
   }
-  get contacts() { // Answer a fresh copy of all keys.
+  get contacts() { // Answer a fresh copy of all contacts for this Node.
     const contacts = [];
     this.forEachBucket(bucket => contacts.push(...bucket.contacts));
     return contacts;
@@ -429,7 +439,7 @@ export class Node { // An actor within thin DHT.
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.name}${this.contact?.isConnected ? '' : ' disconnected'}`;
     function keyString(key) { return key.toString() + 'n'; }
-    function contactsString(contacts) { return contacts.map(contact => contact.name + (contact.isConnected ? '' : 'd')).join(', '); }
+    function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
 	Array.from(this.storage.entries()).map(([k, v]) => `${keyString(k)}: ${JSON.stringify(v)}`).join(', ');
@@ -438,9 +448,9 @@ export class Node { // An actor within thin DHT.
       const bucket = this.routingTable.get(index);
       if (!bucket) continue;
       report += `\n  ${index}: ` + contactsString(bucket.contacts);
-      const { replacementCache, overlayContacts} = bucket;
+      const { overlayContacts} = bucket;
       if (overlayContacts.length)  report += ' contacts: ' + contactsString(overlayContacts);
-      if (replacementCache.length) report += ' replacements: ' + contactsString(replacementCache);
+      if (hasDupes(bucket.contacts)) report += '*** duplicates ***';
     }
     return logger ? logger(report) : report;
   }
@@ -455,7 +465,7 @@ export class Node { // An actor within thin DHT.
   }
   findClosestHelpers(targetKey, count = KBucket.k) { // Answer count closest Helpers to targetKey, including ourself.
     if (!this.contact?.isConnected) return [];
-    const {contacts} = this;
+    const {contacts} = this; // Always a fresh copy.
     contacts.push(this.contact); // We are a candidate, too!
     return this.constructor.findClosestHelpers(targetKey, contacts, count);
   }
@@ -510,7 +520,9 @@ export class Node { // An actor within thin DHT.
         if (!subBuckets.has(newIndex)) {
           subBuckets.set(newIndex, []);
         }
-        subBuckets.get(newIndex).push(contact);
+	const fixme = subBuckets.get(newIndex);
+	console.log({fixme, contact});
+	fixme.push(contact);
       }
     }
     
@@ -522,9 +534,7 @@ export class Node { // An actor within thin DHT.
     if (!bucket) return;
     this.routingTable.delete(bucketIndex);
     // Re-add all contacts, which will place them in new buckets
-    const add = contact => this.addToRoutingTable(contact);
-    await Promise.all(bucket.contacts.map(add));
-    await Promise.all(bucket.replacementCache.forEach(add));
+    await Promise.all(bucket.contacts.map(contact => this.addToRoutingTable(contact)));
   }  
   async addToRoutingTable(contact) { // Promise true and contact to the routing table if room, using adaptive bucket sizing.
     const key = contact.key;
@@ -541,20 +551,20 @@ export class Node { // An actor within thin DHT.
     // Try to add to bucket
     contact = contact.clone(this);
     if (await bucket.addContact(contact)) {
-      this.replicateCloserStorage(contact); // Don't bother awaiting
+      // Don't bother awaiting. In fact, we don't want other activity manipulating our table right now.
+      this.replicateCloserStorage(contact); 
       return contact;
     }
     
     // Bucket is full - handle adaptive splitting for unbalanced trees
     // Split only if this bucket contains keys that should be in our routing table
     if (bucketIndex >= 0 && this.canSplitBucket(bucketIndex)) {
+      console.log('\n\n\n*** spliting ***\n\n');
       await this.splitBucket(bucketIndex);
       // Try adding again after split
       return await this.addToRoutingTable(contact);
     }
 
-    const replacements = bucket.replacementCache; // TODO? (in-order) dictionary instead of list?
-    if (!replacements.find(contact => contact.key === key)) replacements.push(contact);
     return false;
   }
   kickOverlayContact() { // Remove the oldest from the bucket with the most overlayContacts
@@ -773,24 +783,19 @@ export class Node { // An actor within thin DHT.
   }
 
   // The four methods we recevieve through RPCs:
-  async ping(sender, key) { // Respond with 'pong'.
-    // If we're disconnected, the RPC machinery will take care of it.
-    await this.addToRoutingTable(sender);
+  async ping(key) { // Respond with 'pong'. (RPC mechanism doesn't call unless connected.)
     return 'pong';
   }
-  async store(sender, key, value) { // Tell Entry node to store identifier => value.
-    await this.addToRoutingTable(sender);
+  async store(key, value) { // Tell Entry node to store identifier => value.
     this.storeLocally(key, value);
     return 'pong';
   }
-  async findNodes(sender, key) { // Return k closest Contacts from routingTable.
+  async findNodes(key) { // Return k closest Contacts from routingTable.
     // TODO: Currently, this answers a list of Helpers. For security, it should be changed to a list of serialized Contacts.
     // I.e., send back a list of verifiable signatures and let the receiver verify and then compute the distances.
-    await this.addToRoutingTable(sender);
     return this.findClosestHelpers(key);
   }
-  async findValue(sender, key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
-    await this.addToRoutingTable(sender);
+  async findValue(key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
     let value = this.retrieveLocally(key);
     if (value !== undefined) return {value};
     return this.findClosestHelpers(key);

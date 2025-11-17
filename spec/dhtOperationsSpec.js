@@ -104,14 +104,14 @@ describe("DHT operations", function () {
       for (let i = 0; i < size; i++) { // Test that each node can reach stuff.
 	if (size <= 100) { // Test that node i can reach every node j.
 	  for (let j = 0; j < size; j++) test1(i, j);
-	} else { // Too many nodes to test every combination. Just test against one random j.
+	} else { // Too many nodes to test every combination. Just test against one random j for each i.
 	  test1(i, Math.floor(Math.random() * size));
 	}
 	testStore(i);
       }
     });
   }
-  //test(40, SimulatedOverlayContact);
+  // test(100, SimulatedOverlayContact);
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);
