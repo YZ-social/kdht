@@ -118,7 +118,6 @@ describe("DHT stability", function () {
 		    .then(value => expect(value).toBe(i)));
 	  async function getLegit() {
 	    const node = randomNode();
-	    if (!node.contact.isConnected) console.error('FIXME', node.report(null));
 	    const response = await node.locateValue(i);
 	    if (node.contact.isConnected) {
 	      expect(response).toBe(i);

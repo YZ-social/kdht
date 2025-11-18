@@ -58,7 +58,7 @@ describe("DHT operations", function () {
       let expectedLength = Math.min(size, Node.k);
       let contacts;
       beforeAll(async function () {
-	contacts = [];
+	contacts = Node.contacts = [];
 	const start = Date.now();
 	const promises = [];
 	let counter = 0;
@@ -79,6 +79,7 @@ describe("DHT operations", function () {
 	await Promise.all(promises);
 	const elapsed = Date.now() - start;
 	console.log(`Creating ${size} ${Contact.name} took ${elapsed/1e3} seconds, or ${elapsed/size} ms/node.`);
+	//Node.reportAll();
       }, 50 * size);
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
@@ -111,7 +112,7 @@ describe("DHT operations", function () {
       }
     });
   }
-  // test(100, SimulatedOverlayContact);
+  //test(40, SimulatedOverlayContact);
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);

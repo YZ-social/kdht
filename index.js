@@ -22,7 +22,15 @@ const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
 
   TODO: there are few places where we return a list of Helpers (or Contacts?) that are described in the literature (or method name!) as returning Nodes. Let's do that, since we can get Nodes from Helpers/Contacts, and Contacts from Nodes.
   TODO: It would be convenient for bucket to cache their host and index. This would allow get rid of some/all? uses of contact.host, and move some operations (randomTargetInBucket, refresh) to KBucket.
- */
+*/
+
+export class Disconnect extends Error {
+  static throw(message) { // Let message senders know that message channel was disrupted in some way. Compare TargetDisconnect.
+    throw new this(message);
+  }
+}
+export class TargetDisconnect extends Disconnect { // Specifically the target endpoint.
+}
 
 export class Contact {
   // Represents an abstract contact from a host (a Node) to another node.
@@ -50,6 +58,7 @@ export class Contact {
   sendCatchingRpc(...rest) {
     return this.sendRpc(...rest)
       .catch(error => {
+	console.error(error);
 	return undefined;
       });
   }
@@ -65,14 +74,7 @@ export class SimulatedContact extends Contact {
   get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
     return this.node.contact;
   }
-  inFlight = []; // All 
   _connected = true;
-  startRequest(promise) { // Keep track of the request in flight, for use by disconnect()
-    this.farHomeContact.inFlight.push(promise);
-  }
-  endRequest(promise) { // The request has completed.
-    this.farHomeContact.inFlight = this.farHomeContact.inFlight.filter(p => p !== promise);
-  }
   get isConnected() { // Ask our canonical home contact.
     return this.farHomeContact._connected;
   }
@@ -86,14 +88,7 @@ export class SimulatedContact extends Contact {
 
     // // For debugging, show that disconnects are happening by reporting if the highest number Node.contacts is disconnecting.
     // // (The lower number Node.contacts might be bootstrap nodes.)
-    // if (Node.contacts?.length && this.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', this.farHomeContact.name);
-
-    // const rejection = new Error('disconnected'); // Gathers stack trace.
-    // try {
-    //   farHomeContact.inFlight.forEach(promise => promise.reject(rejection));
-    // } catch (error) {
-    //   console.error(`Error during disconnect of ${this.farHomeContact.name}.`, error);
-    // }
+    if (Node.contacts?.length && this.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', this.farHomeContact.name);
 
     // For debugging: Report if we're killing the last holder of our data.
     if (!Node.contacts) return;
@@ -112,32 +107,31 @@ export class SimulatedContact extends Contact {
   }
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
-    if (!sender.isConnected) throw new Error(`RPC from closed sender ${sender.host.name}.`);
+    if (!sender.isConnected) Disconnect.throw(`RPC from closed sender ${sender.host.name}.`);
     
     const start = Date.now();
-    let promise = this.transmitRpc(method, sender, ...rest); // The main event.
-    this.startRequest(promise);
-    return promise
+    return this.transmitRpc(method, sender, ...rest) // The main event.
       .catch(rejection => {
 	// Note that recipient is gone.
-	// TODO: this common code for all implementations needs to be bottlenecked through Node
-	const key = this.key;
-	const bucketIndex = this.host.getBucketIndex(key);
-	const bucket = this.host.routingTable.get(bucketIndex);
-	const removed = bucket.removeKey(key);
-	//if (hasDupes(bucket.contacts)) console.log(this.host.name, 'remove', rejection, removed, bucketIndex, bucket.contacts.map(c => c.report));
-	throw (new Error(rejection));
+	if (rejection instanceof TargetDisconnect) {
+	  // TODO: this common code for all implementations needs to be bottlenecked through Node
+	  const key = this.key;
+	  const bucketIndex = this.host.getBucketIndex(key);
+	  const bucket = this.host.routingTable.get(bucketIndex);
+	  const removed = bucket.removeKey(key);
+	  // FIXME: remove from overlays, too. (in this case, but not done here).
+	  if (hasDupes(bucket.contacts)) console.log(this.host.name, 'remove', rejection, removed, bucketIndex, bucket.contacts.map(c => c.report));
+	}
+	throw rejection;
       })
       .then(result => {
-	if (!sender.isConnected) throw (new Error('Sender closed during RPC.')); // No need to remove recipient key from host bucket.
+	if (!sender.isConnected) Disconnect.throw(`Sender ${sender.host.name} closed during RPC.`); // No need to remove recipient key from host bucket.
 	return this.deserialize(result, sender);
       })
-      .finally(() => {
-	this.endRequest(promise);
-	Node.noteStatistic(start, 'rpc');
-      });
+      .finally(() => Node.noteStatistic(start, 'rpc'));
   }
   transmitRpc(...rest) {
+    if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     return this.receiveRpc(...rest);
   }
   receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
@@ -157,17 +151,19 @@ function hasDupes(contacts) {
 
 export class SimulatedOverlayContact extends SimulatedContact {
   transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
-    //if (!this.node.contact.isConnected) console.log(this.host.name, 'trying to reach disconnected node', this.node.name);
-    return this.constructor.forwardThroughOverlay(this.host, this.node.key, rest, this.node.name);
+    return this.constructor.forwardThroughOverlay(this.host, this.node.key, rest, this.node.name, []);
   }
-  static async forwardThroughOverlay(node, intendedContactKey, message, debugTargetName) {
+  static async forwardThroughOverlay(node, intendedContactKey, message, debugTargetName, path) {
     // Pass the rest message through a Node towards the intendedContactKey, and promise the response.
 
-    if (!node.contact.isConnected) return Promise.reject(new Error('Forwarding through disconnected node.'));
+    if (!node.contact.isConnected) return Disconnect.throw('Forwarding through disconnected node.');
     
     // If we are not yet connected or host is who we are intended to contact, then just have the host handle it.
     if (!node.routingTable.size || (intendedContactKey === node.key))
       return await node.contact.receiveRpc(...message);
+
+    Node.assert(!path.includes(node.name), message[1].report, 'looping through', node?.name, 'to', debugTargetName/*, Node.reportAll(null)*/);
+    path.push(node.name);
 
     // Otherwise find the closest bucket we have to intendedContactKey, and forward through a simulated connection servicing that bucket.
     const bestHelpers = node.findClosestHelpers(intendedContactKey); // Best node knows of in its own data.
@@ -182,18 +178,27 @@ export class SimulatedOverlayContact extends SimulatedContact {
       if (!overlay) continue;
 
       // if (node.name === '0') {
-      //   console.log(node.name, node.contact.isConnected, 'overlay', overlay.name, 'to', debugTargetName,
-      // 		    node.contacts.map(c => c.report),
-      // 		    bestHelpers.map(h => h.contact.report),
+      //   console.log(node.contact.report, 'overlay', overlay.contact.report, 'to', debugTargetName,
+      // 		    //'contacts:', node.contacts.map(c => c.report),
+      // 		    //bestHelpers.map(h => h.contact.report),
       // 		    helpersNotUs.map(h => h.contact.report))
       // 	//Node.reportAll();
       // }
+      //console.log(sender.report, 'to', debugTargetName, 'now', node.contact.report, 'through', overlay.contact.report);
       const start = Date.now();
-      const result = await this.forwardThroughOverlay(overlay, intendedContactKey, message, debugTargetName);
+      const result = await this.forwardThroughOverlay(overlay, intendedContactKey, message, debugTargetName, path);
       Node.noteStatistic(start, 'overlay');
       return result;
     }
-    Node.assert(true, "No bucket to forward through", node, bestHelpers);
+    console.log('getting "no bucket" data');
+    const contactsXX = node.contacts;
+    const contactsXXLength = contactsXX.length;
+    const contactsXXReports = contactsXX.map(c => c.report);
+    const report = node.report(null);
+    const contacts = node.contacts;
+    const contactsLength = contacts.length;
+    const contactsReports = contacts.map(c => c.report);
+    Node.assert(false, "No bucket to forward to", debugTargetName, "through", contactsXXLength, contactsXXReports, contacts.length, contactsReports, report);
   }
   static maxOverlayConnections = 200;
   async makeOverlay(contact, ourBucket, force) {
@@ -204,7 +209,10 @@ export class SimulatedOverlayContact extends SimulatedContact {
     // TODO: WebRTC will know quickly if the overlay has closed. Should we do something on close?
     const { host, node } = contact;
 
-    if (!host.contact.isConnected || !node.contact.isConnected) return undefined;
+    if (!host.contact.isConnected || !node.contact.isConnected) {
+      console.log('cannot make overlay to disconnected node', contact.report);
+      return undefined;
+    }
     const { maxOverlayConnections } = this.constructor;
     const tooManyHost = host.nOverlayConnections > maxOverlayConnections;
     const tooManyNode = node.nOverlayConnections > maxOverlayConnections;
@@ -261,7 +269,6 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     let added = this.removeKey(contact.key) || 'added';
     if (this.isFull) {
       const head = this.contacts[0];
-      //console.log('ping', contact.host.name, 'to', head.name, 'while adding', contact.name); // fixme
       if (await head.sendCatchingRpc('ping', head.key)) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back and update timestamp, below.
@@ -319,8 +326,7 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
       const overlay = await candidate.host.contact.makeOverlay(candidate, this, force);
       if (overlay) return overlay;
     }
-    Node.assert(true, "Unable to makeOverlay for bucket", this);
-    return null;
+    return undefined;
   }
 }
 
@@ -339,7 +345,7 @@ export class Node { // An actor within thin DHT.
   log(...rest) { this.constructor.log(this.name, ...rest); }
   static assert(ok, ...rest) { // If !ok, log rests and exit.
     if (ok) return;
-    console.error(...rest, new Error("Error").stack);
+    console.error(...rest, new Error("Error").stack); // Not throwing error, because we want to exit. But we are grabbing stack.
     process.exit(1);
   }
 
@@ -422,13 +428,23 @@ export class Node { // An actor within thin DHT.
   }
   routingTable = new Map(); // Maps bit prefix length to KBucket
   forEachBucket(iterator) { // Call iterator(bucket) on each non-empty bucket, stopping as soon as iterator(bucket) returns falsy.
-    for (const bucket of this.routingTable.values()) {
+    //for (const bucket of this.routingTable.values()) {
+    for (let bucketIndex = 0; bucketIndex < Node.keySize; bucketIndex++) {
+      const bucket = this.routingTable.get(bucketIndex);
       if (bucket && !iterator(bucket)) return;
     }
   }
   get contacts() { // Answer a fresh copy of all contacts for this Node.
     const contacts = [];
-    this.forEachBucket(bucket => contacts.push(...bucket.contacts));
+    for (let bucketIndex = 0; bucketIndex < Node.keySize; bucketIndex++) { // fixme: why is this not tracking with logging
+      const bucket = this.routingTable.get(bucketIndex);
+      if (bucket) {
+	//console.log(this.name, bucketIndex, bucket.contacts.length);
+	contacts.push(...bucket.contacts);
+      }
+    }
+    //console.log(this.name, contacts.map(c => c.report));
+    //this.forEachBucket(bucket => contacts.push(...bucket.contacts));
     return contacts;
   }
   get nOverlayContacts() { // How many overlays do we have
@@ -438,24 +454,23 @@ export class Node { // An actor within thin DHT.
   }
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.name}${this.contact?.isConnected ? '' : ' disconnected'}`;
-    function keyString(key) { return key.toString() + 'n'; }
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
-	Array.from(this.storage.entries()).map(([k, v]) => `${keyString(k)}: ${JSON.stringify(v)}`).join(', ');
+	Array.from(this.storage.entries()).map(([k, v]) => `${k}n: ${JSON.stringify(v)}`).join(', ');
     }
     for (let index = 0; index < Node.keySize; index++) {
       const bucket = this.routingTable.get(index);
       if (!bucket) continue;
-      report += `\n  ${index}: ` + contactsString(bucket.contacts);
+      report += `\n  ${index}: ` + (contactsString(bucket.contacts) || '-');
       const { overlayContacts} = bucket;
-      if (overlayContacts.length)  report += ' contacts: ' + contactsString(overlayContacts);
+      if (overlayContacts.length)  report += ' overlays: ' + contactsString(overlayContacts);
       if (hasDupes(bucket.contacts)) report += '*** duplicates ***';
     }
     return logger ? logger(report) : report;
   }
   static reportAll() { // Report every node -- only useful for simulations.
-    Node.contacts?.forEach(c => c.node.report());
+    return Node.contacts?.forEach(c => c.node.report());
   }
 
   static findClosestHelpers(targetKey, contacts, count) { // Utility, useful for computing and debugging.
@@ -520,9 +535,7 @@ export class Node { // An actor within thin DHT.
         if (!subBuckets.has(newIndex)) {
           subBuckets.set(newIndex, []);
         }
-	const fixme = subBuckets.get(newIndex);
-	console.log({fixme, contact});
-	fixme.push(contact);
+	subBuckets.get(newIndex).push(contact);
       }
     }
     
@@ -559,7 +572,6 @@ export class Node { // An actor within thin DHT.
     // Bucket is full - handle adaptive splitting for unbalanced trees
     // Split only if this bucket contains keys that should be in our routing table
     if (bucketIndex >= 0 && this.canSplitBucket(bucketIndex)) {
-      console.log('\n\n\n*** spliting ***\n\n');
       await this.splitBucket(bucketIndex);
       // Try adding again after split
       return await this.addToRoutingTable(contact);
@@ -650,8 +662,8 @@ export class Node { // An actor within thin DHT.
     targetKey = await this.ensureKey(targetKey);
 
     // Optimization: Works, but can confuse testing as disconnected nodes will return a value.
-    // const found = this.retrieveLocally(targetKey);
-    // if (found !== undefined) return found;
+    const found = this.retrieveLocally(targetKey);
+    if (found !== undefined) return found;
 
     const result = await this.iterate(targetKey, 'findValue');
     if (Node.isValueResult(result)) return result.value;
@@ -721,8 +733,7 @@ export class Node { // An actor within thin DHT.
     let toQuery = pool.slice(0, alpha);
     pool = pool.slice(alpha); // Yes, this could be done with splice instead of slice, above, but it makes things hard to trace.
     let best = []; // The accumulated closest-first result.
-    let trace = [ [[this.contact], pool, toQuery] ];
-    while (toQuery.length && this.contact.isConnected) {
+    while (toQuery.length && this.contact.isConnected) { // Stop if WE disconnect.
       let requests = toQuery.map(helper => this.step(targetKey, finder, helper, keysSeen));
       let results = await Promise.all(requests);
       
@@ -739,7 +750,6 @@ export class Node { // An actor within thin DHT.
       }
 
       let closer = [].concat(...results); // Flatten results.
-      trace.push([toQuery, pool, closer]);
       // closer might not be in order, and one or more toQuery might belong among them.
       best = [...closer, ...toQuery, ...best].sort(Helper.compare).slice(0, k);
       if (!closer.length) {
@@ -753,13 +763,6 @@ export class Node { // An actor within thin DHT.
 	pool = pool.slice(alpha);
       }
     }
-    // if (finder === 'findValue') {
-    //   console.log(this.name, 'failed to find', targetKey);
-    //   trace.forEach(([query, pool, result]) =>
-    // 	//console.log(query, 'produced', result)
-    // 	console.log(query.map(h => h.node.report(null)), `with ${pool.length} remaining, produced`, result.map(h => h.node.report(null)))
-    //   );
-    // }
     return best;
   }
   async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
