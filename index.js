@@ -79,7 +79,7 @@ export class SimulatedContact extends Contact {
     return this.farHomeContact._connected;
   }
   get report() { // Answer string of name, followed by * if disconnected
-    return this.node.name + (this.isConnected ? '' : '*');
+    return `${this.node.name}-${this.node.distinguisher}${this.isConnected ? '' : '*'}`;
   }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
@@ -190,7 +190,7 @@ export class SimulatedOverlayContact extends SimulatedContact {
       Node.noteStatistic(start, 'overlay');
       return result;
     }
-    console.log('getting "no bucket" data');
+    console.log('getting "no bucket" data'); // fixme
     const contactsXX = node.contacts;
     const contactsXXLength = contactsXX.length;
     const contactsXXReports = contactsXX.map(c => c.report);
@@ -337,8 +337,9 @@ export class Node { // An actor within thin DHT.
   static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
+  static distinguisher = 0; // Used in debugging identity.
   constructor({refreshIntervalMS = Node.refreshIntervalMS, ...properties}) {
-    Object.assign(this, {refreshIntervalMS, ...properties});
+    Object.assign(this, {refreshIntervalMS, distinguisher: Node.distinguisher++, ...properties});
   }
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
@@ -453,7 +454,7 @@ export class Node { // An actor within thin DHT.
     return n;
   }
   report(logger = console.log) { // return logger( a string description of node )
-    let report = `Node: ${this.name}${this.contact?.isConnected ? '' : ' disconnected'}`;
+    let report = `Node: ${this.contact.report}`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
@@ -531,7 +532,7 @@ export class Node { // An actor within thin DHT.
     const subBuckets = new Map();
     for (const contact of bucket.contacts) {
       const newIndex = this.getBucketIndex(contact.key);
-      if (newIndex !== bucketIndex) {
+      if (newIndex !== bucketIndex) { // TODO: This is AI code. Can't we just return true in this case, instead of consing up subBuckets?
         if (!subBuckets.has(newIndex)) {
           subBuckets.set(newIndex, []);
         }
@@ -553,13 +554,15 @@ export class Node { // An actor within thin DHT.
     const key = contact.key;
     if (key === this.key) return false; // Don't add self
 
+    const routingTable = this.routingTable;
     const bucketIndex = this.getBucketIndex(key);
     
     // Get or create bucket
-    if (!this.routingTable.has(bucketIndex)) {
-      this.routingTable.set(bucketIndex, new KBucket());
+    let bucket = routingTable.get(bucketIndex);
+    if (!bucket) {
+      bucket = new KBucket();
+      routingTable.set(bucketIndex, bucket);
     }
-    const bucket = this.routingTable.get(bucketIndex);
     
     // Try to add to bucket
     contact = contact.clone(this);
@@ -568,10 +571,12 @@ export class Node { // An actor within thin DHT.
       this.replicateCloserStorage(contact); 
       return contact;
     }
-    
+
+    // FIXME: This was AI generated. Looks like total bullshit, no?
     // Bucket is full - handle adaptive splitting for unbalanced trees
     // Split only if this bucket contains keys that should be in our routing table
     if (bucketIndex >= 0 && this.canSplitBucket(bucketIndex)) {
+      console.log(this.contact.report, 'splitting bucket', bucketIndex, 'for', contact.report, 'starting with', bucket.contacts.map(c => c.report));
       await this.splitBucket(bucketIndex);
       // Try adding again after split
       return await this.addToRoutingTable(contact);
