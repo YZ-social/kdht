@@ -522,34 +522,6 @@ export class Node { // An actor within thin DHT.
     return target;
   }
   // Discovery
-  canSplitBucket(bucketIndex) { // True if adaptive routing bucket can be split.
-    // A bucket can only be split if it's in the range of our own node ID's prefix
-    // This handles unbalanced trees by only splitting buckets we care about
-    const bucket = this.routingTable.get(bucketIndex);
-    if (!bucket || !bucket.isFull) return false;
-    
-    // Check if any keys in the bucket would remain after split
-    const subBuckets = new Map();
-    for (const contact of bucket.contacts) {
-      const newIndex = this.getBucketIndex(contact.key);
-      if (newIndex !== bucketIndex) { // TODO: This is AI code. Can't we just return true in this case, instead of consing up subBuckets?
-        if (!subBuckets.has(newIndex)) {
-          subBuckets.set(newIndex, []);
-        }
-	subBuckets.get(newIndex).push(contact);
-      }
-    }
-    
-    // Can split if keys would be distributed to different buckets
-    return subBuckets.size > 0;
-  }
-  async splitBucket(bucketIndex) { // Split a bucket into multiple smaller buckets
-    const bucket = this.routingTable.get(bucketIndex);
-    if (!bucket) return;
-    this.routingTable.delete(bucketIndex);
-    // Re-add all contacts, which will place them in new buckets
-    await Promise.all(bucket.contacts.map(contact => this.addToRoutingTable(contact)));
-  }  
   async addToRoutingTable(contact) { // Promise true and contact to the routing table if room, using adaptive bucket sizing.
     const key = contact.key;
     if (key === this.key) return false; // Don't add self
@@ -570,16 +542,6 @@ export class Node { // An actor within thin DHT.
       // Don't bother awaiting. In fact, we don't want other activity manipulating our table right now.
       this.replicateCloserStorage(contact); 
       return contact;
-    }
-
-    // FIXME: This was AI generated. Looks like total bullshit, no?
-    // Bucket is full - handle adaptive splitting for unbalanced trees
-    // Split only if this bucket contains keys that should be in our routing table
-    if (bucketIndex >= 0 && this.canSplitBucket(bucketIndex)) {
-      console.log(this.contact.report, 'splitting bucket', bucketIndex, 'for', contact.report, 'starting with', bucket.contacts.map(c => c.report));
-      await this.splitBucket(bucketIndex);
-      // Try adding again after split
-      return await this.addToRoutingTable(contact);
     }
 
     return false;
