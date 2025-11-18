@@ -60,27 +60,27 @@ describe("DHT operations", function () {
       beforeAll(async function () {
 	contacts = Node.contacts = [];
 	const start = Date.now();
-	const promises = [];
-	let counter = 0;
-	let last = start;
 	async function make1(i) {
 	  const contact = await Contact.create(i);
 	  contacts.push(contact);
 	  if (i > 0) await contact.join(contacts[0]);
-	  if (counter++ % 500 === 0) {
-	    const now = Date.now();
-	    const since = now - last;
-	    last = now;
-	    console.log(`${counter - 1}: +${Math.round(since / 1e3)} s`);
-	  }
 	}
 	await make1(0);
+
+	//for (let i = 1; i < size; i++) await make1(i);
+	const promises = [];
 	for (let i = 1; i < size; i++) promises.push(make1(i));
 	await Promise.all(promises);
+
 	const elapsed = Date.now() - start;
 	console.log(`Creating ${size} ${Contact.name} took ${elapsed/1e3} seconds, or ${elapsed/size} ms/node.`);
 	//Node.reportAll();
       }, 50 * size);
+      afterAll(function () {
+	// contacts[0].node.report();
+	// contacts[contacts.length - 1].node.report();
+	//Node.reportAll();
+      });
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
 	  const from = contacts[i];
@@ -112,7 +112,7 @@ describe("DHT operations", function () {
       }
     });
   }
-  //test(40, SimulatedOverlayContact);
+  //test(100, SimulatedOverlayContact);
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);
