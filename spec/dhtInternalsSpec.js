@@ -1,7 +1,10 @@
-import { Node, KBucket, SimulatedContact, Helper } from '../index.js';
+import { Node, KBucket, SimulatedContact, Contact, Helper } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
 describe("DHT internals", function () {
+  beforeAll(function () {
+    Node.distinguisher = 0;
+  });
   afterAll(function () {
     Node.stopRefresh();
   });
@@ -9,7 +12,8 @@ describe("DHT internals", function () {
   describe("structure", function () {
     let example;
     beforeAll(async function () {
-      example = await Node.create(0);
+      const contact = await Contact.create(0);
+      example = contact.node;
     });
     it("has key.", function () {
       expect(typeof example.key).toBe('bigint');
@@ -43,7 +47,7 @@ describe("DHT internals", function () {
       });
       it("includes name, routing names and stored items by bigInt key.", function () {
 	let report = example.report(string => string); // No op for what to do with the report. Just return it.
-	expect(report).toBe(`Node: 0 disconnected
+	expect(report).toBe(`Node: 0
   storing 2: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
   90: 1n, 2n`);
       });

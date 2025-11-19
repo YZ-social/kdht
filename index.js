@@ -79,7 +79,9 @@ export class SimulatedContact extends Contact {
     return this.farHomeContact._connected;
   }
   get report() { // Answer string of name, followed by * if disconnected
-    return `${this.node.name}-${this.node.distinguisher}${this.isConnected ? '' : '*'}`;
+    const distinguisher = this.node.distinguisher;
+    const dash = distinguisher ? ('-' + distinguisher) : '';
+    return `${this.node.name}${dash}${this.isConnected ? '' : '*'}`;
   }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
@@ -166,44 +168,17 @@ export class SimulatedOverlayContact extends SimulatedContact {
     path.push(node.name);
 
     // Otherwise find the closest bucket we have to intendedContactKey, and forward through a simulated connection servicing that bucket.
-    const bestHelpers = node.findClosestHelpers(intendedContactKey); // Best node knows of in its own data.
-    const helpersNotUs = bestHelpers.filter(h => h.key !== node.key);
-    for (const helper of helpersNotUs) { // Find the best one that already has a bucket
-      const bucketIndex = node.getBucketIndex(helper.key);
-      const bucket = node.routingTable.get(bucketIndex);
-      if (!bucket) continue;
-      // Here we simulate a long lived connection by caching the overlay remote node for this bucket.
-      const overlay = await bucket.ensureOverlay();
-
-      if (!overlay) continue;
-
-      // if (node.name === '0') {
-      //   console.log(node.contact.report, 'overlay', overlay.contact.report, 'to', debugTargetName,
-      // 		    //'contacts:', node.contacts.map(c => c.report),
-      // 		    //bestHelpers.map(h => h.contact.report),
-      // 		    helpersNotUs.map(h => h.contact.report))
-      // 	//Node.reportAll();
-      // }
-      //console.log(sender.report, 'to', debugTargetName, 'now', node.contact.report, 'through', overlay.contact.report);
-      const start = Date.now();
-      const result = await this.forwardThroughOverlay(overlay, intendedContactKey, message, debugTargetName, path);
-      Node.noteStatistic(start, 'overlay');
-      return result;
-    }
-    console.log('getting "no bucket" data'); // fixme
-    const contactsXX = node.contacts;
-    const contactsXXLength = contactsXX.length;
-    const contactsXXReports = contactsXX.map(c => c.report);
-    const report = node.report(null);
-    const contacts = node.contacts;
-    const contactsLength = contacts.length;
-    const contactsReports = contacts.map(c => c.report);
-    Node.assert(false, "No bucket to forward to", debugTargetName, "through", contactsXXLength, contactsXXReports, contacts.length, contactsReports, report);
+    const start = Date.now();
+    const overlay = await node.ensureOverlay(intendedContactKey, debugTargetName);
+    const result = await this.forwardThroughOverlay(overlay.node, intendedContactKey, message, debugTargetName, path);
+    Node.noteStatistic(start, 'overlay');
+    return result;
   }
   static maxOverlayConnections = 200;
-  async makeOverlay(contact, ourBucket, force) {
-    // Make an overlay connection from here to bucket, caching it in the approriate bucket of both sides.
+  async createOverlayConnection(contact, ourBucket, force) {
+    // Promise a new overlay connection from here to contact, caching it in the approriate bucket of both sides, else false.
     // See caller for interpretation of force.
+    // Each side attempts to add the other to it's routing table, even if doesn't ultimiately make a connection.
     // For WebRTC, this will involve signaling between us and the candidate contact.
     // The signaling may take place through a server or through the network. (We do not distinguish in this simulation.)
     // TODO: WebRTC will know quickly if the overlay has closed. Should we do something on close?
@@ -213,30 +188,22 @@ export class SimulatedOverlayContact extends SimulatedContact {
       console.log('cannot make overlay to disconnected node', contact.report);
       return undefined;
     }
+
+    // If either side is over the limit and we're not forcing things, just return falsy.
     const { maxOverlayConnections } = this.constructor;
     const tooManyHost = host.nOverlayConnections > maxOverlayConnections;
     const tooManyNode = node.nOverlayConnections > maxOverlayConnections;
     if (!force && (tooManyHost || tooManyNode)) return undefined;
-    // Add contacts to both routing tables, if possible.
+
+    // Add contacts to both routing tables, if possible. If not and not forced, just return falsy.p
     const outBound = await host.addToRoutingTable(contact);
     const inBound = await node.addToRoutingTable(host.contact);
     if (!force && (!outBound || !inBound)) return undefined;
 
-    // It is possible that the other end connected to us while we were awaiting addToRoutingTable.
-    const key = c => c.key;
-    const ourKeys = ourBucket.overlayContacts.map(key);
-    if (!ourKeys.includes(host.key)) {
-      if (tooManyHost) host.kickOverlayContact();
-      ourBucket.overlayContacts.push(outBound);
-    }
-    // The other side has a bucket at this point(post node.addToRoutingTable), but we don't which bucket.
-    const theirBucket = node.routingTable.get(node.getBucketIndex(host.key));
-    const theirKeys = theirBucket.overlayContacts.map(key);
-    if (!theirKeys.includes(node.key)) {
-      if (tooManyNode) node.kickOverlayContact();
-      theirBucket.overlayContacts.push(inBound);
-    }
-    return node;
+    // Connection is allowed. Adds the contact on both sides. If we're full up (null in/outBound), use the other side.
+    host.addOverlayContact(outBound || contact.clone(host), tooManyHost, ourBucket);
+    node.addOverlayContact(inBound || host.contact.clone(node), tooManyNode);
+    return contact;
   }
 }
 
@@ -248,6 +215,7 @@ export class Helper { // A Contact that is some distance from an assumed targetK
   get key() { return this.contact.key; }
   get name() { return this.contact.name; }
   get node() { return this.contact.node; }
+  get report() { return this.contact.report; }
   get isConnected() { return this.contact.isConnected; }
   static compare = (a, b) => { // For sort, where a,b have a distance property returning a BigInt.
     // Sort expects a number, so bigIntA - bigIntB won't do.
@@ -303,27 +271,31 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
 
   // Overlay connections.
   overlayContacts = []; // There can be several, from other nodes making an overlay connection to us.
-  async ensureOverlay() { // Promise a cached working overlay node for this bucket's distance.
+  async maybeGetOverlay() { // Promise a cached working overlay node for this bucket's distance.
     const { overlayContacts } = this;    
+
     // Get an existing one that is still connected, if any.
     // It doesn't matter if is to one of the k we are tracking in this bucket.
     while (overlayContacts.length) {
       const candidate = overlayContacts[0];
-      if (candidate.isConnected) return candidate.node;
+      if (candidate.isConnected) return candidate;
       overlayContacts.shift();
       let removed = this.removeKey(candidate.key);
       if (hasDupes(this.contacts)) console.log(this.name, 'remove dead overlay', candidate.name, removed, this.host.getBucketIndex(candidate.key), this.contacts.map(c => c.report));
     }
-    return await this.makeOverlay(false) ||
-      await this.makeOverlay(true);
+    // Otherwise, try making one.
+    return await this.makeOverlay(false) || await this.makeOverlay(true);
   }
   async makeOverlay(force) { // Create and cache overlay for this bucket, promising the far node, else falsy.
+    // Try to create and overlay connection for each contact, returning the first one that is successful
+
     // Both ends must still be online (isConnected).
     // Unless forced, both ends will attempt to add the other to its routing table, and
     // will fail if there's no room for it, or if either end is at its connection limit.
     // If forced, both ends will kill an existing overlay to stay within our limit.
+
     for (const candidate of this.contacts.slice()) { // Copy of contacts, as we may be re-adding contacts at the end.
-      const overlay = await candidate.host.contact.makeOverlay(candidate, this, force);
+      const overlay = await candidate.host.contact.createOverlayConnection(candidate, this, force);
       if (overlay) return overlay;
     }
     return undefined;
@@ -338,15 +310,16 @@ export class Node { // An actor within thin DHT.
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
   static distinguisher = 0; // Used in debugging identity.
-  constructor({refreshIntervalMS = Node.refreshIntervalMS, ...properties}) {
-    Object.assign(this, {refreshIntervalMS, distinguisher: Node.distinguisher++, ...properties});
+  constructor({refreshIntervalMS = Node.refreshIntervalMS, distinguisher = Node.distinguisher, ...properties}) {
+    if (distinguisher) Node.distinguisher = distinguisher + 1; // Don't increment if zero.
+    Object.assign(this, {refreshIntervalMS, distinguisher, ...properties});
   }
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
   log(...rest) { this.constructor.log(this.name, ...rest); }
   static assert(ok, ...rest) { // If !ok, log rests and exit.
     if (ok) return;
-    console.error(...rest, new Error("Error").stack); // Not throwing error, because we want to exit. But we are grabbing stack.
+    console.error(...rest, new Error("Assert failure").stack); // Not throwing error, because we want to exit. But we are grabbing stack.
     process.exit(1);
   }
 
@@ -454,7 +427,7 @@ export class Node { // An actor within thin DHT.
     return n;
   }
   report(logger = console.log) { // return logger( a string description of node )
-    let report = `Node: ${this.contact.report}`;
+    let report = `Node: ${this.contact?.report || this.name}`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
@@ -474,14 +447,13 @@ export class Node { // An actor within thin DHT.
     return Node.contacts?.forEach(c => c.node.report());
   }
 
-  static findClosestHelpers(targetKey, contacts, count) { // Utility, useful for computing and debugging.
-    const helpers = contacts.map(contact => new Helper(contact, Node.distance(targetKey, contact.key)));
+  static findClosestHelpers(targetKey, contacts, count = KBucket.k) { // Utility, useful for computing and debugging.
+    const helpers = contacts.map(contact => new Helper(contact, this.distance(targetKey, contact.key)));
     helpers.sort(Helper.compare);
     return helpers.slice(0, count);
   }
   findClosestHelpers(targetKey, count = KBucket.k) { // Answer count closest Helpers to targetKey, including ourself.
-    if (!this.contact?.isConnected) return [];
-    const {contacts} = this; // Always a fresh copy.
+    const contacts = this.contacts; // Always a fresh copy.
     contacts.push(this.contact); // We are a candidate, too!
     return this.constructor.findClosestHelpers(targetKey, contacts, count);
   }
@@ -522,7 +494,7 @@ export class Node { // An actor within thin DHT.
     return target;
   }
   // Discovery
-  async addToRoutingTable(contact) { // Promise true and contact to the routing table if room, using adaptive bucket sizing.
+  async addToRoutingTable(contact) { // Promise contact and add it to the routing table if room, else falsy.
     const key = contact.key;
     if (key === this.key) return false; // Don't add self
 
@@ -546,12 +518,51 @@ export class Node { // An actor within thin DHT.
 
     return false;
   }
+  addOverlayContact(overlay, kick, bucket) { //fixme  = this.routingTable.get(this.getBucketIndex(overlay.key))) {
+    if (!bucket) {
+      const key = overlay.key;
+      const index = this.getBucketIndex(key);
+      bucket = this.routingTable.get(index);
+      Node.assert(bucket, 'addOverlayContact unable to find bucket', overlay, key, key === this.key, kick, index);
+    }
+
+    // Add overlay to bucket if it it is not already present. First kick an existing overlay if told to.
+
+    const { overlayContacts } = bucket;
+    if (overlayContacts.find(existing => existing.key === overlay.key)) return;
+    // If necessary, kick some contact in this hos
+    if (kick) this.kickOverlayContact();
+    overlayContacts.push(overlay);
+    //console.log({overlay, kick, bucket});
+  }
   kickOverlayContact() { // Remove the oldest from the bucket with the most overlayContacts
+    // FIXME: clean this up, and integrate with above.
     let biggestBucket = null;
     this.forEachBucket(bucket => (bucket.overlayContacts.length > (biggestBucket?.overlayContacts.length ?? 0)) ?
 		       (biggestBucket=bucket) :
 		       true);
     biggestBucket.overlayCandidates.shift();
+  }
+  async ensureOverlay(intendedContactKey, debugTargetName) { // Promise an existing or freshly cached overlay for the intendedContactKey
+    const bestHelpers = this.constructor.findClosestHelpers(intendedContactKey, this.contacts); // Not including ourself.
+    for (const helper of bestHelpers) { // Find the best one that already has a bucket
+      const bucketIndex = this.getBucketIndex(helper.key);
+      const bucket = this.routingTable.get(bucketIndex);
+      Node.assert(bucket, 'No bucket at index', bucketIndex, 'for closest', helper.report);
+      // Here we simulate a long lived connection by caching the overlay remote node for this bucket.
+      const overlay = await bucket.maybeGetOverlay();
+      if (overlay) return overlay;
+    }
+    console.log('getting "no bucket" data'); // fixme
+    const contactsXX = this.contacts;
+    const contactsXXLength = contactsXX.length;
+    const contactsXXReports = contactsXX.map(c => c.report);
+    const report = this.report(null);
+    const contacts = this.contacts;
+    const contactsLength = contacts.length;
+    const contactsReports = contacts.map(c => c.report);
+    Node.assert(false, "No bucket to forward to", debugTargetName, "through", contactsXXLength, contactsXXReports, contacts.length, contactsReports, report);
+    return null;
   }
   // Storage
   storage = new Map(); // keys must be preserved as bigint, not converted to string.

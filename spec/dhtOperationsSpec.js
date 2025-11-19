@@ -58,6 +58,7 @@ describe("DHT operations", function () {
       let expectedLength = Math.min(size, Node.k);
       let contacts;
       beforeAll(async function () {
+	Node.distinguisher = 0;
 	contacts = Node.contacts = [];
 	const start = Date.now();
 	async function make1(i) {
@@ -67,7 +68,7 @@ describe("DHT operations", function () {
 	}
 	await make1(0);
 
-	//for (let i = 1; i < size; i++) await make1(i);
+	// for (let i = 1; i < size; i++) await make1(i);
 	const promises = [];
 	for (let i = 1; i < size; i++) promises.push(make1(i));
 	await Promise.all(promises);
@@ -79,7 +80,7 @@ describe("DHT operations", function () {
       afterAll(function () {
 	// contacts[0].node.report();
 	// contacts[contacts.length - 1].node.report();
-	//Node.reportAll();
+	// Node.reportAll();
       });
       async function test1(i, j) {
 	it(`allows node ${i} to locate node ${j}.`, async function () {
@@ -112,11 +113,11 @@ describe("DHT operations", function () {
       }
     });
   }
-  //test(100, SimulatedOverlayContact);
+  //test(40, SimulatedOverlayContact);
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);
-  //test(1e3);
+  test(1e3);
   //test(10e3);
   //test(50e3);
 });
