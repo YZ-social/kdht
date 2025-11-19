@@ -133,7 +133,7 @@ export class SimulatedContact extends Contact {
       .finally(() => Node.noteStatistic(start, 'rpc'));
   }
   transmitRpc(...rest) {
-    if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
+    //if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     return this.receiveRpc(...rest);
   }
   receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
@@ -494,29 +494,32 @@ export class Node { // An actor within thin DHT.
     return target;
   }
   // Discovery
+  routingTableSerializer = Promise.resolve();
   async addToRoutingTable(contact) { // Promise contact and add it to the routing table if room, else falsy.
-    const key = contact.key;
-    if (key === this.key) return false; // Don't add self
+    return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
+      const key = contact.key;
+      if (key === this.key) return false; // Don't add self
 
-    const routingTable = this.routingTable;
-    const bucketIndex = this.getBucketIndex(key);
-    
-    // Get or create bucket
-    let bucket = routingTable.get(bucketIndex);
-    if (!bucket) {
-      bucket = new KBucket();
-      routingTable.set(bucketIndex, bucket);
-    }
-    
-    // Try to add to bucket
-    contact = contact.clone(this);
-    if (await bucket.addContact(contact)) {
-      // Don't bother awaiting. In fact, we don't want other activity manipulating our table right now.
-      this.replicateCloserStorage(contact); 
-      return contact;
-    }
+      const routingTable = this.routingTable;
+      const bucketIndex = this.getBucketIndex(key);
 
-    return false;
+      // Get or create bucket
+      let bucket = routingTable.get(bucketIndex);
+      if (!bucket) {
+	bucket = new KBucket();
+	routingTable.set(bucketIndex, bucket);
+      }
+
+      // Try to add to bucket
+      contact = contact.clone(this);
+      if (await bucket.addContact(contact)) {
+	// Asynchronous so that this doesn't come within our activity.
+	this.replicateCloserStorage(contact);
+	return contact;
+      }
+
+      return false;
+    });
   }
   addOverlayContact(overlay, kick, bucket) { //fixme  = this.routingTable.get(this.getBucketIndex(overlay.key))) {
     if (!bucket) {
@@ -673,7 +676,7 @@ export class Node { // An actor within thin DHT.
     const contact = helper.contact;
     let results = await contact.sendCatchingRpc(finder, targetKey);
     if (!results) return []; // disconnected
-    await this.addToRoutingTable(helper.contact); // Live. Update bucket.
+    await this.addToRoutingTable(helper.contact); // Live node, so update bucket.
     if (Node.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
     }
