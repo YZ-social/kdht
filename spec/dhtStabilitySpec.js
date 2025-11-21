@@ -1,7 +1,6 @@
 import { Node, SimulatedContact, SimulatedOverlayContact } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
-
 describe("DHT stability", function () {
   function test({networkSize, nBootstrapNodes = 1, refreshTimeIntervalMS = 1e3, runTimeMS = 3 * refreshTimeIntervalMS, Contact = SimulatedOverlayContact}) {
     // Generates a test suite with the given parameters (most described in https://github.com/YZ-social/flag/issues/31).
@@ -12,54 +11,15 @@ describe("DHT stability", function () {
 	// TODO: use Node#repeat with a margin that does not produce a ridiculous short minimum uptime.
 	setTimeout(async () => {
 	  const contact = Node.contacts[i];
+	  if (!contact.node.refreshTimeIntervalMS || stopToggles) return;
 	  contact.disconnect();
-	  Node.contacts[i] = await make1(i);
-	  if (!stopToggles) toggle(i);
+	  await make1(i);
+	  toggle(i);
 	}, randomInteger(2 * refreshTimeIntervalMS));
       }
       function delay(ms) {
 	return new Promise(resolve => setTimeout(resolve, ms));
       }
-      // Jasmine collects the named suies and tests in some order, and then completely runs one before starting the next.
-      // But there are tests that we want to run "later" and we don't want to stall everything.
-      // To do this, we allow a suite or test to add a promise to deferred. The promise will run asynchronously and
-      // resolve whenever it is designed to do so, and the entire suite will wait for all of them before finally exiting.
-      const deferred = [];
-      let defaultRefreshTime;
-      afterAll(async function () {
-	// The named tests have all run. Start thrashing.
-	Node.resetStatistics();
-
-	console.log('starting toggles', new Date());
-	for (let i = nBootstrapNodes; i < networkSize; i++) toggle(i);
-	await delay(2 * runTimeMS / 3);
-
-	console.log('stopping toggles', new Date());
-	stopToggles = true;
-	await delay(runTimeMS / 3);
-
-	console.log('running deferred tests', new Date());
-	await Promise.all(deferred.map(thunk => thunk()));
-
-	console.log('finished', new Date());
-	Node.refreshTimeIntervalMS = defaultRefreshTime;
-	let stats = Node.statistics;
-	let replication = Math.min(Node.k, networkSize);
-	let refreshments = 2 * runTimeMS / refreshTimeIntervalMS ; // We average 2 refreshmments / refreshTimeIntervalMS
-	//Node.reportAll();
-	console.log('\nAverage counts per node:');
-	console.log(`${stats.stored} stored items, expect ${replication}`);
-	console.log(`${stats.buckets} buckets`);
-	console.log(`${stats.contacts} contacts, ${Math.round(stats.contacts/stats.buckets)} per bucket`);
-	console.log(`${stats.overlays} webrtc connections, ${Math.round(stats.overlays/stats.buckets)} per bucket`);	
-	console.log('\nAverage ms per action:');
-	const stat = (label, {count, elapsed, lag, average}, expect) =>
-	      console.log(`${(elapsed/count).toFixed(1)} ${label} lagging ${(lag/count).toFixed(1)}, total ${count.toLocaleString()}${expect ? ` (idealized ${expect})`: ''} in ${elapsed/1e3} seconds.`);
-	stat('RPC', stats.rpc);
-	stat('overlay leg', stats.overlay);	
-	stat('bucket refresh', stats.bucket);
-	stat('storage refresh', stats.storage, stats.stored * refreshments * networkSize);
-      }, 2 * runTimeMS);
       let reportedDeferred = false;
       function randomInteger(max = Node.contacts.length) {
 	// Return a random number between 0 (inclusive) and max (exclusive), defaulting to the number of contacts made.
@@ -78,38 +38,48 @@ describe("DHT stability", function () {
 	let connected = Node.contacts.filter(c => c.isConnected);
 	return Node.findClosestHelpers(key, connected, 20).map(h => h.contact.node);
       }
-      function make1(i) {
-	return Contact.create({name: i, refreshTimeIntervalMS})
-	  .then(contact => contact.join(randomContact(nBootstrapNodes)));
+      async function make1(i) {
+	let contact = await Contact.create({name: i, refreshTimeIntervalMS});
+	Node.contacts[i] = contact;
+	const bootstrap = randomContact(nBootstrapNodes);
+	//console.log(contact.node.report(null), 'joining', bootstrap.node.report(null));
+	await contact.join(bootstrap);
       }
+      // Jasmine collects the named suies and tests in some order, and then completely runs one before starting the next.
+      // But there are tests that we want to run "later" and we don't want to stall everything.
+      // To do this, we allow a suite or test to add a promise to deferred. The promise will run asynchronously and
+      // resolve whenever it is designed to do so, and the entire suite will wait for all of them before finally exiting.
+      // TODO: turn this around so that the toggling is in the beforeAll, and then the post-toggling test can be normal named tests.
+      const deferred = [];
+      let defaultRefreshTime;
       beforeAll(async function () {
 	defaultRefreshTime = Node.refreshTimeIntervalMS;
 	Node.refreshTimeIntervalMS = refreshTimeIntervalMS;
 	Node.contacts = [];
 	const start = Date.now();
 
-	// First create the bootstrap nodes in full.
+	// First create the BOOTSTRAP nodes in full.
 	// For now, we'll create them one at a time.
 	// TODO: do all but the first in parallel.
-	for (let i = 0; i < nBootstrapNodes; i++) {
-	  let contact = await Contact.create({name: i, refreshTimeIntervalMS});
-	  if (i) await contact.join(Node.contacts[i - 1]);
+	Node.contacts.push(await Contact.create({name: 0, refreshTimeIntervalMS}));
+	for (let i = 1; i < nBootstrapNodes; i++) {
+	  const contact = await Contact.create({name: 0, refreshTimeIntervalMS});
 	  Node.contacts.push(contact);
+	  await contact.join(Node.contacts[i - 1]);
 	}
 	console.log('Refresh time is', Node.contacts[0].node.refreshTimeIntervalMS / 1e3, 'seconds.');
 	console.log('Run time is', runTimeMS / 1e3, 'seconds.');
 
-	// add all clients
-	const joins = [];
-	for (let i = nBootstrapNodes; i < networkSize; i++) joins.push(make1(i));
-	Node.contacts.push(...await Promise.all(joins));
+	// Add all (non-bootstrap) clients.
+	for (let i = nBootstrapNodes; i < networkSize; i++) await make1(i);
+
 	// Write all keys
 	let writes = [];
-	for (let i = 0; i < networkSize; i++) writes.push(randomNode().storeValue(i, i));
-	await Promise.all(writes);
+	for (let i = 0; i < networkSize; i++) await randomNode().storeValue(i, i);
+	//await Promise.all(writes);
 	const elapsed = Date.now() - start;
 	console.log(`Setup ${networkSize} ${Contact.name} complete in ${(elapsed/1e3).toFixed(1)} seconds (${Math.round(elapsed/networkSize)} ms/node).`);
-      }, (networkSize/100 + 1) * networkSize + 5e3);
+      }, Math.max(runTimeMS, (networkSize/100 + 1) * networkSize + 5e3));
 
       it('initially reads.', async function () {
 	let done = [];
@@ -130,7 +100,46 @@ describe("DHT stability", function () {
 	}
 	await Promise.all(done);
       });
+      afterAll(async function () {
+	// The named tests have all run. Start thrashing.
+	Node.resetStatistics();
+
+	console.log('starting toggles', new Date());
+	for (let i = nBootstrapNodes; i < networkSize; i++) toggle(i);
+	await delay(2 * runTimeMS / 3);
+
+	console.log('stopping toggles', new Date());
+	stopToggles = true;
+	await delay(runTimeMS / 3);
+
+	//Node.reportAll();
+	console.log('running deferred tests', new Date());
+	await Promise.all(deferred.map(thunk => thunk()));
+
+	console.log('finished', new Date());
+	//Node.reportAll();
+	Node.refreshTimeIntervalMS = defaultRefreshTime;
+	let stats = Node.statistics;
+	let replication = Math.min(Node.k, networkSize);
+	let refreshments = 2 * runTimeMS / refreshTimeIntervalMS ; // We average 2 refreshmments / refreshTimeIntervalMS
+	console.log('\nAverage counts per node:');
+	console.log(`${stats.stored} stored items, expect ${replication}`);
+	console.log(`${stats.buckets} buckets`);
+	console.log(`${stats.contacts} contacts, ${Math.round(stats.contacts/stats.buckets)} per bucket`);
+	console.log('\nAverage ms per action:');
+	const stat = (label, {count, elapsed, lag, average}, expect) =>
+	      console.log(`${(elapsed/count).toFixed(1)} ${label} lagging ${(lag/count).toFixed(1)}, total ${count.toLocaleString()}${expect ? ` (idealized ${expect})`: ''} in ${elapsed/1e3} seconds.`);
+	stat('RPC', stats.rpc);
+	stat('bucket refresh', stats.bucket);
+	stat('storage refresh', stats.storage, stats.stored * refreshments * networkSize);
+      }, 2 * runTimeMS);
     });
   }
-  test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 10e3, Contact: SimulatedContact});
+  // test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
+  // test({networkSize: 200, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
+  // test({networkSize: 300, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
+  // test({networkSize: 400, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
+  // test({networkSize: 500, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
+  //test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
+  test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
 });

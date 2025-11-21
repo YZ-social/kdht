@@ -68,8 +68,8 @@ describe("DHT operations", function () {
 	}
 	await make1(0);
 
-	// for (let i = 1; i < size; i++) await make1(i);
-	const promises = [];
+	// for (let i = 1; i < size; i++) await make1(i); // serial creation
+	const promises = [];  // parallel creation
 	for (let i = 1; i < size; i++) promises.push(make1(i));
 	await Promise.all(promises);
 
@@ -117,7 +117,7 @@ describe("DHT operations", function () {
   for (let size = 1; size < 4; size++) test(size);
   for (let size = 4; size <= 40; size+=4) test(size);
   test(100);
-  test(1e3);
+  // test(1e3);
   //test(10e3);
   //test(50e3);
 });

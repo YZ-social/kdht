@@ -69,10 +69,9 @@ export class Contact {
 export class SimulatedContact extends Contact {
   clone(hostNode) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
     if (this.host === hostNode) return this; // All good.
-    const existing = hostNode.contacts.find(c => c.node.key === this.key); // FIXME: don't cons
-    if (existing && existing.isConnected) {
-      return existing;
-    }
+    // let existing;
+    // hostNode.forEachBucket(bucket => !(existing = bucket.contacts.find(c => c.node.key === this.key)));
+    // if (existing && existing.isConnected) return existing;
     return this.constructor.fromNode(this.node, hostNode);
   }
   get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
@@ -158,7 +157,7 @@ export class SimulatedOverlayContact extends SimulatedContact {
   async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     if (!this.hasTransport) {
-      //if (this.host.name !== '0') console.log(this.host.name, 'making transport to', this.node.name);
+      //if (this.host.name === '0') console.log(this.host.contact.report, 'making transport to', this.report);
       this.hasTranport = true;
     }
     return await this.receiveRpc(...rest);
@@ -292,12 +291,11 @@ export class Node { // An actor within thin DHT.
       let buckets = 0, contacts = 0, stored = 0;
       for (const {node} of this.contacts) {
 	stored += node.storage.size;
-	for (let i = 0; i < Node.keySize; i++) {
-	  const bucket = node.routingTable.get(i);
-	  if (!bucket) continue;
+	node.forEachBucket(bucket => {
 	  buckets++;
 	  contacts += bucket.contacts.length;
-	}
+	  return true;
+	});
       }
       _stats.contacts = Math.round(contacts/this.contacts.length);
       _stats.stored = Math.round(stored/this.contacts.length);
@@ -325,23 +323,13 @@ export class Node { // An actor within thin DHT.
   }
   routingTable = new Map(); // Maps bit prefix length to KBucket
   forEachBucket(iterator) { // Call iterator(bucket) on each non-empty bucket, stopping as soon as iterator(bucket) returns falsy.
-    //for (const bucket of this.routingTable.values()) {
-    for (let bucketIndex = 0; bucketIndex < Node.keySize; bucketIndex++) {
-      const bucket = this.routingTable.get(bucketIndex);
+    for (const bucket of this.routingTable.values()) {
       if (bucket && !iterator(bucket)) return;
     }
   }
   get contacts() { // Answer a fresh copy of all contacts for this Node.
     const contacts = [];
-    for (let bucketIndex = 0; bucketIndex < Node.keySize; bucketIndex++) { // fixme: why is this not tracking with logging
-      const bucket = this.routingTable.get(bucketIndex);
-      if (bucket) {
-	//console.log(this.name, bucketIndex, bucket.contacts.length);
-	contacts.push(...bucket.contacts);
-      }
-    }
-    //console.log(this.name, contacts.map(c => c.report));
-    //this.forEachBucket(bucket => contacts.push(...bucket.contacts));
+    this.forEachBucket(bucket => contacts.push(...bucket.contacts));
     return contacts;
   }
   report(logger = console.log) { // return logger( a string description of node )
