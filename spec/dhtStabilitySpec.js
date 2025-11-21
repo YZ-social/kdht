@@ -12,7 +12,25 @@ describe("DHT stability", function () {
 	setTimeout(async () => {
 	  const contact = Node.contacts[i];
 	  if (!contact.node.refreshTimeIntervalMS || stopToggles) return;
+
+	  // For debugging, show that disconnects are happening by reporting if the highest number Node.contacts is disconnecting.
+	  // (The lower number Node.contacts might be bootstrap nodes.)
+	  if (Node.contacts?.length && contact.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', contact.farHomeContact.report);
+
 	  contact.disconnect();
+
+
+	  // For debugging: Report if we're killing the last holder of our data.
+	  if (Node.contacts) {
+	    for (const key of contact.node.storage.keys()) {
+	      let remaining = [];
+	      for (const contact of Node.contacts) {
+		if (contact.isConnected && contact.node.storage.has(key)) remaining.push(contact.node.name);
+	      }
+	      if (!remaining.length) console.log(`Disconnecting ${contact.node.name}, last holder of ${key}: ${contact.node.storage.get(key)}.`);
+	    }
+	  }
+
 	  await make1(i);
 	  toggle(i);
 	}, randomInteger(2 * refreshTimeIntervalMS));
@@ -61,9 +79,9 @@ describe("DHT stability", function () {
 	// First create the BOOTSTRAP nodes in full.
 	// For now, we'll create them one at a time.
 	// TODO: do all but the first in parallel.
-	Node.contacts.push(await Contact.create({name: 1, refreshTimeIntervalMS}));
+	Node.contacts.push(await Contact.create({name: 0, refreshTimeIntervalMS}));
 	for (let i = 1; i < nBootstrapNodes; i++) {
-	  const contact = await Contact.create({name: 1, refreshTimeIntervalMS});
+	  const contact = await Contact.create({name: i, refreshTimeIntervalMS});
 	  Node.contacts.push(contact);
 	  await contact.join(Node.contacts[i - 1]);
 	}
@@ -79,7 +97,7 @@ describe("DHT stability", function () {
 	//await Promise.all(writes);
 	const elapsed = Date.now() - start;
 	console.log(`Setup ${networkSize} ${Contact.name} complete in ${(elapsed/1e3).toFixed(1)} seconds (${Math.round(elapsed/networkSize)} ms/node).`);
-      }, Math.max(runTimeMS, (networkSize/100 + 1) * networkSize + 5e3));
+      }, Math.max(runTimeMS, (networkSize/100) * networkSize + 5e3));
 
       it('initially reads.', async function () {
 	let done = [];
@@ -133,7 +151,7 @@ describe("DHT stability", function () {
 	stat('RPC', stats.rpc);
 	stat('bucket refresh', stats.bucket);
 	stat('storage refresh', stats.storage, stats.stored * refreshments * networkSize);
-      }, 2 * runTimeMS);
+      }, Math.max(20e3, 2 * runTimeMS));
     });
   }
   // test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
@@ -142,5 +160,5 @@ describe("DHT stability", function () {
   // test({networkSize: 400, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
   // test({networkSize: 500, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
   //test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
-  test({networkSize: 10, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
+  test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
 });

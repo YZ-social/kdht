@@ -36,7 +36,7 @@ export class Contact {
   // Represents an abstract contact from a host (a Node) to another node.
   // The host calls aContact.sendRpc(...messageParameters) to send the message to node and promises the response.
   // This could be by wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
-  static distinguisher = 1; // If set to truthy number, then each Node gets a unique distinguisher that appears in Contact report.
+  static distinguisher = 0; // If set to truthy number, then each Node gets a unique distinguisher that appears in Contact report.
   constructor() {
     this.distinguisher = Contact.distinguisher;
     if (Contact.distinguisher) Contact.distinguisher++;
@@ -75,12 +75,9 @@ export class Contact {
 export class SimulatedContact extends Contact {
   clone(hostNode) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
     if (this.host === hostNode) return this; // All good.
-    let existing;
-    hostNode.forEachBucket(bucket => !(existing = bucket.contacts.find(c => c.node.key === this.key)));
-    if (existing && existing.isConnected) return existing;
-    const cloned = this.constructor.fromNode(this.node, hostNode);
-    //console.log('cloning', this.report, 'as', cloned.report);
-    return cloned;
+    let existing = hostNode.findContact(this.key);
+    if (existing?.isConnected) return existing;
+    return this.constructor.fromNode(this.node, hostNode);
   }
   get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
     return this.node.contact;
@@ -98,26 +95,8 @@ export class SimulatedContact extends Contact {
   }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
-
-    // // For debugging, show that disconnects are happening by reporting if the highest number Node.contacts is disconnecting.
-    // // (The lower number Node.contacts might be bootstrap nodes.)
-    if (Node.contacts?.length
-	&& this.farHomeContact === Node.contacts[Node.contacts.length - 1]
-	//&& this.farHomeContact.node.name === '1'
-       ) console.log('disconnect', this.farHomeContact.report);
-
     farHomeContact._connected = false;
     this.node.stopRefresh();
-
-    // For debugging: Report if we're killing the last holder of our data.
-    if (!Node.contacts) return;
-    for (const key of this.node.storage.keys()) {
-      let remaining = [];
-      for (const contact of Node.contacts) {
-	if (contact.isConnected && contact.node.storage.has(key)) remaining.push(contact.node.name);
-      }
-      if (!remaining.length) console.log(`Disconnecting ${this.node.name}, last holder of ${key}: ${this.node.storage.get(key)}.`);
-    }
   }
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
@@ -172,11 +151,15 @@ export class SimulatedOverlayContact extends SimulatedContact {
   async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     if (!this.hasTransport) {
-      const last = Node.contacts?.[Node.contacts?.length - 1]?.name;
-      if (this.host.name === last || this.name === last) {
-	console.log(this.host.contact.report, 'making transport to', this.report);
-      }
+      const { host, node } = this;
       this.hasTransport = true;
+      const senderKey = host.key;
+      let farContactForUs = this.node.findContact(senderKey);
+      if (!farContactForUs) {
+	farContactForUs = host.contact.clone(this.node);
+	await node.addToRoutingTable(farContactForUs); // Which might not have room.
+      }
+      farContactForUs = true;
     }
     return await this.receiveRpc(...rest);
   }
@@ -250,7 +233,7 @@ export class Node { // An actor within thin DHT.
   static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
-  static distinguisher = 1; // If set to truthy number, then each Node gets a unique distinguisher that appears in Contact report.
+  static distinguisher = 0; // If set to truthy number, then each Node gets a unique distinguisher that appears in Contact report.
   constructor({refreshIntervalMS = Node.refreshIntervalMS, distinguisher = Node.distinguisher, ...properties}) {
     if (distinguisher) Node.distinguisher = distinguisher + 1; // Don't increment if zero.
     Object.assign(this, {refreshIntervalMS, distinguisher, ...properties});
@@ -342,6 +325,12 @@ export class Node { // An actor within thin DHT.
     for (const bucket of this.routingTable.values()) {
       if (bucket && !iterator(bucket)) return;
     }
+  }
+  findContact(key) { // Answer the contact for this key.
+    // Alternatively we could compute the index and just look there.
+    let contact = null;
+    this.forEachBucket(bucket => !(contact = bucket.contacts.find(c => c.node.key === key)));
+    return contact;
   }
   get contacts() { // Answer a fresh copy of all contacts for this Node.
     const contacts = [];
@@ -634,7 +623,7 @@ export class Node { // An actor within thin DHT.
     // I.e., send back a list of verifiable signatures and let the receiver verify and then compute the distances.
     return this.findClosestHelpers(key);
   }
-  findValue(key) { // Like sendFindNode, but if other has identifier stored, reject {value} instead.
+  findValue(key) { // Like findNodes, but if other has identifier stored, reject {value} instead.
     let value = this.retrieveLocally(key);
     if (value !== undefined) return {value};
     return this.findClosestHelpers(key);
