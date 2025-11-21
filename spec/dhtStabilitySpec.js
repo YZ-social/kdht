@@ -39,7 +39,7 @@ describe("DHT stability", function () {
 	return Node.findClosestHelpers(key, connected, 20).map(h => h.contact.node);
       }
       async function make1(i) {
-	let contact = await Contact.create({name: i, refreshTimeIntervalMS});
+	let contact = await Contact.create({name: i+1, refreshTimeIntervalMS});
 	Node.contacts[i] = contact;
 	const bootstrap = randomContact(nBootstrapNodes);
 	//console.log(contact.node.report(null), 'joining', bootstrap.node.report(null));
@@ -61,9 +61,9 @@ describe("DHT stability", function () {
 	// First create the BOOTSTRAP nodes in full.
 	// For now, we'll create them one at a time.
 	// TODO: do all but the first in parallel.
-	Node.contacts.push(await Contact.create({name: 0, refreshTimeIntervalMS}));
+	Node.contacts.push(await Contact.create({name: 1, refreshTimeIntervalMS}));
 	for (let i = 1; i < nBootstrapNodes; i++) {
-	  const contact = await Contact.create({name: 0, refreshTimeIntervalMS});
+	  const contact = await Contact.create({name: 1, refreshTimeIntervalMS});
 	  Node.contacts.push(contact);
 	  await contact.join(Node.contacts[i - 1]);
 	}
@@ -103,7 +103,8 @@ describe("DHT stability", function () {
       afterAll(async function () {
 	// The named tests have all run. Start thrashing.
 	Node.resetStatistics();
-
+	//Node.reportAll();
+	
 	console.log('starting toggles', new Date());
 	for (let i = nBootstrapNodes; i < networkSize; i++) toggle(i);
 	await delay(2 * runTimeMS / 3);
@@ -141,5 +142,5 @@ describe("DHT stability", function () {
   // test({networkSize: 400, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
   // test({networkSize: 500, nBootstrapNodes: 1, refreshTimeIntervalMS: 0e3, Contact: SimulatedContact});
   //test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
-  test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
+  test({networkSize: 10, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
 });

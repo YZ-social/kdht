@@ -102,7 +102,7 @@ export class SimulatedContact extends Contact {
     // // For debugging, show that disconnects are happening by reporting if the highest number Node.contacts is disconnecting.
     // // (The lower number Node.contacts might be bootstrap nodes.)
     if (Node.contacts?.length
-	//&& this.farHomeContact === Node.contacts[Node.contacts.length - 1]
+	&& this.farHomeContact === Node.contacts[Node.contacts.length - 1]
 	//&& this.farHomeContact.node.name === '1'
        ) console.log('disconnect', this.farHomeContact.report);
 
@@ -122,6 +122,7 @@ export class SimulatedContact extends Contact {
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
     if (!sender.isConnected) Disconnect.throw(`RPC from closed sender ${sender.host.name}.`);
+    if (sender.key === this.key) return Promise.resolve(this.receiveRpc(method, sender, ...rest));
 
     const start = Date.now();
     return this.transmitRpc(method, sender, ...rest) // The main event.
@@ -171,9 +172,10 @@ export class SimulatedOverlayContact extends SimulatedContact {
   async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     if (!this.hasTransport) {
-      //if (this.host.name === '1') {
+      const last = Node.contacts?.[Node.contacts?.length - 1]?.name;
+      if (this.host.name === last || this.name === last) {
 	console.log(this.host.contact.report, 'making transport to', this.report);
-      //}
+      }
       this.hasTransport = true;
     }
     return await this.receiveRpc(...rest);
