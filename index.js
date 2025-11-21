@@ -69,6 +69,17 @@ export class Contact {
 export class SimulatedContact extends Contact {
   clone(hostNode) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
     if (this.host === hostNode) return this; // All good.
+    // if (this.host.key === hostNode.key
+    // 	//&& this.isConnected // fixme remove?
+    //    ) {
+    //   //return this; // All good.
+    // }
+    //const existing = this.host.contacts.find(c => c.node.key === this.key); // FIXME: don't cons
+    // if (existing?.isConnected) return existing;
+    //if (existing && existing.isConnected) {
+      //console.log(existing.report, this.report);
+      //return existing;
+    //}
     return this.constructor.fromNode(this.node, hostNode);
   }
   get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
@@ -102,15 +113,15 @@ export class SimulatedContact extends Contact {
       if (!remaining.length) console.log(`Disconnecting ${this.node.name}, last holder of ${key}: ${this.node.storage.get(key)}.`);
     }
   }
-  deserialize(requestResponse, sender) { // Set up any serialized contacts for the originating host Node.
-    return Node.isArrayResult(requestResponse) ?
-      requestResponse.map(h => new Helper(h.contact.clone(sender.host), h.distance)) :
-      requestResponse;
-  }
+  // deserialize(requestResponse, sender) { // Set up any serialized contacts for the originating host Node.
+  //   return Node.isArrayResult(requestResponse) ?
+  //     requestResponse.map(h => new Helper(h.contact.clone(sender.host), h.distance)) :
+  //     requestResponse;
+  // } //fixme remove
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
     if (!sender.isConnected) Disconnect.throw(`RPC from closed sender ${sender.host.name}.`);
-    
+
     const start = Date.now();
     return this.transmitRpc(method, sender, ...rest) // The main event.
       .catch(rejection => {
@@ -130,7 +141,8 @@ export class SimulatedContact extends Contact {
       })
       .then(result => {
 	if (!sender.isConnected) Disconnect.throw(`Sender ${sender.host.name} closed during RPC.`); // No need to remove recipient key from host bucket.
-	return this.deserialize(result, sender);
+	//fixme remove return this.deserialize(result, sender);
+	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
   }
@@ -139,12 +151,13 @@ export class SimulatedContact extends Contact {
     return await this.receiveRpc(...rest);
   }
   receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
+    sender = sender.clone(this.node);
     this.node.addToRoutingTable(sender); // Asynchronously so as to not overlap.
     return this.node[method](...rest);
   }
 }
 
-function hasDupes(contacts) {
+function hasDupes(contacts) { // fixme remove and callers
   const seen = new Set();
   for (const contact of contacts) {
     if (seen.has(contact.name)) return true;
@@ -154,62 +167,14 @@ function hasDupes(contacts) {
 }
 
 export class SimulatedOverlayContact extends SimulatedContact {
-  transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
-    return this.constructor.forwardThroughOverlay(this.host, this, rest, this.node.name, []);
-  }
-  static async forwardThroughOverlay(node, intendedContact, message, debugTargetName, path) {
-    // Pass the rest message through a Node towards the intendedContactKey, and promise the response.
-
-    if (!node.contact.isConnected) return Disconnect.throw('Forwarding through disconnected node.');
-    
-    // If we are not yet connected or host is who we are intended to contact, then just have the host handle it.
-    if (!node.routingTable.size || (intendedContact.key === node.key)) {
-      return node.contact.receiveRpc(...message);
+  hasTransport = false;
+  async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
+    if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
+    if (!this.hasTransport) {
+      //if (this.host.name !== '0') console.log(this.host.name, 'making transport to', this.node.name);
+      this.hasTranport = true;
     }
-
-    const loop = path.includes(node.name);
-    if (loop) {console.log(Node.contacts.length, 'nodes'); Node.reportAll(); }
-    Node.assert(!loop, message[1].report, 'looping through', node?.name, 'to', debugTargetName);
-    path.push(node.name);
-
-    // Otherwise find the closest bucket we have to intendedContactKey, and forward through a simulated connection servicing that bucket.
-    const start = Date.now();
-    const overlay = await node.ensureOverlay(intendedContact, debugTargetName);
-    const result = await this.forwardThroughOverlay(overlay.node, intendedContact, message, debugTargetName, path);
-    Node.noteStatistic(start, 'overlay');
-    return result;
-  }
-  static maxOverlayConnections = 200;
-  async createOverlayConnection(contact, ourBucket, force) {
-    // Promise a new overlay connection from here to contact, caching it in the approriate bucket of both sides, else false.
-    // See caller for interpretation of force.
-    // Each side attempts to add the other to it's routing table, even if doesn't ultimiately make a connection.
-    // For WebRTC, this will involve signaling between us and the candidate contact.
-    // The signaling may take place through a server or through the network. (We do not distinguish in this simulation.)
-    // TODO: WebRTC will know quickly if the overlay has closed. Should we do something on close?
-    const { host, node } = contact;
-
-    if (!host.contact.isConnected || !node.contact.isConnected) {
-      console.log('cannot make overlay to disconnected node', contact.report);
-      return undefined;
-    }
-
-    // If either side is over the limit and we're not forcing things, just return falsy.
-    const { maxOverlayConnections } = this.constructor;
-    const tooManyHost = host.nOverlayConnections > maxOverlayConnections;
-    const tooManyNode = node.nOverlayConnections > maxOverlayConnections;
-    if (!force && (tooManyHost || tooManyNode)) return undefined;
-
-    // Add contacts to both routing tables, if possible. If not and not forced, just return falsy.p
-    const outBound = await host.addToRoutingTable(contact);
-    const inBound = await node.addToRoutingTable(host.contact);
-    if (!force && (!outBound || !inBound)) return undefined;
-
-    // Connection is allowed. Adds the contact on both sides.
-    // If we're full up (null in/outBound), use the other side, even if that means it isn't in contacts.
-    host.addOverlayContact(outBound || contact.clone(host), tooManyHost, ourBucket);
-    node.addOverlayContact(inBound || host.contact.clone(node), tooManyNode);
-    return contact;
+    return await this.receiveRpc(...rest);
   }
 }
 
@@ -274,37 +239,6 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     }
     return false;
   }
-
-  // Overlay connections.
-  overlayContacts = []; // There can be several, from other nodes making an overlay connection to us.
-  async maybeGetOverlay() { // Promise a cached working overlay node for this bucket's distance.
-    const { overlayContacts } = this;    
-    // Get an existing one that is still connected, if any.
-    // It doesn't matter if is to one of the k we are tracking in this bucket.
-    while (overlayContacts.length) {
-      const candidate = overlayContacts[0];
-      if (candidate.isConnected) return candidate;
-      overlayContacts.shift();
-      let removed = this.removeKey(candidate.key);
-      if (hasDupes(this.contacts)) console.log(this.name, 'remove dead overlay', candidate.name, removed, this.host.getBucketIndex(candidate.key), this.contacts.map(c => c.report));
-    }
-    // Otherwise, try making one.
-    return await this.makeOverlay(false) || await this.makeOverlay(true);
-  }
-  async makeOverlay(force) { // Create and cache overlay for this bucket, promising the far node, else falsy.
-    // Try to create and overlay connection for each contact, returning the first one that is successful
-
-    // Both ends must still be online (isConnected).
-    // Unless forced, both ends will attempt to add the other to its routing table, and
-    // will fail if there's no room for it, or if either end is at its connection limit.
-    // If forced, both ends will kill an existing overlay to stay within our limit.
-
-    for (const candidate of this.contacts.slice()) { // Copy of contacts, as we may be re-adding contacts at the end.
-      const overlay = await candidate.host.contact.createOverlayConnection(candidate, this, force);
-      if (overlay) return overlay;
-    }
-    return undefined;
-  }
 }
 
 
@@ -368,7 +302,7 @@ export class Node { // An actor within thin DHT.
     // If Nodes.contacts is populated, also report average number of buckets and contacts.
     const { _stats } = this;
     if (this.contacts?.length) {
-      let buckets = 0, contacts = 0, stored = 0, overlays = 0;
+      let buckets = 0, contacts = 0, stored = 0;
       for (const {node} of this.contacts) {
 	stored += node.storage.size;
 	for (let i = 0; i < Node.keySize; i++) {
@@ -376,11 +310,9 @@ export class Node { // An actor within thin DHT.
 	  if (!bucket) continue;
 	  buckets++;
 	  contacts += bucket.contacts.length;
-	  overlays += bucket.overlayContacts.length;
 	}
       }
       _stats.contacts = Math.round(contacts/this.contacts.length);
-      _stats.overlays = Math.round(overlays/this.contacts.length);
       _stats.stored = Math.round(stored/this.contacts.length);
       _stats.buckets = Math.round(buckets/this.contacts.length);
     }
@@ -391,8 +323,7 @@ export class Node { // An actor within thin DHT.
     this._stats = {
       bucket: Object.assign({}, stat), // copy the model
       storage: Object.assign({}, stat),
-      rpc: Object.assign({}, stat),
-      overlay: Object.assign({}, stat)
+      rpc: Object.assign({}, stat)
     };
   }
   static noteStatistic(startTimeMS, name) { // Given a startTimeMS, update statistics bucket for name.
@@ -426,11 +357,6 @@ export class Node { // An actor within thin DHT.
     //this.forEachBucket(bucket => contacts.push(...bucket.contacts));
     return contacts;
   }
-  get nOverlayContacts() { // How many overlays do we have
-    let n = 0;
-    this.forEachBucket(bucket => ((n += bucket.overlayContacts.length) || true));
-    return n;
-  }
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.contact?.report || this.name}`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
@@ -442,8 +368,6 @@ export class Node { // An actor within thin DHT.
       const bucket = this.routingTable.get(index);
       if (!bucket) continue;
       report += `\n  ${index}: ` + (contactsString(bucket.contacts) || '-');
-      const { overlayContacts} = bucket;
-      if (overlayContacts.length)  report += ' overlays: ' + contactsString(overlayContacts);
       if (hasDupes(bucket.contacts)) report += '*** duplicates ***';
     }
     return logger ? logger(report) : report;
@@ -500,7 +424,7 @@ export class Node { // An actor within thin DHT.
   }
   // Discovery
   routingTableSerializer = Promise.resolve();
-  addToRoutingTable(contact) { // Promise contact and add it to the routing table if room, else falsy.
+  addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
     return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
       const key = contact.key;
       if (key === this.key) return false; // Don't add self
@@ -516,7 +440,7 @@ export class Node { // An actor within thin DHT.
       }
 
       // Try to add to bucket
-      contact = contact.clone(this);
+      contact = contact.clone(this); // fixme remove
       if (await bucket.addContact(contact)) {
 	// Asynchronous so that this doesn't come within our activity.
 	this.replicateCloserStorage(contact);
@@ -524,52 +448,6 @@ export class Node { // An actor within thin DHT.
       }
 
       return false;
-    });
-  }
-  addOverlayContact(overlay, kick, bucket) { //fixme  = this.routingTable.get(this.getBucketIndex(overlay.key))) {
-    if (!bucket) {
-      const key = overlay.key;
-      const index = this.getBucketIndex(key);
-      bucket = this.routingTable.get(index);
-      Node.assert(bucket, 'addOverlayContact unable to find bucket', overlay, key, key === this.key, kick, index);
-    }
-
-    // Add overlay to bucket if it it is not already present. First kick an existing overlay if told to.
-
-    const { overlayContacts } = bucket;
-    if (overlayContacts.find(existing => existing.key === overlay.key)) return;
-    // If necessary, kick some contact in this hos
-    if (kick) this.kickOverlayContact();
-    overlayContacts.push(overlay);
-    //console.log({overlay, kick, bucket});
-  }
-  kickOverlayContact() { // Remove the oldest from the bucket with the most overlayContacts
-    // FIXME: clean this up, and integrate with above.
-    let biggestBucket = null;
-    this.forEachBucket(bucket => (bucket.overlayContacts.length > (biggestBucket?.overlayContacts.length ?? 0)) ?
-		       (biggestBucket=bucket) :
-		       true);
-    biggestBucket.overlayCandidates.shift();
-  }
-  overlaySerializer = Promise.resolve();
-  ensureOverlay(intendedContact, debugTargetName) { // Promise an existing or freshly cached overlay for the intendedContactKey
-    return this.overlaySerializer = this.overlaySerializer.then(async () => {
-      const bestHelpers = this.constructor.findClosestHelpers(intendedContact.key, this.contacts); // Not including ourself.
-      //console.log(this.contact.report, 'ensureOverlay to', debugTargetName, 'using', bestHelpers.map(h => h.report));
-      for (const helper of bestHelpers) { // Find the best one that already has a bucket
-	const bucketIndex = this.getBucketIndex(helper.key);
-	const bucket = this.routingTable.get(bucketIndex);
-	Node.assert(bucket, 'No bucket at index', bucketIndex, 'for closest', helper.report);
-	// Here we simulate a long lived connection by caching the overlay remote node for this bucket.
-	const overlay = await bucket.maybeGetOverlay();
-	//console.log(this.contact.report, 'got overlay', overlay?.report, 'for helper', helper.report);
-	if (overlay) return overlay;
-      }
-      // It is possible for us to be trying to reach a target that we don't have a bucket for (e.g., when joining).
-      // Just create it.
-      const contact = await this.addToRoutingTable(intendedContact);
-      const bucket = this.routingTable.get(this.getBucketIndex(intendedContact.key));
-      return await this.contact.createOverlayConnection(contact, bucket, true);
     });
   }
   // Storage
@@ -681,39 +559,19 @@ export class Node { // An actor within thin DHT.
     const contact = helper.contact;
     let results = await contact.sendCatchingRpc(finder, targetKey);
     if (!results) return []; // disconnected
+    // fixme: remove await this.addToRoutingTable(helper.contact.clone(this)); // Live node, so update bucket.
     await this.addToRoutingTable(helper.contact); // Live node, so update bucket.
     if (Node.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
     }
     return results;
   }
-  async iterate(targetKey, finder, k = this.constructor.k * 2) { // Promise a best-first list of k Helpers
-    // from the network, by repeatedly trying to improve our closest known by applying finder.
+  async iterate(targetKey, finder, k = this.constructor.k) {
+    // Promise a best-first list of k Helpers from the network, by repeatedly trying to improve our closest known by applying finder.
     // But if any finder operation answer isValueResult, answer that instead.
 
-    // Always k
-    // let candidates = this.findClosestHelpers(targetKey, k);
-    // const keysSeen = new Set(candidates.map(h => h.key));
-    // while (candidates.length && this.contact.isConnected) {
-    //   let helpers = candidates.slice(0, k);
-    //   let requests = helpers.map(helper => this.step(targetKey, finder, helper, keysSeen));
-    //   let results = await Promise.all(requests);
-
-    //   let found = results.find(Node.isValueResult);
-    //   if (found) {
-    // 	// Store at all the others that didn't have it.
-    // 	//helpers.forEach(h => h.contact.store(targetKey, found.value));
-    // 	return found;
-    //   }
-
-    //   let closer = [].concat(...results); // By construction, these are closer than the ones we tried.
-    //   if (!closer.length) return candidates.slice(0, this.constructor.k);;
-    //   candidates = [...closer, ...candidates].sort(Helper.compare);
-    // }
-    // return [];
-
-    // We start with more than we need, because some will turn out to be disconnected.
-    let pool = this.findClosestHelpers(targetKey, k); // The k best-first Helpers known so far, that we have NOT queried yet.
+    // Each iteration uses a bigger pool than asked for, because some will have disconnected.
+    let pool = this.findClosestHelpers(targetKey, 2*k); // The k best-first Helpers known so far, that we have NOT queried yet.
     const alpha = Math.min(pool.length, this.constructor.alpha);
     const keysSeen = new Set(pool.map(h => h.key));    // Every key we've seen at all (candidates and all responses).
     let toQuery = pool.slice(0, alpha);
@@ -723,7 +581,7 @@ export class Node { // An actor within thin DHT.
       let requests = toQuery.map(helper => this.step(targetKey, finder, helper, keysSeen));
       let results = await Promise.all(requests);
       
-      let found = results.find(Node.isValueResult);
+      let found = results.find(Node.isValueResult); // Did we get back a 'findValue' result.
       if (found) {
 	// Store at closest result that didn't have it (if any). This can cause more than k copies in the network.
 	for (let i = 0; i < toQuery.length; i++) {
@@ -733,6 +591,8 @@ export class Node { // An actor within thin DHT.
 	  }
 	}
 	return found;
+      } else {
+	results = results.map(result => result.map(h => new Helper(h.contact.clone(this), h.distance)));
       }
 
       let closer = [].concat(...results); // Flatten results.
@@ -740,11 +600,11 @@ export class Node { // An actor within thin DHT.
       best = [...closer, ...toQuery, ...best].sort(Helper.compare).slice(0, k);
       if (!closer.length) {
 	if (toQuery.length === alpha && pool.length) {
-	  toQuery = pool.slice(0, k);  // Try again with k more. (Interestingly, not k - alpha.)
-	  pool = pool.slice(k);
+	  toQuery = pool.slice(0, 2*k);  // Try again with k more. (Interestingly, not k - alpha.)
+	  pool = pool.slice(2*k);
 	} else break; // We've tried everything and there's nothing better.
       } else {
-	pool = [...closer, ...pool].slice(0, k); // k best-first nodes that we have not queried.
+	pool = [...closer, ...pool].slice(0, 2*k); // k best-first nodes that we have not queried.
 	toQuery = pool.slice(0, alpha);
 	pool = pool.slice(alpha);
       }
