@@ -113,11 +113,6 @@ export class SimulatedContact extends Contact {
       if (!remaining.length) console.log(`Disconnecting ${this.node.name}, last holder of ${key}: ${this.node.storage.get(key)}.`);
     }
   }
-  // deserialize(requestResponse, sender) { // Set up any serialized contacts for the originating host Node.
-  //   return Node.isArrayResult(requestResponse) ?
-  //     requestResponse.map(h => new Helper(h.contact.clone(sender.host), h.distance)) :
-  //     requestResponse;
-  // } //fixme remove
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
     if (!sender.isConnected) Disconnect.throw(`RPC from closed sender ${sender.host.name}.`);
@@ -141,7 +136,6 @@ export class SimulatedContact extends Contact {
       })
       .then(result => {
 	if (!sender.isConnected) Disconnect.throw(`Sender ${sender.host.name} closed during RPC.`); // No need to remove recipient key from host bucket.
-	//fixme remove return this.deserialize(result, sender);
 	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
@@ -440,7 +434,6 @@ export class Node { // An actor within thin DHT.
       }
 
       // Try to add to bucket
-      contact = contact.clone(this); // fixme remove
       if (await bucket.addContact(contact)) {
 	// Asynchronous so that this doesn't come within our activity.
 	this.replicateCloserStorage(contact);
@@ -559,7 +552,6 @@ export class Node { // An actor within thin DHT.
     const contact = helper.contact;
     let results = await contact.sendCatchingRpc(finder, targetKey);
     if (!results) return []; // disconnected
-    // fixme: remove await this.addToRoutingTable(helper.contact.clone(this)); // Live node, so update bucket.
     await this.addToRoutingTable(helper.contact); // Live node, so update bucket.
     if (Node.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
@@ -591,7 +583,7 @@ export class Node { // An actor within thin DHT.
 	  }
 	}
 	return found;
-      } else {
+      } else { // Results are contacts. Clone them for this host.
 	results = results.map(result => result.map(h => new Helper(h.contact.clone(this), h.distance)));
       }
 
@@ -616,6 +608,7 @@ export class Node { // An actor within thin DHT.
     await this.locateNodes(targetKey); // Side-effect is to update this bucket.
   }
   async join(contact) {
+    contact = contact.clone(this);
     await this.addToRoutingTable(contact);
     await this.locateNodes(this.key); // Discovers between us and otherNode.
     // Refresh every bucket farther out than our closest neighbor.
