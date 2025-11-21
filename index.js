@@ -69,17 +69,10 @@ export class Contact {
 export class SimulatedContact extends Contact {
   clone(hostNode) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
     if (this.host === hostNode) return this; // All good.
-    // if (this.host.key === hostNode.key
-    // 	//&& this.isConnected // fixme remove?
-    //    ) {
-    //   //return this; // All good.
-    // }
-    //const existing = this.host.contacts.find(c => c.node.key === this.key); // FIXME: don't cons
-    // if (existing?.isConnected) return existing;
-    //if (existing && existing.isConnected) {
-      //console.log(existing.report, this.report);
-      //return existing;
-    //}
+    const existing = hostNode.contacts.find(c => c.node.key === this.key); // FIXME: don't cons
+    if (existing && existing.isConnected) {
+      return existing;
+    }
     return this.constructor.fromNode(this.node, hostNode);
   }
   get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
