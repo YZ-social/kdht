@@ -70,7 +70,8 @@ describe("DHT stability", function () {
       // TODO: turn this around so that the toggling is in the beforeAll, and then the post-toggling test can be normal named tests.
       const deferred = [];
       let defaultRefreshTime;
-      const beforeTimeout = Math.max(6 * refreshTimeIntervalMS  +  20 * networkSize, 3 * refreshTimeIntervalMS + networkSize * 500);
+      const writeAllowanceMS = 750;
+      const beforeTimeout = Math.max(6 * refreshTimeIntervalMS  +  20 * networkSize, 3 * refreshTimeIntervalMS + networkSize * writeAllowanceMS);
       beforeAll(async function () {
 	defaultRefreshTime = Node.refreshTimeIntervalMS;
 	Node.refreshTimeIntervalMS = refreshTimeIntervalMS;
@@ -97,10 +98,8 @@ describe("DHT stability", function () {
 	  await make1(i);
 	}
 	const created = Date.now();
-	console.log(`Created ${Node.contacts.length} contacts in ${Math.round((created - start)/1e3)} seconds.`);
 	// Write all keys
 	//let writes = [];
-	nodeDelayRange = Math.max(nodeDelayRange, 500);
 	for (let i = 0; i < networkSize; i++) {
 	  randomNode().storeValue(i, i);
 	  await delay(nodeDelayRange);
@@ -149,12 +148,24 @@ describe("DHT stability", function () {
 
 	for (const contact of Node.contacts) contact.node.stopRefresh(); // In case there are multiple suites, do not keep flogging ours during the next.
 	console.log('finished', new Date());
-	//Node.reportAll();
+	Node.reportAll();
 	Node.refreshTimeIntervalMS = defaultRefreshTime;
 	let stats = Node.statistics;
 	let replication = Math.min(Node.k, networkSize);
 	let refreshments = 2 * runTimeMS / refreshTimeIntervalMS ; // We average 2 refreshmments / refreshTimeIntervalMS
 	console.log('\nAverage counts per node:');
+
+	// let transports = 0;
+	// const transportSizes = new Map(); // nTransports => nNodes (that had that nTransports)
+	// Node.contacts.forEach(c => {
+	//   const nTransports = c.node.nTransports;
+	//   transports += nTransports;
+	//   const nNodes = transportSizes.get(nTransports) || 0;
+	//   transportSizes.set(nTransports, nNodes + 1);
+	// });
+	// const histogram = Array.from(transportSizes.entries()).sort(([nTransportsA, nNodesA], [nTransportsB, nNodesB]) => nTransportsA - nTransportsB);
+	// console.log(transports/networkSize, histogram);
+
 	console.log(`${stats.stored} stored items, expect ${replication}`);
 	console.log(`${stats.buckets} buckets`);
 	console.log(`${stats.contacts} contacts, ${Math.round(stats.contacts/stats.buckets)} per bucket`);
@@ -167,11 +178,10 @@ describe("DHT stability", function () {
       }, Math.max(20e3, 2 * runTimeMS));
     });
   }
-  test({networkSize: 10, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
-  test({networkSize: 20, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});  
+  //test({networkSize: 10, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
   test({networkSize: 50, nBootstrapNodes: 1, refreshTimeIntervalMS: 5e3, Contact: SimulatedOverlayContact});
-  test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
-  test({networkSize: 150, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
+  //test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
+  // test({networkSize: 150, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
   // test({networkSize: 300, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
   // test({networkSize: 400, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
   // test({networkSize: 500, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});

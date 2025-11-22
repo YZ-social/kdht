@@ -91,7 +91,7 @@ export class SimulatedContact extends Contact {
     const nodeDash = nodeX ? ('-' + nodeX) : '';
     const contactX = this.distinguisher;
     const contactAt = contactX ? ('@' + contactX) : '';
-    return `${this.node.name}${nodeDash}${contactAt}${this.isConnected ? '' : '*'}`;
+    return `${this.hasTransport ? '_' : ''}${this.node.name}${nodeDash}${contactAt}${this.isConnected ? '' : '*'}`;
   }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
@@ -152,14 +152,20 @@ export class SimulatedOverlayContact extends SimulatedContact {
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     if (!this.hasTransport) {
       const { host, node } = this;
+
+      host.noteContactForTransport(this);
       this.hasTransport = true;
+
       const senderKey = host.key;
-      let farContactForUs = this.node.findContact(senderKey);
-      if (!farContactForUs) {
-	farContactForUs = host.contact.clone(this.node);
-	await node.addToRoutingTable(farContactForUs); // Which might not have room.
-      }
-      farContactForUs = true;
+      const farContactForUs = host.contact.clone(this.node);
+      node.noteContactForTransport(farContactForUs); // FIXME: add || note.
+      await node.addToRoutingTable(farContactForUs); // May or may not succeed.
+      // let farContactForUs = this.node.findContact(senderKey);
+      // if (!farContactForUs) {
+      // 	farContactForUs = host.contact.clone(this.node);
+      // 	await node.addToRoutingTable(farContactForUs); // Which might not have room.
+      // }
+      farContactForUs.hasTransport = true;
     }
     return await this.receiveRpc(...rest);
   }
@@ -332,6 +338,23 @@ export class Node { // An actor within thin DHT.
     this.forEachBucket(bucket => !(contact = bucket.contacts.find(c => c.node.key === key)));
     return contact;
   }
+  looseTransports = [];
+  get nTransports() {
+    let count = this.looseTransports.length;
+    this.forEachBucket(bucket => bucket.contacts.forEach(c => c.hasTransport && count++));
+    return count;
+  }
+  noteContactForTransport(contact) { // We're about to use this contact for a message, so keep track of it.
+    // Requires: The contact must already be cloned for use in this Node.
+    // If it's already in our routing table, that's fine.
+    // Otherwise, cache it and count against our total transport channels.
+    // Requires: if we later addToRoutingTable successfully, it should be removed from looseTransports.
+    // Requires: if we later remove contact because of a failed send, it should be removed from looseTransports. FIXME: do this!
+    const key = contact.key;
+    if (this.looseTransports.find(c => c.key === key)) return;
+    if (this.findContact(key)) return;
+    this.looseTransports.push(contact);
+  }
   get contacts() { // Answer a fresh copy of all contacts for this Node.
     const contacts = [];
     this.forEachBucket(bucket => contacts.push(...bucket.contacts));
@@ -344,6 +367,9 @@ export class Node { // An actor within thin DHT.
       report += `\n  storing ${this.storage.size}: ` +
 	Array.from(this.storage.entries()).map(([k, v]) => `${k}n: ${JSON.stringify(v)}`).join(', ');
     }
+    if (this.looseTransports.length) {
+      report += `\n  transports ${this.looseTransports.map(contact => contact.report).join(', ')}`;
+    } 
     for (let index = 0; index < Node.keySize; index++) {
       const bucket = this.routingTable.get(index);
       if (!bucket) continue;
@@ -419,13 +445,15 @@ export class Node { // An actor within thin DHT.
 	routingTable.set(bucketIndex, bucket);
       }
 
+      // Asynchronous so that this doesn't come within our activity.
+      if (!bucket.contacts.find(c => c.key === key)) this.replicateCloserStorage(contact);
+
       // Try to add to bucket
       if (await bucket.addContact(contact)) {
-	// Asynchronous so that this doesn't come within our activity.
-	this.replicateCloserStorage(contact);
+	const looseIndex = this.looseTransports.findIndex(c => c.key === key);
+	if (looseIndex >= 0) this.looseTransports.splice(looseIndex, 1);
 	return contact;
       }
-
       return false;
     });
   }
@@ -473,6 +501,7 @@ export class Node { // An actor within thin DHT.
     this.storage.set(key, value);
     // TODO: The paper says this can be optimized.
     // Claude.ai suggests just writing to the next in line, but that doesn't work.
+    // FIXME: clear old storage timers. Does a node ever take itself out of the storage business for a key?
     this.repeat(() => this.storeValue(key, value), 'storage');
   }
   retrieveLocally(key) {     // Retrieve from memory.
