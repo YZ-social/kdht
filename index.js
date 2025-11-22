@@ -443,27 +443,25 @@ export class Node { // An actor within thin DHT.
     this.refreshTimeIntervalMS = 0;
   }
   repeat(thunk, statisticsKey, interval) {
-    // Clear previous, and return a timer that will go off in interval, and repeat.
+    // Answer a timer that will execute thunk() in interval, and then  repeat.
     // If not specified, interval computes a new fuzzyInterval each time it repeats.
     // Does nothing if interval is zero.
-    if (0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS) return null; // regardless of interval
+    if (0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval) return null;
 
     // We use repeated setTimer rather than setInterval because it is important in the
     // default case to use a different random interval each time, so that we don't have
     // everything firing at once repeatedly.
     const timeout = (interval === undefined) ?  this.fuzzyInterval() : interval;
-    if (!timeout) return null;
 
     const scheduled = Date.now();
     return setTimeout(async () => {
       const fired = Date.now();
       this.repeat(thunk, statisticsKey, interval); // Set it now, so as to not be further delayed by thunk.
       await thunk();
-      const lag = fired - scheduled - timeout;
-      //Node.assert(lag < 5, "Cannot keep up with", statisticsKey);
       const status = Node._stats?.[statisticsKey];
       if (status) {
 	const elapsed = Date.now() - fired; // elapsed in thunk
+	const lag = fired - scheduled - timeout;
 	status.count++;
 	status.elapsed += elapsed;
 	status.lag += lag;
