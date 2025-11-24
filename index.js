@@ -94,8 +94,10 @@ export class SimulatedContact extends Contact {
     return this.farHomeContact._connected;
   }
   get report() { // Answer string of name, followed by * if disconnected
-    const version = this.distinguisher !== null ? '/' + this.distinguisher : '';
-    return `${this.hasTransport ? '_' : ''}${this.node.distinguishedName}@${this.host.distinguishedName}${version}${this.isConnected ? '' : '*'}`;
+    const distinguish = this.distinguisher !== null;
+    const version = distinguish ? '/' + this.distinguisher : '';
+    const host = distinguish ? `@${this.host.distinguishedName}` : '';
+    return `${this.hasTransport ? '_' : ''}${this.node.distinguishedName}${host}${version}${this.isConnected ? '' : '*'}`;
   }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
@@ -331,8 +333,10 @@ export class Node { // An actor within thin DHT.
     return keyA ^ keyB;
   }
   routingTable = new Map(); // Maps bit prefix length to KBucket
-  forEachBucket(iterator) { // Call iterator(bucket) on each non-empty bucket, stopping as soon as iterator(bucket) returns falsy.
-    for (const bucket of this.routingTable.values()) {
+  forEachBucket(iterator, reverse = false) { // Call iterator(bucket) on each non-empty bucket, stopping as soon as iterator(bucket) returns falsy.
+    let buckets = this.routingTable.values();
+    if (reverse) buckets = buckets.reverse();
+    for (const bucket of buckets) {
       if (bucket && !iterator(bucket)) return;
     }
   }
@@ -344,6 +348,7 @@ export class Node { // An actor within thin DHT.
     return contact;
   }
   looseTransports = [];
+  maxTransports = 30;
   get nTransports() {
     let count = this.looseTransports.length;
     this.forEachBucket(bucket => bucket.contacts.forEach(c => c.hasTransport && count++));
@@ -364,6 +369,23 @@ export class Node { // An actor within thin DHT.
     const key = contact.key;
     let existing = this.findContact(contact.key);
     if (existing) return existing;
+
+    if (this.nTransports >= this.maxTransports) {
+      let dropped = this.looseTransports.pop();
+      if (dropped) {
+	//console.log('dropping loose contact', dropped.report, 'from', this.contact.report);
+      } else { // No loose transport. Must drop from a bucket.
+	const index = this.getBucketIndex(contact.key); // First try the bucket where we will be placed, so that we stick around.
+	const bucket = this.routingTable.get(index);
+	dropped = bucket.contacts.pop();
+	if (dropped) {
+	  console.log('dropping bucket contact', dropped.report, 'from', this.contact.report, index);
+	} else { // Nothing there. OK, drop from the bucket with the farthest contacts
+	  this.forEachBucket(bucket => !(dropped = bucket.contacts.pop()), 'reverse');
+	  console.log('dropping bucket contact', dropped.report, 'from', this.contact.report);
+	}
+      }
+    }
     contact = contact.clone(this, null);
     Node.assert(contact.key !== this.key, 'noting contact for self transport', this, contact);
     this.looseTransports.push(contact);
@@ -375,7 +397,7 @@ export class Node { // An actor within thin DHT.
     return contacts;
   }
   report(logger = console.log) { // return logger( a string description of node )
-    let report = `Node: ${this.contact?.report || this.name}`;
+    let report = `Node: ${this.contact?.report || this.name}, ${this.nTransports} transports`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
