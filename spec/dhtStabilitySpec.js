@@ -15,14 +15,15 @@ describe("DHT stability", function () {
 
 	  // For debugging, show that disconnects are happening by reporting if the highest number Node.contacts is disconnecting.
 	  // (The lower number Node.contacts might be bootstrap nodes.)
-	  if (Node.contacts?.length && contact.farHomeContact === Node.contacts[Node.contacts.length - 1]) console.log('disconnect', contact.farHomeContact.report);
+	  if (Node.contacts?.length && contact.farHomeContact === Node.contacts[Node.contacts.length - 1])
+	    console.log('disconnect', contact.farHomeContact.report);
 
 	  contact.disconnect();
 
 
 	  // For debugging: Report if we're killing the last holder of our data.
 	  if (Node.contacts) {
-	    for (const key of contact.node.storage.keys()) {
+	    for (const key of contact.node.storage.keys()) { // TODO: let this be an assert in SimulatedContact disconnect
 	      let remaining = [];
 	      for (const contact of Node.contacts) {
 		if (contact.isConnected && contact.node.storage.has(key)) remaining.push(contact.node.name);
@@ -148,23 +149,27 @@ describe("DHT stability", function () {
 
 	for (const contact of Node.contacts) contact.node.stopRefresh(); // In case there are multiple suites, do not keep flogging ours during the next.
 	console.log('finished', new Date());
-	Node.reportAll();
+
+	//Node.reportAll();
+	Node.contacts[0].node.report();
+	Node.contacts[networkSize - 1].node.report();
+	
 	Node.refreshTimeIntervalMS = defaultRefreshTime;
 	let stats = Node.statistics;
 	let replication = Math.min(Node.k, networkSize);
 	let refreshments = 2 * runTimeMS / refreshTimeIntervalMS ; // We average 2 refreshmments / refreshTimeIntervalMS
 	console.log('\nAverage counts per node:');
 
-	// let transports = 0;
-	// const transportSizes = new Map(); // nTransports => nNodes (that had that nTransports)
-	// Node.contacts.forEach(c => {
-	//   const nTransports = c.node.nTransports;
-	//   transports += nTransports;
-	//   const nNodes = transportSizes.get(nTransports) || 0;
-	//   transportSizes.set(nTransports, nNodes + 1);
-	// });
-	// const histogram = Array.from(transportSizes.entries()).sort(([nTransportsA, nNodesA], [nTransportsB, nNodesB]) => nTransportsA - nTransportsB);
-	// console.log(transports/networkSize, histogram);
+	let transports = 0;
+	const transportSizes = new Map(); // nTransports => nNodes (that had that nTransports)
+	Node.contacts.forEach(c => {
+	  const nTransports = c.node.nTransports;
+	  transports += nTransports;
+	  const nNodes = transportSizes.get(nTransports) || 0;
+	  transportSizes.set(nTransports, nNodes + 1);
+	});
+	const histogram = Array.from(transportSizes.entries()).sort(([nTransportsA, nNodesA], [nTransportsB, nNodesB]) => nTransportsA - nTransportsB);
+	console.log(transports/networkSize, histogram);
 
 	console.log(`${stats.stored} stored items, expect ${replication}`);
 	console.log(`${stats.buckets} buckets`);
@@ -175,13 +180,15 @@ describe("DHT stability", function () {
 	stat('RPC', stats.rpc);
 	stat('bucket refresh', stats.bucket);
 	stat('storage refresh', stats.storage, stats.stored * refreshments * networkSize);
-      }, Math.max(20e3, 2 * runTimeMS));
+      }, Math.max(20e3, 4 * runTimeMS));
     });
   }
-  //test({networkSize: 10, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
+  //test({networkSize: 4, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
   test({networkSize: 50, nBootstrapNodes: 1, refreshTimeIntervalMS: 5e3, Contact: SimulatedOverlayContact});
   //test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
-  // test({networkSize: 150, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
+  //test({networkSize: 125, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});  
+  //test({networkSize: 150, nBootstrapNodes: 1, refreshTimeIntervalMS: 20e3, Contact: SimulatedOverlayContact});
+  //test({networkSize: 200, nBootstrapNodes: 20, refreshTimeIntervalMS: 30e3, Contact: SimulatedOverlayContact});  
   // test({networkSize: 300, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
   // test({networkSize: 400, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
   // test({networkSize: 500, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});

@@ -36,10 +36,10 @@ export class Contact {
   // Represents an abstract contact from a host (a Node) to another node.
   // The host calls aContact.sendRpc(...messageParameters) to send the message to node and promises the response.
   // This could be by wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
-  static distinguisher = 0; // If set to truthy number, then each Node gets a unique distinguisher that appears in Contact report.
+  static distinguisher = null; // If set to a number, then each Node gets a unique distinguisher that appears in Contact report.
   constructor() {
     this.distinguisher = Contact.distinguisher;
-    if (Contact.distinguisher) Contact.distinguisher++;
+    if (Contact.distinguisher !== null) Contact.distinguisher++;
   }
 
   static fromNode(node, host = node) {
@@ -73,25 +73,29 @@ export class Contact {
   }
 }
 export class SimulatedContact extends Contact {
-  clone(hostNode) { // Contact may be info, shared with another Node, or from a different bucket. Make/adjust as needed.
-    if (this.host === hostNode) return this; // All good.
-    let existing = hostNode.findContact(this.key);
-    if (existing?.isConnected) return existing;
-    return this.constructor.fromNode(this.node, hostNode);
-  }
   get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
     return this.node.contact;
+  }
+  clone(hostNode, searchHost = true) { // Answer a Contact that is set up for hostNode - either this instance or a new one.
+    // Unless searchHost is null, any existing contact on hostNode will be returned.
+    if (this.host === hostNode) return this; // All good.
+
+    // Reuse existing contact in hostNode -- if still connected.
+    let existing = searchHost && hostNode.findContact(this.key);
+    if (existing?.isConnected) return existing;
+
+    // Make one.
+    Node.assert(this.key !== hostNode.key, 'Cloning self-contact', this, hostNode);
+    const clone = this.constructor.fromNode(this.node, hostNode);
+    return clone;
   }
   _connected = true;
   get isConnected() { // Ask our canonical home contact.
     return this.farHomeContact._connected;
   }
   get report() { // Answer string of name, followed by * if disconnected
-    const nodeX = this.node.distinguisher;
-    const nodeDash = nodeX ? ('-' + nodeX) : '';
-    const contactX = this.distinguisher;
-    const contactAt = contactX ? ('@' + contactX) : '';
-    return `${this.hasTransport ? '_' : ''}${this.node.name}${nodeDash}${contactAt}${this.isConnected ? '' : '*'}`;
+    const version = this.distinguisher !== null ? '/' + this.distinguisher : '';
+    return `${this.hasTransport ? '_' : ''}${this.node.distinguishedName}@${this.host.distinguishedName}${version}${this.isConnected ? '' : '*'}`;
   }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;
@@ -110,18 +114,12 @@ export class SimulatedContact extends Contact {
 	if (rejection instanceof TargetDisconnect) {
 	  // TODO: this common code for all implementations needs to be bottlenecked through Node
 	  const key = this.key;
-	  if (this.host.key !== key) {
-	    const bucketIndex = this.host.getBucketIndex(key);
-	    const bucket = this.host.routingTable.get(bucketIndex);
-	    const removed = bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.
-	    // FIXME: remove from overlays, too. (in this case, but not done here).
-	    if (bucket && hasDupes(bucket.contacts)) console.log(this.host.name, 'remove', rejection, removed, bucketIndex, bucket.contacts.map(c => c.report));
-	  }
+	  if (this.host.key !== key) this.host.removeKey(key);
 	}
 	throw rejection;
       })
       .then(result => {
-	if (!sender.isConnected) Disconnect.throw(`Sender ${sender.host.name} closed during RPC.`); // No need to remove recipient key from host bucket.
+	if (!sender.isConnected) Disconnect.throw(`Sender ${sender.host.name} closed during RPC.`);
 	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
@@ -147,25 +145,26 @@ function hasDupes(contacts) { // fixme remove and callers
 }
 
 export class SimulatedOverlayContact extends SimulatedContact {
-  hasTransport = false;
+  hasTransport = null;
+  disconnect() {
+    super.disconnect();
+    Node.assert(this === this.host.contact, "Disconnected a clone.", this);
+    for (const contact of Node.contacts) {
+      contact.node.onclose(this);
+    }
+  }
   async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
+    Node.assert(this.key !== rest[1].key, 'senderRpc should have presented self-transmission', this, rest);
     if (!this.hasTransport) {
       const { host, node } = this;
+      // Simulate the setup of a bilateral transport between this host and node, including bookkeeping.
+      // TODO: Simulate webrtc signaling.
+      const farContactForUs = node.noteContactForTransport(this.host.contact);
+      farContactForUs.hasTransport = this;
 
       host.noteContactForTransport(this);
-      this.hasTransport = true;
-
-      const senderKey = host.key;
-      const farContactForUs = host.contact.clone(this.node);
-      node.noteContactForTransport(farContactForUs); // FIXME: add || note.
-      await node.addToRoutingTable(farContactForUs); // May or may not succeed.
-      // let farContactForUs = this.node.findContact(senderKey);
-      // if (!farContactForUs) {
-      // 	farContactForUs = host.contact.clone(this.node);
-      // 	await node.addToRoutingTable(farContactForUs); // Which might not have room.
-      // }
-      farContactForUs.hasTransport = true;
+      this.hasTransport = farContactForUs;
     }
     return await this.receiveRpc(...rest);
   }
@@ -205,9 +204,9 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back and update timestamp, below.
       } 
-      // In either case (whether re-adding head to tail, or making room for a dead head), remove head now.
-      // Don't remove before waiting for the ping, as there can be overlap with other activity that could think there's room and
-      // thus add it twice.
+      // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
+      // Don't remove before waiting for the ping, as there can be overlap with other activity that could
+      // think there's room and thus add it twice.
       this.removeKey(head.key);
     }
     const { node, host } = contact;
@@ -221,7 +220,8 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
     return added;
   }
 
-  removeKey(key) { // Removes item specified by key (if present), and return 'present' if it was, else false.
+  removeKey(key) { // Removes item specified by key (if present) from bucket (not looseTranports!),
+    // and return 'present' if it was, else false.
     const { contacts } = this;
     let index = contacts.findIndex(item => item.key === key);
     if (index !== -1) {
@@ -239,10 +239,14 @@ export class Node { // An actor within thin DHT.
   static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
-  static distinguisher = 0; // If set to truthy number, then each Node gets a unique distinguisher that appears in Contact report.
+  static distinguisher = null; // If set to number, then each Node gets a unique distinguisher that appears in Contact report.
   constructor({refreshIntervalMS = Node.refreshIntervalMS, distinguisher = Node.distinguisher, ...properties}) {
-    if (distinguisher) Node.distinguisher = distinguisher + 1; // Don't increment if zero.
+    if (distinguisher !== null) Node.distinguisher = distinguisher + 1;
     Object.assign(this, {refreshIntervalMS, distinguisher, ...properties});
+  }
+  get distinguishedName() {
+    if (this.distinguisher === null) return this.name;
+    return `${this.name}-${this.distinguisher}`;
   }
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
@@ -332,10 +336,11 @@ export class Node { // An actor within thin DHT.
       if (bucket && !iterator(bucket)) return;
     }
   }
-  findContact(key) { // Answer the contact for this key.
-    // Alternatively we could compute the index and just look there.
-    let contact = null;
-    this.forEachBucket(bucket => !(contact = bucket.contacts.find(c => c.node.key === key)));
+  findContact(key) { // Answer the contact for this key, if any, whether in buckets or looseTransports. Does not remove it.
+    const match = contact => contact.key === key;
+    let contact = this.looseTransports.find(match);
+    if (contact) return contact;
+    this.forEachBucket(bucket => !(contact = bucket.contacts.find(match))); // Or we could compute index and look just there.
     return contact;
   }
   looseTransports = [];
@@ -344,16 +349,25 @@ export class Node { // An actor within thin DHT.
     this.forEachBucket(bucket => bucket.contacts.forEach(c => c.hasTransport && count++));
     return count;
   }
+  removeLooseTransport(key) { // Remove contact specified by key from looseTransports, and return boolean indicating whether it had been present.
+    const looseIndex = this.looseTransports.findIndex(c => c.key === key);
+    if (looseIndex >= 0) {
+      this.looseTransports.splice(looseIndex, 1);
+      return true;
+    }
+    return false;
+  }
   noteContactForTransport(contact) { // We're about to use this contact for a message, so keep track of it.
-    // Requires: The contact must already be cloned for use in this Node.
-    // If it's already in our routing table, that's fine.
-    // Otherwise, cache it and count against our total transport channels.
+    // Returns the existing contact, if any, else a clone of contact for this node.
     // Requires: if we later addToRoutingTable successfully, it should be removed from looseTransports.
-    // Requires: if we later remove contact because of a failed send, it should be removed from looseTransports. FIXME: do this!
+    // Requires: if we later remove contact because of a failed send, it should be removed from looseTransports.
     const key = contact.key;
-    if (this.looseTransports.find(c => c.key === key)) return;
-    if (this.findContact(key)) return;
+    let existing = this.findContact(contact.key);
+    if (existing) return existing;
+    contact = contact.clone(this, null);
+    Node.assert(contact.key !== this.key, 'noting contact for self transport', this, contact);
     this.looseTransports.push(contact);
+    return contact;
   }
   get contacts() { // Answer a fresh copy of all contacts for this Node.
     const contacts = [];
@@ -369,7 +383,7 @@ export class Node { // An actor within thin DHT.
     }
     if (this.looseTransports.length) {
       report += `\n  transports ${this.looseTransports.map(contact => contact.report).join(', ')}`;
-    } 
+    }
     for (let index = 0; index < Node.keySize; index++) {
       const bucket = this.routingTable.get(index);
       if (!bucket) continue;
@@ -429,6 +443,7 @@ export class Node { // An actor within thin DHT.
     return target;
   }
   // Discovery
+  // 
   routingTableSerializer = Promise.resolve();
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
     return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
@@ -450,13 +465,24 @@ export class Node { // An actor within thin DHT.
 
       // Try to add to bucket
       if (await bucket.addContact(contact)) {
-	const looseIndex = this.looseTransports.findIndex(c => c.key === key);
-	if (looseIndex >= 0) this.looseTransports.splice(looseIndex, 1);
+	this.removeLooseTransport(key); // Can't be in two places.
 	return contact;
       }
       return false;
     });
   }
+  removeKey(key) { // Removes from node entirely ir present, from looseTransports or bucket as necessary.
+    if (this.removeLooseTransport(key)) return;
+    const bucketIndex = this.getBucketIndex(key);
+    const bucket = this.routingTable.get(bucketIndex);
+    const removed = bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.	    
+    if (bucket && hasDupes(bucket.contacts)) console.log(this.host.name, 'remove left duplicates', removed, bucketIndex, bucket.contacts.map(c => c.report));
+  }
+  onclose(contact) { // Transport connection to contact has closed.
+    // In deployment, this will only occur for contacts that we have. In simulation, it can be for any home contact (and not just clones made for us).
+    this.removeKey(contact.key);
+  }
+
   // Storage
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
   fuzzyInterval(target = this.refreshTimeIntervalMS/3, margin = target/3) {
