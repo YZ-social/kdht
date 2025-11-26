@@ -150,28 +150,28 @@ export class SimulatedConnectionContact extends SimulatedContact {
   hasTransport = null;
   // There is no special behavior on disconnect, because we do not know if it is other end shutting down,
   // or simply dropping the connection to make room for more.
+  findPath(contact) { // For now, just checking that there is a path, rather than producing the path.
+    if (!contact) return false;
+    if (this.host.findContact(contact.key)?.hasTransport) return true;
+    return this.findPath(contact.sponsor);
+  }
   connect(method) {
     let { host, node, sponsor } = this;
     //console.log(`connect ${host.contact.report} to ${node.contact.report} through ${sponsor?.report || null}.`);
     if (sponsor) {
-      // Confirm that we have transport to some sponsor and then to node...
-      // while (true) {
-      // 	if (host.findContact(sponsor.key)) break;
-      // 	sponsor = sponsor.sponsor;
-      // }
-      // if (!sponsor) console.log('ruh roh', host.contact.report(null), '\nto reach', node.contact.report(null()));
+      //if (!this.findPath(sponsor)) console.log('ruh roh', host.contact.report, '\nto reach', node.contact.report);
 
-    //   // Confirm that we have transport to some sponsor...
-    //   let inHost = host.findContact(sponsor.key);
-    //   if (!inHost) {
-    // 	//console.warn(`Attempt to connect from ${host.contact.name} to ${this.name} through missing sponsor ${sponsor.report}.`);
-    // 	host.noteContactForTransport(this);
-    // 	return false;
-    //   }
-    //   Node.assert(inHost?.hasTransport, "Host", host.contact.report, "does not have transport to", sponsor.report, "to reach", node.contact.report);
-    //   // ...and that sponsor has transport to node.
-    //   let inSponsor = sponsor.node.findContact(node.key);
-    //   Node.assert(inSponsor?.hasTransport, "Sponsor", sponsor.report, "does not have transport to", node.contact.report);
+      // // Confirm that we have transport to some sponsor...
+      // let inHost = host.findContact(sponsor.key);
+      // if (!inHost) {
+      // 	console.warn(`Attempt to connect from ${host.contact.name} to ${this.name} through missing sponsor ${sponsor.report}.`);
+      // 	host.noteContactForTransport(this);
+      // 	return false;
+    //}
+      //Node.assert(inHost?.hasTransport, "Host", host.contact.report, "does not have transport to", sponsor.report, "to reach", node.contact.report);
+      // ...and that sponsor has transport to node.
+      // let inSponsor = sponsor.node.findContact(node.key);
+      // Node.assert(inSponsor?.hasTransport, "Sponsor", sponsor.report, "does not have transport to", node.contact.report);
     } else if (!this.node.isServerNode) {
       //if (!this.node.isServerNode) console.log("No sponsor for connection from", host.report(null), "\nto", node.report(null));
       Node.assert(method === 'ping', "No sponsor for connection from", host.contact.report, "to", node.contact.report, method);
@@ -397,8 +397,9 @@ export class Node { // An actor within thin DHT.
     if (existing) return existing;
 
     if (this.nTransports >= this.constructor.maxTransports) {
+      const sponsor = contact.sponsor;
       function removeLast(list) { // Remove and return the last element of list that hasTransport
-	const index = list.findLastIndex(element => element.hasTransport);
+	const index = list.findLastIndex(element => element.hasTransport && element.key !== sponsor?.key);
 	if (index < 0) return null;
 	const sub = list.splice(index, 1);
 	return sub[0];
