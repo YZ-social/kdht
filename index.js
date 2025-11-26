@@ -130,7 +130,7 @@ export class SimulatedContact extends Contact {
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     return await this.receiveRpc(...rest);
   }
-  receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
+  async receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
     sender = sender.clone(this.node);
     this.node.addToRoutingTable(sender); // Asynchronously so as to not overlap.
     return this.node[method](...rest);

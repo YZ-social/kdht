@@ -1,6 +1,6 @@
 // An example of the control functions needed for testing.
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
 // This section certainly needs to be modified for any given implementation.
 //
 
@@ -16,7 +16,11 @@ export async function start1(name, bootstrapContact, refreshTimeIntervalMS, isSe
 
 export async function startServerNode(name, bootstrapContact, refreshTimeIntervalMS) {
   return await start1(name, bootstrapContact, refreshTimeIntervalMS, true);
-  }
+}
+
+export async function stop1(contact) {
+  return await contact?.disconnect();
+}
 
 export async function write1(contact, key, value) {
   // Make a request through contact to store value under key in the DHT
@@ -30,8 +34,8 @@ export async function read1(contact, key) {
 
 
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-// Given the above, the following probably do NOT need to be redefined on a per-implemmentation basis.
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Given the above, the following might not need to be redefined on a per-implemmentation basis.
 //
 
 var contacts = [];
@@ -43,10 +47,51 @@ export async function getContacts() {
   // For a simulator in one Javascript instance, it is just the list of Contacts.
   return contacts;
 }
+function randomInteger(max = contacts.length) {
+  // Return a random number between 0 (inclusive) and max (exclusive), defaulting to the number of contacts made.
+  return Math.floor(Math.random() * max);
+}
+export async function getRandomLiveContact() {
+  // Answer a randomly selected contact (including those for server nodes) that is
+  // is not in the process of reconnecting.
+  return contacts[randomInteger()] || await getRandomLiveContact();
+}
+export async function getBootstrapContact(nServerNodes) {
+  return contacts[randomInteger(nServerNodes)];
+}
 
-async function shutdown(n) {
+var isThrashing = false;
+const thrashers = [];
+function thrash(i, nServerNodes, refreshTimeIntervalMS) { // Start disconnect/reconnect timer on contact i.
+  // If we are asked to thrash with a zero refreshTimeIntervalMS, average one second anyway.
+  const runtimeMS = randomInteger(2 * (refreshTimeIntervalMS || 2e3));
+  thrashers[i] = setTimeout(async () => {
+    if (!isThrashing) return;
+    const contact = contacts[i];
+    contacts[i] = null;
+    await stop1(contact);
+    const bootstrapContact = await getBootstrapContact(nServerNodes);
+    contacts[i] = await start1(i, bootstrapContact, refreshTimeIntervalMS);
+    thrash(i, nServerNodes, refreshTimeIntervalMS);
+  }, runtimeMS);
+}
+export async function startThrashing(nServerNodes, refreshTimeIntervalMS) {
+  console.log('Start thrashing');
+  isThrashing = true;
+  for (let i = nServerNodes; i < contacts.length; i++) {
+    thrash(i, nServerNodes, refreshTimeIntervalMS);
+  }
+}
+export async function stopThrashing() {
+  isThrashing = false;
+  for (const thrasher of thrashers) clearTimeout(thrasher);
+}
+
+async function shutdown(startIndex, stopIndex) { // Internal
   // Shutdown n nodes.
-  for (let i = 0; i < n; i++) await contacts.pop().disconnect();
+  for (let i = startIndex; i < stopIndex; i++) {
+    await stop1(contacts.pop());
+  }
 }
 
 export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS) {
@@ -64,35 +109,38 @@ export async function shutdownServerNodes(nServerNodes) {
   // The nServerNodes will match that of the preceding setupServerNodes.
   // The purpose here is to kill any persisted data so that the next call
   // to setupServerNodes will start fresh.
-  await shutdown(nServerNodes);
+  await shutdown(0, nServerNodes);
 }
 
-export async function setupClientsByTime(timeMS, maxClientNodes) {
+export async function setupClientsByTime(...rest) {
   // Create as many ready-to-use client nodes as possible in the specified milliseconds.
   // Returns a promise that resolves to the number of clients that are now ready to use.
-  return await serialSetupClientsByTime(timeMS, maxClientNodes);
+  return await serialSetupClientsByTime(...rest);
   // Alternatively, one could launch batches of clients in parallel, and then
   // wait for each to complete its probes.
 }
-async function serialSetupClientsByTime(timeMS, maxClientNodes) {
+async function serialSetupClientsByTime(refreshTimeIntervalMS, nServerNodes, maxClientNodes, runtimeMS) {
   // Do setupClientsByTime one client node at a time.
-  // In this implementation, Contact.create().then(contact => join()) does
-  // not resolve until the client has probed the network and is now ready to use.
   // It takes longer and longer as the number of existing nodes gets larger.
   return await new Promise(async resolve => {
     const nBootstraps = contacts.length;
     let done = false, index = nBootstraps, count = 0;
-    setTimeout(() => done = true, timeMS);
-    while (!done && (maxClientNodes && (count++ <= maxClientNodes))) {
-      const bootstrapIndex = Math.floor(Math.random() * nBootstraps);
-      const bootstrapContact = contacts[bootstrapIndex];
-      const contact = await start1(index++, bootstrapContact, timeMS);
-      if (!done) contacts.push(contact); // Don't include it if we're over time.
-      else await contact.disconnect();
+    setTimeout(() => done = true, runtimeMS);
+    while (!done && (!maxClientNodes || (count++ < maxClientNodes))) {
+      const bootstrapContact = await getBootstrapContact(nBootstraps);
+      const contact = await start1(index, bootstrapContact, refreshTimeIntervalMS);
+      if (!done) { // Don't include it if we're now over time.
+	contacts.push(contact); 
+	if (isThrashing) thrash(index, nServerNodes, refreshTimeIntervalMS);
+	index++;
+      } else {
+	await stop1(contact);
+      }
     }
     resolve(contacts.length - nBootstraps);
   });
 }
-export async function shutdownClientNodes(nClientNodes) {
-  await shutdown(nClientNodes);
+export async function shutdownClientNodes(nServerNodes, nClientNodes) {
+  await stopThrashing();
+  await shutdown(nServerNodes, nClientNodes + nServerNodes);
 }

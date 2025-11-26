@@ -9,8 +9,8 @@ const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach} = glob
 // implementation changes for different DHTs.
 import { setupServerNodes, shutdownServerNodes,
 	 setupClientsByTime, shutdownClientNodes,
-	 getContacts, write1, read1 } from './dhtImplementation.js';
-import { Node } from '../index.js'; // fixme remove
+	 getContacts, getRandomLiveContact,
+	 startThrashing, write1, read1 } from './dhtImplementation.js';
 
 // Some definitions:
 //
@@ -86,9 +86,7 @@ async function parallelReadAll() {
   // Reads from a random contact, confirming the value, for each key written by writeAll.
   const contacts = await getContacts();
   const readPromises = await Promise.all(contacts.map(async (contact, index) => {
-    let randomIndex = Math.floor(Math.random() * contacts.length);
-    const randomContact = contacts[randomIndex];
-    const value = await read1(randomContact, index);
+    const value = await read1(await getRandomLiveContact(), index);
     expect(value).toBe(index);
   }));
   return readPromises.length;
@@ -96,9 +94,7 @@ async function parallelReadAll() {
 async function serialReadAll() { // One-at-a-time alternative of above, useful for debugging.
   const contacts = await getContacts();
   for (let index = 0; index < contacts.length; index++) {
-    let randomIndex = Math.floor(Math.random() * contacts.length);
-    const randomContact = contacts[randomIndex];
-    const value = await read1(randomContact, index);
+    const value = await read1(await getRandomLiveContact(), index);
     expect(value).toBe(index);
   }
   return contacts.length;
@@ -110,16 +106,17 @@ describe("DHT", function () {
     // Define a suite of tests with the given parameters.
     const {nServerNodes = 10,
 	   maxClientNodes = 0, // If zero, will try to make as many as it can in refreshTimeIntervalMS.
-	   refreshTimeIntervalMS = 15e3,
-	   runtimeBeforeWriteMS = refreshTimeIntervalMS,
-	   runtimeBeforeReadMS = refreshTimeIntervalMS
+	   refreshTimeIntervalMS = 15e3, // How long on average does a client stay up?
+	   runtimeBeforeWriteMS = 3 * refreshTimeIntervalMS, // How long to probe (and thrash) before writing starts.
+	   runtimeBeforeReadMS = runtimeBeforeWriteMS, // How long to probe (and thrash) before reading starts.
+	   startThrashingBefore = 'creation' // When to start thrashing clients: before creation|writing|reading. Anything else is no thrashing.
 	  } = parameters;
-    const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes || Infinity}, refresh: ${refreshTimeIntervalMS.toFixed(3)} ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)} ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)} ms`;
+    const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes || Infinity}, refresh: ${refreshTimeIntervalMS.toFixed(3)} ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)} ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)} ms, thrash before: ${startThrashingBefore}`;
     
     describe(suiteLabel, function () {
       beforeAll(async function () {
 	console.log('\n' + suiteLabel);
-	await delay(2e3, 'allow for gc');
+	await delay(1e3); // For gc
 	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes);
@@ -133,14 +130,16 @@ describe("DHT", function () {
 	let nJoined = 0, nWritten = 0;
 	const setupTimeMS = Math.max(refreshTimeIntervalMS, 2e3); // Even if we turn off refresh, allow at least 2 seconds for setup.
 	beforeAll(async function () {
-	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(setupTimeMS, maxClientNodes),
+	  if (startThrashingBefore === 'creation') await startThrashing(nServerNodes, refreshTimeIntervalMS);
+	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(refreshTimeIntervalMS, nServerNodes, maxClientNodes, setupTimeMS),
 				    elapsed => `Created ${nJoined} / ${elapsed} = ${(elapsed/nJoined).toFixed(3)} client nodes/second.`);
+	  if (startThrashingBefore === 'writing') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  await delay(runtimeBeforeWriteMS, 'pause before writing');
 	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
 				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
 	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 3 * setupTimeMS);
 	afterAll(async function () {
-	  await shutdownClientNodes(nJoined);
+	  await shutdownClientNodes(nServerNodes, nJoined);
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
 	});
 	it("handles at least 100.", async function () {
@@ -149,6 +148,7 @@ describe("DHT", function () {
 	  expect(nWritten).toBe(total);
 	});
 	it("can be read.", async function () {
+	  if (startThrashingBefore === 'reading') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  await delay(runtimeBeforeReadMS, 'pause before reading');
 	  let nRead = 0;
 	  await timed(async _ => nRead = await parallelReadAll(), // alt: serialReadAll
@@ -158,8 +158,17 @@ describe("DHT", function () {
       });
     });
   }
-  // Each call here sets up a full suite of tests with the given parameters.
-  //test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0});
-  test({nServerNodes: 10, maxClientNodes: 90, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 5e3, runtimeBeforeReadMS: 45e3});
-  // test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 15e3, runtimeBeforeReadMS: 15e3});
+  // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
+  // For example:
+  test({refreshTimeIntervalMS: 0, startThrashingBefore: 'never'}); // Flat out with no probing or disconnects
+  //test({runtimeBeforeWriteMS: 5e3, startThrashingBefore: 'never'}); // Overwhelms a simulation with so much probing.
+  test({maxClientNodes: 50, refreshTimeIntervalMS: 5e3, startThrashingBefore: 'creation'}); // A few clients, on a short interval.
+
+  // To pass, we need to work with the default parameters, and assess the output.
+  //test();
+  // TODO:
+  // maxConnections
+  // collect and confirm data from each node on shutdown.
+  // pub/sub
+  // 1k nodes
 });
