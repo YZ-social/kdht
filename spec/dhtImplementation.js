@@ -56,13 +56,9 @@ export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS) {
   // See definitions in test suite.
 
   Node.contacts = contacts = []; // Quirk of simulation code.
-  const isServerNode = true;
   
   for (let i = 0; i < nServerNodes; i++) {
-    const name = i;
-    const bootstrapContact = contacts[i - 1];
-    let contact = await startServerNode(name, bootstrapContact, refreshTimeIntervalMS);
-    contacts.push(contact);                         // Keeping track for use by getContacts.
+    contacts.push(await startServerNode(i, contacts[i - 1], refreshTimeIntervalMS));
   }
 }
 export async function shutdownServerNodes(nServerNodes) {
@@ -73,25 +69,23 @@ export async function shutdownServerNodes(nServerNodes) {
   await shutdown(nServerNodes);
 }
 
-export async function setupClientsByTime(timeMS) {
+export async function setupClientsByTime(timeMS, maxClientNodes) {
   // Create as many ready-to-use client nodes as possible in the specified milliseconds.
   // Returns a promise that resolves to the number of clients that are now ready to use.
-  return await serialSetupClientsByTime(timeMS);
+  return await serialSetupClientsByTime(timeMS, maxClientNodes);
   // Alternatively, one could launch batches of clients in parallel, and then
   // wait for each to complete its probes.
 }
-async function serialSetupClientsByTime(timeMS) {
+async function serialSetupClientsByTime(timeMS, maxClientNodes) {
   // Do setupClientsByTime one client node at a time.
   // In this implementation, Contact.create().then(contact => join()) does
   // not resolve until the client has probed the network and is now ready to use.
   // It takes longer and longer as the number of existing nodes gets larger.
   return await new Promise(async resolve => {
     const nBootstraps = contacts.length;
-    let done = false, index = nBootstraps;
+    let done = false, index = nBootstraps, count = 0;
     setTimeout(() => done = true, timeMS);
-    let counter = 0;
-    while (!done) {
-      //const bootstrapIndex = counter++ % nBootstraps; // FIXME restore Math.floor(Math.random() * nBootstraps);
+    while (!done && (maxClientNodes && (count++ <= maxClientNodes))) {
       const bootstrapIndex = Math.floor(Math.random() * nBootstraps);
       const bootstrapContact = contacts[bootstrapIndex];
       const contact = await start1(index++, bootstrapContact, timeMS);

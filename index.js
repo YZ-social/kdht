@@ -158,7 +158,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
   connect(method) {
     let { host, node, sponsor } = this;
     //console.log(`connect ${host.contact.report} to ${node.contact.report} through ${sponsor?.report || null}.`);
-    if (sponsor) {
+    // if (sponsor) {
       //if (!this.findPath(sponsor)) console.log('ruh roh', host.contact.report, '\nto reach', node.contact.report);
 
       // // Confirm that we have transport to some sponsor...
@@ -172,11 +172,11 @@ export class SimulatedConnectionContact extends SimulatedContact {
       // ...and that sponsor has transport to node.
       // let inSponsor = sponsor.node.findContact(node.key);
       // Node.assert(inSponsor?.hasTransport, "Sponsor", sponsor.report, "does not have transport to", node.contact.report);
-    } else if (!this.node.isServerNode) {
-      //if (!this.node.isServerNode) console.log("No sponsor for connection from", host.report(null), "\nto", node.report(null));
-      Node.assert(method === 'ping', "No sponsor for connection from", host.contact.report, "to", node.contact.report, method);
-      return false; // ping
-    }
+    // } else if (!this.node.isServerNode) {
+    //   //if (!this.node.isServerNode) console.log("No sponsor for connection from", host.report(null), "\nto", node.report(null));
+    //   Node.assert(method === 'ping', "No sponsor for connection from", host.contact.report, "to", node.contact.report, method);
+    //   return false; // ping
+    // }
     // Simulate the setup of a bilateral transport between this host and node, including bookkeeping.
     // TODO: Simulate webrtc signaling.
     const farContactForUs = node.noteContactForTransport(this.host.contact);

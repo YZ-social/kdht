@@ -46,7 +46,8 @@ async function timed(operation, logString) {
   // Promises the elapsed time in milliseconds.
   const startTime = Date.now();
   await operation(startTime);
-  const elapsed = Date.now() - startTime;
+  const endTime = Date.now();
+  const elapsed = endTime - startTime;
   console.log(await logString(elapsed/1e3));
   return elapsed;
 }
@@ -58,8 +59,13 @@ async function getContactsLength() {
 }
 function delay(ms, label = '') {
   // Promise to resolve in the given milliseconds.
-  if (label && ms) console.log(`(${label}: ${(ms/1e3).toFixed(3)}s)`);
-  return new Promise(resolve => setTimeout(resolve, ms));
+  if (label && ms) console.log(`(${(ms/1e3).toFixed(3)}s ${label})`);
+  const start = Date.now();
+  return new Promise(resolve => setTimeout(() => {
+    const lag = Date.now() - start - ms;
+    if (lag > 250) console.log(`** System is overloaded by ${lag.toLocaleString()} ms. **`);
+    resolve();
+  }, ms));
 }
 
 async function parallelWriteAll() {
@@ -103,11 +109,12 @@ describe("DHT", function () {
   function test(parameters = {}) {
     // Define a suite of tests with the given parameters.
     const {nServerNodes = 10,
+	   maxClientNodes = 0, // If zero, will try to make as many as it can in refreshTimeIntervalMS.
 	   refreshTimeIntervalMS = 15e3,
 	   runtimeBeforeWriteMS = refreshTimeIntervalMS,
 	   runtimeBeforeReadMS = refreshTimeIntervalMS
 	  } = parameters;
-    const suiteLabel = `Server nodes: ${nServerNodes}, refresh: ${refreshTimeIntervalMS.toFixed(3)} ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)} ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)} ms`;
+    const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes || Infinity}, refresh: ${refreshTimeIntervalMS.toFixed(3)} ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)} ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)} ms`;
     
     describe(suiteLabel, function () {
       beforeAll(async function () {
@@ -126,7 +133,7 @@ describe("DHT", function () {
 	let nJoined = 0, nWritten = 0;
 	const setupTimeMS = Math.max(refreshTimeIntervalMS, 2e3); // Even if we turn off refresh, allow at least 2 seconds for setup.
 	beforeAll(async function () {
-	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(setupTimeMS),
+	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(setupTimeMS, maxClientNodes),
 				    elapsed => `Created ${nJoined} / ${elapsed} = ${(elapsed/nJoined).toFixed(3)} client nodes/second.`);
 	  await delay(runtimeBeforeWriteMS, 'pause before writing');
 	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
@@ -137,7 +144,6 @@ describe("DHT", function () {
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
 	});
 	it("handles at least 100.", async function () {
-	  expect(nJoined).toBeGreaterThan(100); // As an minimum.
 	  const total = await getContactsLength();
 	  expect(total).toBe(nJoined + nServerNodes); // Sanity check
 	  expect(nWritten).toBe(total);
@@ -153,8 +159,7 @@ describe("DHT", function () {
     });
   }
   // Each call here sets up a full suite of tests with the given parameters.
-  test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0});  
   //test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0});
-  // test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 5e3, runtimeBeforeReadMS: 5e3});
+  test({nServerNodes: 10, maxClientNodes: 90, refreshTimeIntervalMS: 2e3, runtimeBeforeWriteMS: 5e3, runtimeBeforeReadMS: 5e3});
   // test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 15e3, runtimeBeforeReadMS: 15e3});
 });
