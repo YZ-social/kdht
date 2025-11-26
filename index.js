@@ -268,9 +268,9 @@ export class Node { // An actor within thin DHT.
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
   static distinguisher = null; // If set to number, then each Node gets a unique distinguisher that appears in Contact report.
-  constructor({refreshIntervalMS = Node.refreshIntervalMS, distinguisher = Node.distinguisher, ...properties}) {
+  constructor({refreshTimeIntervalMS = Node.refreshTimeIntervalMS, distinguisher = Node.distinguisher, ...properties}) {
     if (distinguisher !== null) Node.distinguisher = distinguisher + 1;
-    Object.assign(this, {refreshIntervalMS, distinguisher, ...properties});
+    Object.assign(this, {refreshTimeIntervalMS, distinguisher, ...properties});
   }
   get distinguishedName() {
     if (this.distinguisher === null) return this.name;

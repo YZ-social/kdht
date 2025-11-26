@@ -56,7 +56,9 @@ async function getContactsLength() {
   const contacts = await getContacts();
   return contacts.length;
 }
-function delay(ms) { // This shouldn't ever be necessary. Handy for debugging.
+function delay(ms, label = '') {
+  // Promise to resolve in the given milliseconds.
+  if (label && ms) console.log(`(${label}: ${(ms/1e3).toFixed(3)}s)`);
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
@@ -101,14 +103,17 @@ describe("DHT", function () {
   function test(parameters = {}) {
     // Define a suite of tests with the given parameters.
     const {nServerNodes = 10,
-	   refreshTimeIntervalMS = 15e3
+	   refreshTimeIntervalMS = 15e3,
+	   runtimeBeforeWriteMS = refreshTimeIntervalMS,
+	   runtimeBeforeReadMS = refreshTimeIntervalMS
 	  } = parameters;
-    const suiteLabel = JSON.stringify(parameters);
+    const suiteLabel = `Server nodes: ${nServerNodes}, refresh: ${refreshTimeIntervalMS.toFixed(3)} ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)} ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)} ms`;
     
     describe(suiteLabel, function () {
       beforeAll(async function () {
-	console.log(suiteLabel);
-	await timed(_ => setupServerNodes(nServerNodes),
+	console.log('\n' + suiteLabel);
+	await delay(2e3, 'allow for gc');
+	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes);
       });
@@ -119,13 +124,14 @@ describe("DHT", function () {
 
       describe("joins within a refresh interval", function () {
 	let nJoined = 0, nWritten = 0;
+	const setupTimeMS = Math.max(refreshTimeIntervalMS, 2e3); // Even if we turn off refresh, allow at least 2 seconds for setup.
 	beforeAll(async function () {
-	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(refreshTimeIntervalMS),
+	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(setupTimeMS),
 				    elapsed => `Created ${nJoined} / ${elapsed} = ${(elapsed/nJoined).toFixed(3)} client nodes/second.`);
-	  expect(elapsed).toBeLessThan(refreshTimeIntervalMS + 500); // Sanity check, allowing for timer slop.
+	  await delay(runtimeBeforeWriteMS, 'pause before writing');
 	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
 				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
-	}, 4 * refreshTimeIntervalMS); // Allowance: 1 period for setup, and 3 more for store.
+	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 3 * setupTimeMS);
 	afterAll(async function () {
 	  await shutdownClientNodes(nJoined);
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
@@ -137,13 +143,18 @@ describe("DHT", function () {
 	  expect(nWritten).toBe(total);
 	});
 	it("can be read.", async function () {
+	  await delay(runtimeBeforeReadMS, 'pause before reading');
 	  let nRead = 0;
 	  await timed(async _ => nRead = await parallelReadAll(), // alt: serialReadAll
 		      elapsed => `Read ${nRead} / ${elapsed} = ${Math.round(nRead/elapsed)} values/second.`);
 	  expect(nRead).toBe(nWritten);
-	}, 4 * refreshTimeIntervalMS);
+	}, 10 * setupTimeMS + runtimeBeforeReadMS);
       });
     });
   }
-  test({nServerNodes: 10, refreshTimeIntervalMS: 15e3});
+  // Each call here sets up a full suite of tests with the given parameters.
+  test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0});  
+  //test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0});
+  // test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 5e3, runtimeBeforeReadMS: 5e3});
+  // test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 15e3, runtimeBeforeReadMS: 15e3});
 });

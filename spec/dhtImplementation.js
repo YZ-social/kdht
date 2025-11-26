@@ -1,18 +1,24 @@
 // An example of the control functions needed for testing.
 
-// In this case, they manipulate a Contact that directly contains a
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// This section certainly needs to be modified for any given implementation.
+//
+
+// In the present case, these manipulate a Contact that directly contains a
 // DHT node with simulated networking.
 import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 
-var contacts = [];
-export async function getContacts() {
-  // Return a list of contact information for all the nodes.
-  // For real implementations this might be a list of node identifiers.
-  // It is async because it might be collecting from some monitor/control service.
-
-  // For a simulator in one Javascript instance, it is just the list of Contacts.
-  return contacts; 
+export async function start1(name, bootstrapContact, refreshTimeIntervalMS, isServerNode = false) {
+  const contact = await Contact.create({name, refreshTimeIntervalMS, isServerNode});
+  if (bootstrapContact) await contact.join(bootstrapContact);
+  return contact;
 }
+
+export async function startServerNode(name, bootstrapContact, refreshTimeIntervalMS) {
+  let contact = await Contact.create({name, refreshTimeIntervalMS, isServerNode: true});  // Create each node one a time.
+  if (bootstrapContact) await contact.join(bootstrapContact); // Joining through the previous one.
+  return contact;
+  }
 
 export async function write1(contact, key, value) {
   // Make a request through contact to store value under key in the DHT
@@ -24,16 +30,39 @@ export async function read1(contact, key) {
   return await contact.node.locateValue(key);
 }
 
-export async function setupServerNodes(nServerNodes) {
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// Given the above, the following probably do NOT need to be redefined on a per-implemmentation basis.
+//
+
+var contacts = [];
+export async function getContacts() {
+  // Return a list of contact information for all the nodes.
+  // For real implementations this might be a list of node identifiers.
+  // It is async because it might be collecting from some monitor/control service.
+
+  // For a simulator in one Javascript instance, it is just the list of Contacts.
+  return contacts;
+}
+
+async function shutdown(n) {
+  // Shutdown n nodes.
+  for (let i = 0; i < n; i++) await contacts.pop().disconnect();
+}
+
+export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS) {
   // Set up nServerNodes, returning a promise that resolves when they are ready to use.
   // See definitions in test suite.
 
   Node.contacts = contacts = []; // Quirk of simulation code.
+  const isServerNode = true;
   
   for (let i = 0; i < nServerNodes; i++) {
-    let contact = await Contact.create({name: i, isServerNode: true});  // Create each node one a time.
+    const name = i;
+    const bootstrapContact = contacts[i - 1];
+    let contact = await startServerNode(name, bootstrapContact, refreshTimeIntervalMS);
     contacts.push(contact);                         // Keeping track for use by getContacts.
-    if (i > 0) await contact.join(contacts[i - 1]); // Joining through the previous one.
   }
 }
 export async function shutdownServerNodes(nServerNodes) {
@@ -41,7 +70,7 @@ export async function shutdownServerNodes(nServerNodes) {
   // The nServerNodes will match that of the preceding setupServerNodes.
   // The purpose here is to kill any persisted data so that the next call
   // to setupServerNodes will start fresh.
-  for (let i = 0; i < nServerNodes; i++) await contacts.pop().disconnect();
+  await shutdown(nServerNodes);
 }
 
 export async function setupClientsByTime(timeMS) {
@@ -64,9 +93,8 @@ async function serialSetupClientsByTime(timeMS) {
     while (!done) {
       //const bootstrapIndex = counter++ % nBootstraps; // FIXME restore Math.floor(Math.random() * nBootstraps);
       const bootstrapIndex = Math.floor(Math.random() * nBootstraps);
-      const bootstrapNode = contacts[bootstrapIndex];
-      const contact = await Contact.create({name: index++, refreshTimeIntervalMS: timeMS});
-      await contact.join(bootstrapNode);
+      const bootstrapContact = contacts[bootstrapIndex];
+      const contact = await start1(index++, bootstrapContact, timeMS);
       if (!done) contacts.push(contact); // Don't include it if we're over time.
       else await contact.disconnect();
     }
@@ -74,5 +102,5 @@ async function serialSetupClientsByTime(timeMS) {
   });
 }
 export async function shutdownClientNodes(nClientNodes) {
-  for (let i = 0; i < nClientNodes; i++) await contacts.pop().disconnect();
+  await shutdown(nClientNodes);
 }
