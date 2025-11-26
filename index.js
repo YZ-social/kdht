@@ -22,6 +22,7 @@ const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
 
   TODO: there are few places where we return a list of Helpers (or Contacts?) that are described in the literature (or method name!) as returning Nodes. Let's do that, since we can get Nodes from Helpers/Contacts, and Contacts from Nodes.
   TODO: It would be convenient for bucket to cache their host and index. This would allow get rid of some/all? uses of contact.host, and move some operations (randomTargetInBucket, refresh) to KBucket.
+  TODO: should assers be in the Contact or the Node?
 */
 
 export class Disconnect extends Error {
@@ -115,8 +116,7 @@ export class SimulatedContact extends Contact {
 	// Note that recipient is gone.
 	if (rejection instanceof TargetDisconnect) {
 	  // TODO: this common code for all implementations needs to be bottlenecked through Node
-	  const key = this.key;
-	  if (this.host.key !== key) this.host.removeKey(key);
+	  if (this.host.key !== this.key) this.host.removeKey(this.key);
 	}
 	throw rejection;
       })
@@ -146,28 +146,58 @@ function hasDupes(contacts) { // fixme remove and callers
   return false;
 }
 
-export class SimulatedOverlayContact extends SimulatedContact {
+export class SimulatedConnectionContact extends SimulatedContact {
   hasTransport = null;
-  disconnect() {
-    super.disconnect();
-    Node.assert(this === this.host.contact, "Disconnected a clone.", this);
-    for (const contact of Node.contacts) {
-      contact.node.onclose(this);
+  // There is no special behavior on disconnect, because we do not know if it is other end shutting down,
+  // or simply dropping the connection to make room for more.
+  // disconnect() { // fixme remove
+  //   super.disconnect();
+  //   Node.assert(this === this.host.contact, "Disconnected a clone.", this);
+  //   for (const contact of Node.contacts) {
+  //     contact.node.onclose(this);
+  //   }
+  // }
+  connect() {
+    let { host, node, sponsor } = this;
+    //console.log(`connect ${host.contact.report} to ${node.contact.report} through ${sponsor?.report || null}.`);
+    if (sponsor) {
+    //   // Confirm that we have transport to some sponsor and then to node...
+    //   // while (sponsor) {
+    //   // 	if (host.findContact(sponsor.key)) break;
+    //   // 	sponsor = sponsor.sponsor;
+    //   // }
+    //   // if (!sponsor) console.log('ruh roh', host.contact.report(null), '\nto reach', node.contact.report(null()));
+
+    //   // Confirm that we have transport to some sponsor...
+    //   let inHost = host.findContact(sponsor.key);
+    //   if (!inHost) {
+    // 	//console.warn(`Attempt to connect from ${host.contact.name} to ${this.name} through missing sponsor ${sponsor.report}.`);
+    // 	host.noteContactForTransport(this);
+    // 	return false;
+    //   }
+    //   Node.assert(inHost?.hasTransport, "Host", host.contact.report, "does not have transport to", sponsor.report, "to reach", node.contact.report);
+    //   // ...and that sponsor has transport to node.
+    //   let inSponsor = sponsor.node.findContact(node.key);
+    //   Node.assert(inSponsor?.hasTransport, "Sponsor", sponsor.report, "does not have transport to", node.contact.report);
+    } else { // Confirm that node is a bootstrap node.
+      if (!this.node.isServerNode) return false; // ping
+      if (!this.node.isServerNode) console.log("No sponsor for connection from", host.report(null), "\nto", node.report(null));
+      Node.assert(this.node.isServerNode, "No sponsor for connection from", host.contact.report, "to", node.contact.report);
     }
+    // Simulate the setup of a bilateral transport between this host and node, including bookkeeping.
+    // TODO: Simulate webrtc signaling.
+    const farContactForUs = node.noteContactForTransport(this.host.contact);
+    farContactForUs.hasTransport = this;
+    farContactForUs.sponsor ||= sponsor;
+
+    host.noteContactForTransport(this);
+    this.hasTransport = farContactForUs;
+    return true;
   }
   async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     Node.assert(this.key !== rest[1].key, 'senderRpc should have presented self-transmission', this, rest);
-    if (!this.hasTransport) {
-      const { host, node } = this;
-      // Simulate the setup of a bilateral transport between this host and node, including bookkeeping.
-      // TODO: Simulate webrtc signaling.
-      const farContactForUs = node.noteContactForTransport(this.host.contact);
-      farContactForUs.hasTransport = this;
-
-      host.noteContactForTransport(this);
-      this.hasTransport = farContactForUs;
-    }
+    if (!this.hasTransport && !this.connect()) TargetDisconnect.throw(`Target ${this.name} is no longer reachable.`);
     return await this.receiveRpc(...rest);
   }
 }
@@ -197,6 +227,9 @@ export class KBucket {  // Bucket in a RoutingTable: a list of up to k Node keys
   contacts = [];
   get length() { return this.contacts.length; } // How many do we have (not capacity, which is k.)
   get isFull() { return this.length >= this.constructor.k; } // Are we at capacity?
+  get nTransports() {
+    return this.contacts.reduce((accumulator, contact) => contact.hasTransport ? accumulator + 1 : accumulator, 0);
+  }
 
   async addContact(contact) { // Returns 'present' or 'added' if it was added to end within capacity, and timestamp updated, else false.
     let added = this.removeKey(contact.key) || 'added';
@@ -348,13 +381,13 @@ export class Node { // An actor within thin DHT.
     return contact;
   }
   looseTransports = [];
-  maxTransports = 30;
+  static maxTransports = 200;
   get nTransports() {
     let count = this.looseTransports.length;
-    this.forEachBucket(bucket => bucket.contacts.forEach(c => c.hasTransport && count++));
+    this.forEachBucket(bucket => (count += bucket.nTransports, true));
     return count;
   }
-  removeLooseTransport(key) { // Remove contact specified by key from looseTransports, and return boolean indicating whether it had been present.
+  removeLooseTransport(key) { // Remove the contact for key from looseTransports, and return boolean indicating whether it had been present.
     const looseIndex = this.looseTransports.findIndex(c => c.key === key);
     if (looseIndex >= 0) {
       this.looseTransports.splice(looseIndex, 1);
@@ -370,21 +403,54 @@ export class Node { // An actor within thin DHT.
     let existing = this.findContact(contact.key);
     if (existing) return existing;
 
-    if (this.nTransports >= this.maxTransports) {
-      let dropped = this.looseTransports.pop();
-      if (dropped) {
-	//console.log('dropping loose contact', dropped.report, 'from', this.contact.report);
-      } else { // No loose transport. Must drop from a bucket.
-	const index = this.getBucketIndex(contact.key); // First try the bucket where we will be placed, so that we stick around.
-	const bucket = this.routingTable.get(index);
-	dropped = bucket.contacts.pop();
-	if (dropped) {
-	  console.log('dropping bucket contact', dropped.report, 'from', this.contact.report, index);
-	} else { // Nothing there. OK, drop from the bucket with the farthest contacts
-	  this.forEachBucket(bucket => !(dropped = bucket.contacts.pop()), 'reverse');
-	  console.log('dropping bucket contact', dropped.report, 'from', this.contact.report);
-	}
+    if (this.nTransports >= this.constructor.maxTransports) {
+      function removeLast(list) { // Remove and return the last element of list that hasTransport
+	const index = list.findLastIndex(element => element.hasTransport);
+	if (index < 0) return null;
+	const sub = list.splice(index, 1);
+	return sub[0];
       }
+      let dropped = removeLast(this.looseTransports);
+      if (dropped) {
+	//if (dropped.hasTransport.host.name === '265') console.log('dropping loose transport', dropped.name, 'in', this.name);
+      } else { // Find the bucket with the most connections.
+	//console.log('\n\n*** find best bucket ***\n\n');
+	let bestBucket = null, bestCount = 0;
+	this.forEachBucket(bucket => {
+	  const count = bucket.nTransports;
+	  if (count <= bestCount) return true;
+	  bestBucket = bucket;
+	  bestCount = count;
+	  return true;
+	});
+	dropped = removeLast(bestBucket.contacts);
+      }
+      // if (dropped) {
+      // 	//FIXME? console.log('dropping loose contact', dropped.report, 'from', this.contact.report);
+      // } else { // No loose transport. Must drop from a bucket.
+      // 	const index = this.getBucketIndex(contact.key); // First try the bucket where we will be placed, so that we stick around.
+      // 	const bucket = this.routingTable.get(index);
+      // 	dropped = removeLast(bucket.contacts);
+      // 	if (dropped) {
+      // 	  console.log('\n\n\n**** FIXME', 'dropping bucket contact', dropped.report, 'from', this.contact.report, index);
+      // 	} else { // Nothing there. OK, drop from the bucket with the farthest contacts
+      // 	  this.forEachBucket(bucket => !(dropped = removeLast(bucket.contacts)), 'reverse');
+      // 	  console.log('\n\n\n**** FIXME','dropping bucket contact', dropped.report, 'from', this.contact.report);
+      // 	}
+      // }
+      const farContactForUs = dropped.hasTransport;
+      Node.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
+      Node.assert(farContactForUs.host.key === dropped.key, 'Far contact for us does is not hosted at contact.');
+      farContactForUs.hasTransport = null;
+      // if (farContactForUs.sponsor) 
+      // else {
+      // 	// if (farContactForUs.host.name === '265') {
+      // 	//   console.log('\n\n\n**** FIXME', 'removeKey', this.name, 'from', farContactForUs.host.report(null));
+      // 	// }
+      // 	//fixme farContactForUs.host.removeKey(this.key); // They don't have another path to us because we contacted them directly.
+      // 	farContactForUs.hasTransport = null; // fixme: same as above. simplify
+      // }
+      dropped.hasTransport = null;
     }
     contact = contact.clone(this, null);
     Node.assert(contact.key !== this.key, 'noting contact for self transport', this, contact);
@@ -500,10 +566,11 @@ export class Node { // An actor within thin DHT.
     const removed = bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.	    
     if (bucket && hasDupes(bucket.contacts)) console.log(this.host.name, 'remove left duplicates', removed, bucketIndex, bucket.contacts.map(c => c.report));
   }
-  onclose(contact) { // Transport connection to contact has closed.
-    // In deployment, this will only occur for contacts that we have. In simulation, it can be for any home contact (and not just clones made for us).
-    this.removeKey(contact.key);
-  }
+  // fixme remove
+  // onclose(contact) { // Transport connection to contact has closed.
+  //   // In deployment, this will only occur for contacts that we have. In simulation, it can be for any home contact (and not just clones made for us).
+  //   this.removeKey(contact.key);
+  // }
 
   // Storage
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
@@ -579,7 +646,7 @@ export class Node { // An actor within thin DHT.
     // Side effect is to discover other nodes (and they us).
     targetKey = await this.ensureKey(targetKey);
 
-    // Optimization: Works, but can confuse testing as disconnected nodes will return a value.
+    // Optimization.
     const found = this.retrieveLocally(targetKey);
     if (found !== undefined) return found;
 
@@ -616,10 +683,13 @@ export class Node { // An actor within thin DHT.
     await this.addToRoutingTable(helper.contact); // Live node, so update bucket.
     if (Node.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
+      // Results are (helpers around) contacts. Clone them for this host.
+      results = results.map(h => new Helper(h.contact.clone(this), h.distance));
+      results.forEach(h => h.contact.sponsor = contact); // Record the contact that introduced us to this new contact.
     }
     return results;
   }
-  async iterate(targetKey, finder, k = this.constructor.k) {
+  async iterate(targetKey, finder, k = this.constructor.k, trace = false) {
     // Promise a best-first list of k Helpers from the network, by repeatedly trying to improve our closest known by applying finder.
     // But if any finder operation answer isValueResult, answer that instead.
 
@@ -627,12 +697,14 @@ export class Node { // An actor within thin DHT.
     let pool = this.findClosestHelpers(targetKey, 2*k); // The k best-first Helpers known so far, that we have NOT queried yet.
     const alpha = Math.min(pool.length, this.constructor.alpha);
     const keysSeen = new Set(pool.map(h => h.key));    // Every key we've seen at all (candidates and all responses).
+    keysSeen.add(this.key); // We might or might not be in our list of closest helpers, but we could be in someone else's.
     let toQuery = pool.slice(0, alpha);
     pool = pool.slice(alpha); // Yes, this could be done with splice instead of slice, above, but it makes things hard to trace.
-    let best = []; // The accumulated closest-first result.
+    let best = []; // The accumulated closest-first result.    
     while (toQuery.length && this.contact.isConnected) { // Stop if WE disconnect.
       let requests = toQuery.map(helper => this.step(targetKey, finder, helper, keysSeen));
       let results = await Promise.all(requests);
+      if (trace) console.log(toQuery.map(h => h.name), '=>', results.map(r => r.map?.(h => h.name) || r));
       
       let found = results.find(Node.isValueResult); // Did we get back a 'findValue' result.
       if (found) {
@@ -644,9 +716,7 @@ export class Node { // An actor within thin DHT.
 	  }
 	}
 	return found;
-      } else { // Results are contacts. Clone them for this host.
-	results = results.map(result => result.map(h => new Helper(h.contact.clone(this), h.distance)));
-      }
+     }
 
       let closer = [].concat(...results); // Flatten results.
       // closer might not be in order, and one or more toQuery might belong among them.
@@ -667,6 +737,14 @@ export class Node { // An actor within thin DHT.
   async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
     const targetKey = this.randomTargetInBucket(bucketIndex);
     await this.locateNodes(targetKey); // Side-effect is to update this bucket.
+  }
+  async refreshFIXME() {
+    for (const [key, value] of this.storage.entries()) {
+      await this.storeValue(key, value);
+    }
+    for (let index = 0; index < this.constructor.keySize; index++) {
+      await this.refresh(index);
+    }
   }
   async join(contact) {
     contact = contact.clone(this);

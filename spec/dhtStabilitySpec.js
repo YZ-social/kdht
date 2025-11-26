@@ -184,8 +184,8 @@ describe("DHT stability", function () {
     });
   }
   //test({networkSize: 4, nBootstrapNodes: 1, refreshTimeIntervalMS: 1e3, Contact: SimulatedOverlayContact});
-  test({networkSize: 50, nBootstrapNodes: 1, refreshTimeIntervalMS: 5e3, Contact: SimulatedOverlayContact});
-  //test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
+  //test({networkSize: 50, nBootstrapNodes: 1, refreshTimeIntervalMS: 5e3, Contact: SimulatedOverlayContact});
+  test({networkSize: 100, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});
   //test({networkSize: 125, nBootstrapNodes: 1, refreshTimeIntervalMS: 15e3, Contact: SimulatedOverlayContact});  
   //test({networkSize: 150, nBootstrapNodes: 1, refreshTimeIntervalMS: 20e3, Contact: SimulatedOverlayContact});
   //test({networkSize: 200, nBootstrapNodes: 20, refreshTimeIntervalMS: 30e3, Contact: SimulatedOverlayContact});  
