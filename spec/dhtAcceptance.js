@@ -93,7 +93,6 @@ async function parallelReadAll() {
 async function serialReadAll() {
   const contacts = await getContacts();
   for (let index = 0; index < contacts.length; index++) {
-    //let randomIndex = (index + 1) % contacts.length; // fixme restore Math.floor(Math.random() * contacts.length);
     let randomIndex = Math.floor(Math.random() * contacts.length);
     const randomContact = contacts[randomIndex];
     const value = await read1(randomContact, index);
@@ -127,24 +126,22 @@ describe("DHT", function () {
 	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(refreshTimeIntervalMS),
 				    elapsed => `Created ${nJoined} client nodes in ${elapsed} seconds.`);
 	  expect(elapsed).toBeLessThan(refreshTimeIntervalMS + 500); // Sanity check, allowing for timer slop.
-	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(),
-	                        //async _ => nWritten = await serialWriteAll(),
+	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
 				elapsed => `Wrote ${nWritten} nodes in ${elapsed} seconds.`);
-	}, 6/*fixme 4*/ * refreshTimeIntervalMS); // Allowance: 1 period for setup, and 3 more for store.
+	}, 4 * refreshTimeIntervalMS); // Allowance: 1 period for setup, and 3 more for store.
 	afterAll(async function () {
 	  await shutdownClientNodes(nJoined);
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
 	});
 	it("handles at least 100.", async function () {
-	  //fixme expect(nJoined).toBeGreaterThan(100); // As an minimum.
+	  expect(nJoined).toBeGreaterThan(100); // As an minimum.
 	  const total = await getContactsLength();
 	  expect(total).toBe(nJoined + nServerNodes); // Sanity check
 	  expect(nWritten).toBe(total);
 	});
 	it("can be read.", async function () {
 	  let nRead = 0;
-	  await timed(async _ => nRead = await parallelReadAll(),
-	              //async _ => nRead = await serialReadAll(), //fixme parallelReadAll(),
+	  await timed(async _ => nRead = await parallelReadAll(), // alt: serialReadAll
 		      elapsed => `Read ${nRead} values in ${elapsed} seconds.`);
 	  expect(nRead).toBe(nWritten);
 	}, 4 * refreshTimeIntervalMS);

@@ -150,23 +150,16 @@ export class SimulatedConnectionContact extends SimulatedContact {
   hasTransport = null;
   // There is no special behavior on disconnect, because we do not know if it is other end shutting down,
   // or simply dropping the connection to make room for more.
-  // disconnect() { // fixme remove
-  //   super.disconnect();
-  //   Node.assert(this === this.host.contact, "Disconnected a clone.", this);
-  //   for (const contact of Node.contacts) {
-  //     contact.node.onclose(this);
-  //   }
-  // }
-  connect() {
+  connect(method) {
     let { host, node, sponsor } = this;
     //console.log(`connect ${host.contact.report} to ${node.contact.report} through ${sponsor?.report || null}.`);
     if (sponsor) {
-    //   // Confirm that we have transport to some sponsor and then to node...
-    //   // while (sponsor) {
-    //   // 	if (host.findContact(sponsor.key)) break;
-    //   // 	sponsor = sponsor.sponsor;
-    //   // }
-    //   // if (!sponsor) console.log('ruh roh', host.contact.report(null), '\nto reach', node.contact.report(null()));
+      // Confirm that we have transport to some sponsor and then to node...
+      // while (true) {
+      // 	if (host.findContact(sponsor.key)) break;
+      // 	sponsor = sponsor.sponsor;
+      // }
+      // if (!sponsor) console.log('ruh roh', host.contact.report(null), '\nto reach', node.contact.report(null()));
 
     //   // Confirm that we have transport to some sponsor...
     //   let inHost = host.findContact(sponsor.key);
@@ -179,10 +172,10 @@ export class SimulatedConnectionContact extends SimulatedContact {
     //   // ...and that sponsor has transport to node.
     //   let inSponsor = sponsor.node.findContact(node.key);
     //   Node.assert(inSponsor?.hasTransport, "Sponsor", sponsor.report, "does not have transport to", node.contact.report);
-    } else { // Confirm that node is a bootstrap node.
-      if (!this.node.isServerNode) return false; // ping
-      if (!this.node.isServerNode) console.log("No sponsor for connection from", host.report(null), "\nto", node.report(null));
-      Node.assert(this.node.isServerNode, "No sponsor for connection from", host.contact.report, "to", node.contact.report);
+    } else if (!this.node.isServerNode) {
+      //if (!this.node.isServerNode) console.log("No sponsor for connection from", host.report(null), "\nto", node.report(null));
+      Node.assert(method === 'ping', "No sponsor for connection from", host.contact.report, "to", node.contact.report, method);
+      return false; // ping
     }
     // Simulate the setup of a bilateral transport between this host and node, including bookkeeping.
     // TODO: Simulate webrtc signaling.
@@ -197,7 +190,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
   async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     Node.assert(this.key !== rest[1].key, 'senderRpc should have presented self-transmission', this, rest);
-    if (!this.hasTransport && !this.connect()) TargetDisconnect.throw(`Target ${this.name} is no longer reachable.`);
+    if (!this.hasTransport && !this.connect(rest[0])) TargetDisconnect.throw(`Target ${this.name} is no longer reachable.`);
     return await this.receiveRpc(...rest);
   }
 }
