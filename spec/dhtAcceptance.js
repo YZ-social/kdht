@@ -160,6 +160,6 @@ describe("DHT", function () {
   }
   // Each call here sets up a full suite of tests with the given parameters.
   //test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0});
-  test({nServerNodes: 10, maxClientNodes: 90, refreshTimeIntervalMS: 2e3, runtimeBeforeWriteMS: 5e3, runtimeBeforeReadMS: 5e3});
+  test({nServerNodes: 10, maxClientNodes: 90, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 5e3, runtimeBeforeReadMS: 45e3});
   // test({nServerNodes: 10, refreshTimeIntervalMS: 15e3, runtimeBeforeWriteMS: 15e3, runtimeBeforeReadMS: 15e3});
 });

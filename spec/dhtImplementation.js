@@ -15,9 +15,7 @@ export async function start1(name, bootstrapContact, refreshTimeIntervalMS, isSe
 }
 
 export async function startServerNode(name, bootstrapContact, refreshTimeIntervalMS) {
-  let contact = await Contact.create({name, refreshTimeIntervalMS, isServerNode: true});  // Create each node one a time.
-  if (bootstrapContact) await contact.join(bootstrapContact); // Joining through the previous one.
-  return contact;
+  return await start1(name, bootstrapContact, refreshTimeIntervalMS, true);
   }
 
 export async function write1(contact, key, value) {
