@@ -50,6 +50,7 @@ async function timed(operation, logString) {
   console.log(await logString(elapsed/1e3));
   return elapsed;
 }
+
 async function getContactsLength() {
   // Promise current length of contacts. (Convenience for sanity checks.)
   const contacts = await getContacts();
@@ -66,7 +67,7 @@ async function parallelWriteAll() {
   const writePromises = await Promise.all(contacts.map((contact, index) => write1(contact, index, index)));
   return writePromises.length;
 }
-async function serialWriteAll() {
+async function serialWriteAll() { // One-at-atime alternative to above, useful for debugging.
   const contacts = await getContacts();
   for (let index = 0; index < contacts.length; index++) {
     await write1(contacts[index], index, index);
@@ -80,17 +81,11 @@ async function parallelReadAll() {
     let randomIndex = Math.floor(Math.random() * contacts.length);
     const randomContact = contacts[randomIndex];
     const value = await read1(randomContact, index);
-    if (value !== index) {
-      console.log('No read from', randomContact.node.report(), 'of', contacts[index].node.report());
-      console.log('read from home', await read1(contacts[index], index));
-      console.log('second read from random', await read1(randomContact, index));
-      process.exit(1);
-    }
     expect(value).toBe(index);
   }));
   return readPromises.length;
 }
-async function serialReadAll() {
+async function serialReadAll() { // One-at-a-time alternative of above, useful for debugging.
   const contacts = await getContacts();
   for (let index = 0; index < contacts.length; index++) {
     let randomIndex = Math.floor(Math.random() * contacts.length);
@@ -103,16 +98,18 @@ async function serialReadAll() {
 
 
 describe("DHT", function () {
-  function test(parameters) {
+  function test(parameters = {}) {
     // Define a suite of tests with the given parameters.
-    const {nServerNodes, refreshTimeIntervalMS} = parameters;
+    const {nServerNodes = 10,
+	   refreshTimeIntervalMS = 15e3
+	  } = parameters;
     const suiteLabel = JSON.stringify(parameters);
     
     describe(suiteLabel, function () {
       beforeAll(async function () {
 	console.log(suiteLabel);
 	await timed(_ => setupServerNodes(nServerNodes),
-		    elapsed => `Setup ${nServerNodes} server nodes in ${elapsed} seconds.`);
+		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes);
       });
       afterAll(async function () {
@@ -124,10 +121,10 @@ describe("DHT", function () {
 	let nJoined = 0, nWritten = 0;
 	beforeAll(async function () {
 	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(refreshTimeIntervalMS),
-				    elapsed => `Created ${nJoined} client nodes in ${elapsed} seconds.`);
+				    elapsed => `Created ${nJoined} / ${elapsed} = ${(elapsed/nJoined).toFixed(3)} client nodes/second.`);
 	  expect(elapsed).toBeLessThan(refreshTimeIntervalMS + 500); // Sanity check, allowing for timer slop.
 	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
-				elapsed => `Wrote ${nWritten} nodes in ${elapsed} seconds.`);
+				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
 	}, 4 * refreshTimeIntervalMS); // Allowance: 1 period for setup, and 3 more for store.
 	afterAll(async function () {
 	  await shutdownClientNodes(nJoined);
@@ -142,12 +139,11 @@ describe("DHT", function () {
 	it("can be read.", async function () {
 	  let nRead = 0;
 	  await timed(async _ => nRead = await parallelReadAll(), // alt: serialReadAll
-		      elapsed => `Read ${nRead} values in ${elapsed} seconds.`);
+		      elapsed => `Read ${nRead} / ${elapsed} = ${Math.round(nRead/elapsed)} values/second.`);
 	  expect(nRead).toBe(nWritten);
 	}, 4 * refreshTimeIntervalMS);
       });
     });
   }
-  // If refresh is turned off, 15 second interval gives 1740 nodes, 13 seconds to write, 1.2 seconds to read.
   test({nServerNodes: 10, refreshTimeIntervalMS: 15e3});
 });
