@@ -137,7 +137,7 @@ describe("DHT", function () {
       beforeAll(async function () {
 	console.log('\n' + suiteLabel);
 	if (notes) console.log(notes);
-	await delay(1e3); // For gc
+	await delay(3e3); // For gc
 	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes);
@@ -183,10 +183,8 @@ describe("DHT", function () {
   // For example:
   test({refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
   test({startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
-  test({maxClientNodes: 60, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
-  test({maxClientNodes: 30, refreshTimeIntervalMS: 2e3, notes: "Small networks allow faster smoke-testing."});
-
-  //test({maxClientNodes: 110, refreshTimeIntervalMS: 15e3, startThrashingBefore: 'reading'});
+  test({maxClientNodes: 110, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
+  test({maxClientNodes: 40, refreshTimeIntervalMS: 2e3, notes: "Small networks allow faster smoke-testing."});
 
 
   // To pass, we need to work with the default parameters, and assess the output.
