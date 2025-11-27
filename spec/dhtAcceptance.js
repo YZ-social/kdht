@@ -59,6 +59,12 @@ async function getContactsLength() {
 }
 function delay(ms, label = '') {
   // Promise to resolve in the given milliseconds.
+  // Logs what it is doing if given a label.
+  // Reports any non-trivial lagging.
+  // NOTE: this is measuring lag on the machine running the tests:
+  //  1. It does not (currently) check remote systems.
+  //  2. It does not automatically fail the tests if there is lag, although it likely
+  //     that things will fail. So check the logs.
   if (label && ms) console.log(`(${(ms/1e3).toFixed(3)}s ${label})`);
   const start = Date.now();
   return new Promise(resolve => setTimeout(() => {
@@ -68,24 +74,37 @@ function delay(ms, label = '') {
   }, ms));
 }
 
+async function awaitNonNullContact(contacts, i) { // Kind of stupid...
+  // When a contact thrashes, its contact[i] is null for a moment.
+  // TODO Alt: When thrashing, set slot to a promise and await it in all references, rather than this.
+  let contact = contacts[i];
+  if (contact) return contact;
+  return await awaitNonNullContact(contacts, i);
+}
+import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 async function parallelWriteAll() {
   // Persist a unique string through each contact all at once, but not resolving until all are ready.
   const contacts = await getContacts();
   // The key and value are the same, to facilitate read confirmation.
-  const writePromises = await Promise.all(contacts.map((contact, index) => write1(contact, index, index)));
-  return writePromises.length;
+  const writes = await Promise.all(contacts.map(async (contact, index) => {
+    contact ||= await awaitNonNullContact(contacts, index);
+    const ok = await write1(contact, index, index);
+    expect(ok).toBeTruthy();
+  }));
+  return writes.length;
 }
 async function serialWriteAll() { // One-at-atime alternative to above, useful for debugging.
   const contacts = await getContacts();
   for (let index = 0; index < contacts.length; index++) {
-    await write1(contacts[index], index, index);
+    const ok = await write1(await awaitNonNullContact(contacts, index), index, index);
+    expect(ok).toBeTruthy();
   }
   return contacts.length;
 }
 async function parallelReadAll() {
   // Reads from a random contact, confirming the value, for each key written by writeAll.
   const contacts = await getContacts();
-  const readPromises = await Promise.all(contacts.map(async (contact, index) => {
+  const readPromises = await Promise.all(contacts.map(async (_, index) => {
     const value = await read1(await getRandomLiveContact(), index);
     expect(value).toBe(index);
   }));
@@ -109,13 +128,15 @@ describe("DHT", function () {
 	   refreshTimeIntervalMS = 15e3, // How long on average does a client stay up?
 	   runtimeBeforeWriteMS = 3 * refreshTimeIntervalMS, // How long to probe (and thrash) before writing starts.
 	   runtimeBeforeReadMS = runtimeBeforeWriteMS, // How long to probe (and thrash) before reading starts.
-	   startThrashingBefore = 'creation' // When to start thrashing clients: before creation|writing|reading. Anything else is no thrashing.
+	   startThrashingBefore = 'creation', // When to start thrashing clients: before creation|writing|reading. Anything else is no thrashing.
+	   notes = ''
 	  } = parameters;
     const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes || Infinity}, refresh: ${refreshTimeIntervalMS.toFixed(3)} ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)} ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)} ms, thrash before: ${startThrashingBefore}`;
     
     describe(suiteLabel, function () {
       beforeAll(async function () {
 	console.log('\n' + suiteLabel);
+	if (notes) console.log(notes);
 	await delay(1e3); // For gc
 	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
@@ -160,13 +181,19 @@ describe("DHT", function () {
   }
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
   // For example:
-  test({refreshTimeIntervalMS: 0, startThrashingBefore: 'never'}); // Flat out with no probing or disconnects
-  //test({runtimeBeforeWriteMS: 5e3, startThrashingBefore: 'never'}); // Overwhelms a simulation with so much probing.
-  test({maxClientNodes: 50, refreshTimeIntervalMS: 5e3, startThrashingBefore: 'creation'}); // A few clients, on a short interval.
+  test({refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
+  test({startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
+  test({maxClientNodes: 60, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
+  test({maxClientNodes: 30, refreshTimeIntervalMS: 2e3, notes: "Small networks allow faster smoke-testing."});
+
+  //test({maxClientNodes: 110, refreshTimeIntervalMS: 15e3, startThrashingBefore: 'reading'});
+
 
   // To pass, we need to work with the default parameters, and assess the output.
   //test();
   // TODO:
+  // startThrashingBefore: creation or writing has a bug.
+  // pass ping time through
   // maxConnections
   // collect and confirm data from each node on shutdown.
   // pub/sub

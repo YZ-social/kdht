@@ -130,10 +130,21 @@ export class SimulatedContact extends Contact {
     if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     return await this.receiveRpc(...rest);
   }
+  static pingTime = 10; // ms
+  static async ensureTime(thunk, ms = this.pingTime) { // Promise that thunk takes at least ms to execute.
+    const start = Date.now();
+    const result = await thunk();
+    const elapsed = Date.now() - start;
+    if (elapsed > ms) return result;
+    //await new Promise(resolve => setTimeout(resolve, ms - elapsed));
+    return result;
+  }
   async receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
-    sender = sender.clone(this.node);
-    this.node.addToRoutingTable(sender); // Asynchronously so as to not overlap.
-    return this.node[method](...rest);
+    return await this.constructor.ensureTime(() => {
+      sender = sender.clone(this.node);
+      this.node.addToRoutingTable(sender); // Asynchronously so as to not overlap.
+      return this.node[method](...rest);
+    });
   }
 }
 
@@ -396,7 +407,7 @@ export class Node { // An actor within thin DHT.
     let existing = this.findContact(contact.key);
     if (existing) return existing;
 
-    if (this.nTransports >= this.constructor.maxTransports) {
+    if (false /*fixme this.nTransports >= this.constructor.maxTransports*/) {
       const sponsor = contact.sponsor;
       function removeLast(list) { // Remove and return the last element of list that hasTransport
 	const index = list.findLastIndex(element => element.hasTransport && element.key !== sponsor?.key);
@@ -649,9 +660,11 @@ export class Node { // An actor within thin DHT.
     return undefined;
   }
   async storeValue(targetKey, value) { // Convert targetKey to a bigint if necessary, and store k copies.
+    // Promises the number of nodes that it was stored on.
     targetKey = await this.ensureKey(targetKey);
     // Go until we are sure have written k.
-    let remaining = this.constructor.k;
+    const k = this.constructor.k;
+    let remaining = k;
     let helpers = await this.locateNodes(targetKey, remaining * 2);
     helpers = helpers.reverse(); // So we can pop off the end.
     // TODO: batches in parallel, if the client and network can handle it. (For now, better to spread it out.)
@@ -660,6 +673,7 @@ export class Node { // An actor within thin DHT.
       const stored = await contact.store(targetKey, value);
       if (stored) remaining--;
     }
+    return k - remaining;
   }
 
   // There are only three kinds of rpc results: 'pong', [...helper], {value: something}

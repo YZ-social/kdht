@@ -19,13 +19,26 @@ export async function startServerNode(name, bootstrapContact, refreshTimeInterva
 }
 
 export async function stop1(contact) {
+
+  // For debugging: Report if we're killing the last holder of our data.
+  // This is fine for simulations, but some decentralized reporting would be needed for real systems.
+  if (contact && isThrashing) {
+    for (const key of contact.node.storage.keys()) {
+      let remaining = [];
+      for (const contact of contacts) {
+	if (contact?.isConnected && contact.node.storage.has(key)) remaining.push(contact.node.name);
+      }
+      if (!remaining.length) console.log(`Disconnecting ${contact.node.name}, last holder of ${key}: ${contact.node.storage.get(key)}.`);
+    }
+  }
+
   return await contact?.disconnect();
 }
 
 export async function write1(contact, key, value) {
   // Make a request through contact to store value under key in the DHT
   // resolving when ready. (See test suite definitions.)
-  await contact.node.storeValue(key, value);
+  return await contact.node.storeValue(key, value);
 }
 export async function read1(contact, key) {
   // Promise the result of requesting key from the DHT through contact.
