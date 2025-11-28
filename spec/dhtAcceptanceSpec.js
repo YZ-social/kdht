@@ -8,7 +8,7 @@ const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach} = glob
 // The file dhtImplementation.js exports functions that perform setup operations whose
 // implementation changes for different DHTs.
 import { setupServerNodes, shutdownServerNodes,
-	 setupClientsByTime, shutdownClientNodes,
+	 start1, setupClientsByTime, shutdownClientNodes,
 	 getContacts, getRandomLiveContact,
 	 startThrashing, write1, read1 } from './dhtImplementation.js';
 
@@ -74,6 +74,11 @@ function delay(ms, label = '') {
   }, ms));
 }
 
+export async function startWrite1(name, bootstrapContact, refreshTimeIntervalMS, index) {
+  return await start1(name, bootstrapContact, refreshTimeIntervalMS)
+    .then(contact => write1(contact, name, name));
+}
+
 async function awaitNonNullContact(contacts, i) { // Kind of stupid...
   // When a contact thrashes, its contact[i] is null for a moment.
   // TODO Alt: When thrashing, set slot to a promise and await it in all references, rather than this.
@@ -108,14 +113,15 @@ async function serialWriteAll() { // One-at-atime alternative to above, useful f
   }
   return contacts.length;
 }
-async function parallelReadAll() {
+async function parallelReadAll(start = 0) {
   // Reads from a random contact, confirming the value, for each key written by writeAll.
   const contacts = await getContacts();
   const readPromises = await Promise.all(contacts.map(async (_, index) => {
+    if (index < start) return;
     const value = await read1(await getRandomLiveContact(), index);
     expect(value).toBe(index);
   }));
-  return readPromises.length;
+  return readPromises.length - start;
 }
 async function serialReadAll() { // One-at-a-time alternative of above, useful for debugging.
   const contacts = await getContacts();
@@ -171,7 +177,7 @@ describe("DHT", function () {
 	  await shutdownClientNodes(nServerNodes, nJoined);
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
 	});
-	it("handles at least 100.", async function () {
+	it("produces.", async function () {
 	  const total = await getContactsLength();
 	  expect(total).toBe(nJoined + nServerNodes); // Sanity check
 	  expect(nWritten).toBe(total);
@@ -187,13 +193,15 @@ describe("DHT", function () {
       });
     });
   }
+
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
   // For example:
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
   //////test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
-  test({maxClientNodes: 190/*95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
+  test({maxClientNodes: 180/*95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
   ////fail test({maxClientNodes: 35, refreshTimeIntervalMS: 2e3, notes: "Small networks allow faster smoke-testing."});
 
+  
   // To pass, we need to work with the default parameters, and assess the output.
   //test();
   // TODO:

@@ -3,7 +3,7 @@ const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For 
 
 describe("DHT internals", function () {
   beforeAll(function () {
-    Node.distinguisher = 0;
+    //Node.distinguisher = 0;
   });
   afterAll(function () {
     Node.stopRefresh();
@@ -47,7 +47,7 @@ describe("DHT internals", function () {
       });
       it("includes name, routing names and stored items by bigInt key.", function () {
 	let report = example.report(string => string); // No op for what to do with the report. Just return it.
-	expect(report).toBe(`Node: 0
+	expect(report).toBe(`Node: 0, 0 transports
   storing 2: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
   90: 1n, 2n`);
       });
@@ -127,8 +127,8 @@ describe("DHT internals", function () {
 	node = await Node.create();
 	// In the discovery tests below, we'll put things in the right place and examine results.
 	// But for these test here, we're just testing structure and the keys are NOT being put in the right buckets.
-	const bucket0 = new KBucket();
-	const bucket60 = new KBucket();
+	const bucket0 = new KBucket(node, 0);
+	const bucket60 = new KBucket(node, 60);
 	const addTo = (bucket, index) => bucket.addContact(SimulatedContact.fromKey(random[index]));
 	addTo(bucket0, 0);
 	addTo(bucket0, 1);
@@ -158,7 +158,7 @@ describe("DHT internals", function () {
       });
       it("reports name and bucket contents.", function () {
 	let report = node.report(string => string);
-	let expected = `Node: ${node.name}
+	let expected = `Node: ${node.name}, 0 transports
   0: ${node.routingTable.get(0).contacts.map(c => c.key.toString() + 'n').join(', ')}
   60: ${node.routingTable.get(60).contacts.map(c => c.key.toString() + 'n').join(', ')}`;
 	expect(report).toBe(expected);
@@ -186,7 +186,7 @@ describe("DHT internals", function () {
 	  node = host.node;
 	  // These others are all constructed to have distances that increase by one from node.
 	  for (let i = 1; i <= nOthers; i++) {
-	    let other = SimulatedContact.fromKey(BigInt(i), host);
+	    let other = SimulatedContact.fromKey(BigInt(i), host.host);
 	    await node.addToRoutingTable(other);
 	  }
 	  //node.report();

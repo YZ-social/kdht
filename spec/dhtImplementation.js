@@ -133,7 +133,7 @@ export async function setupClientsByTime(...rest) {
   // Alternatively, one could launch batches of clients in parallel, and then
   // wait for each to complete its probes.
 }
-async function serialSetupClientsByTime(refreshTimeIntervalMS, nServerNodes, maxClientNodes, runtimeMS) {
+async function serialSetupClientsByTime(refreshTimeIntervalMS, nServerNodes, maxClientNodes, runtimeMS, op=start1) {
   // Do setupClientsByTime one client node at a time.
   // It takes longer and longer as the number of existing nodes gets larger.
   return await new Promise(async resolve => {
@@ -142,7 +142,7 @@ async function serialSetupClientsByTime(refreshTimeIntervalMS, nServerNodes, max
     setTimeout(() => done = true, runtimeMS);
     while (!done && (!maxClientNodes || (count++ < maxClientNodes))) {
       const bootstrapContact = await getBootstrapContact(nBootstraps);
-      const contact = await start1(index, bootstrapContact, refreshTimeIntervalMS);
+      const contact = await op(index, bootstrapContact, refreshTimeIntervalMS);
       if (!done) { // Don't include it if we're now over time.
 	contacts.push(contact); 
 	if (isThrashing) thrash(index, nServerNodes, refreshTimeIntervalMS);

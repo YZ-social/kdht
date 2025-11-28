@@ -1,0 +1,57 @@
+import { Node } from './node.js';
+
+// Bucket in a RoutingTable: a list of up to k Contacts as enforced by addContact().
+export class KBucket {  
+  static k = 20; // System constant.
+  constructor(node, index) {
+    this.node = node;
+    this.index = index;
+  }
+
+  contacts = [];
+  get length() { // How many do we have (not capacity, which is k.)
+    return this.contacts.length;
+  } 
+  get isFull() {  // Are we at capacity?
+    return this.length >= this.constructor.k;
+  }
+  get nTransports() { // How many of our contacts have their own transport connection?
+    return this.contacts.reduce((accumulator, contact) => contact.hasTransport ? accumulator + 1 : accumulator, 0);
+  }
+
+  removeKey(key) { // Removes item specified by key (if present) from bucket and return 'present' if it was, else false.
+    const { contacts } = this;
+    let index = contacts.findIndex(item => item.key === key);
+    if (index !== -1) {
+      contacts.splice(index, 1);
+      return 'present';
+    }
+    return false;
+  }
+
+  async addContact(contact) { // Returns 'present' or 'added' if it was added to end within capacity, and timestamp updated, else false.
+    Node.assert(contact.node.key !== this.node.key, 'attempt to add self contact to bucket');
+    let added = this.removeKey(contact.key) || 'added';
+    if (this.isFull) {
+      const head = this.contacts[0];
+      if (await head.sendCatchingRpc('ping', head.key)) { // still alive
+	added = false;  // New contact will not be added.
+	contact = head; // Add head back and update timestamp, below.
+      } 
+      // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
+      // Don't remove before waiting for the ping, as there can be overlap with other activity that could
+      // think there's room and thus add it twice.
+      this.removeKey(head.key);
+    }
+    const { node, host } = contact;
+    const bucketIndex = this.node.getBucketIndex(node.key);
+    //Node.assert(bucketIndex === this.index, 'mismatched bucket index', bucketIndex, this.index);
+    //Node.assert(host === this.node, 'mistmatched bucket.node and contact.host');
+    Node.assert(!this.contacts.find(c => c.name === contact.name), contact.report, 'already exists in', contact.host.contact.report);
+    this.contacts.push(contact);
+    // Refresh this bucket unless we addContact again before it goes off.
+    clearInterval(this.refreshTimer);
+    this.refreshTimer = host.repeat(() => host.refresh(this.index), 'bucket');
+    return added;
+  }
+}

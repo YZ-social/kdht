@@ -1,13 +1,11 @@
 {
-  "name": "dht",
-  "version": "1.0.0",
+  "name": "kdht",
+  "version": "0.0.1",
   "description": "",
-  "license": "ISC",
-  "author": "",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "npx jasmine --random=false"
+    "test": "npx jasmine"
   },
   "dependencies": {
     "jasmine": "^5.12.0",
