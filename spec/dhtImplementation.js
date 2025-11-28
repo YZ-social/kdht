@@ -22,15 +22,15 @@ export async function stop1(contact) {
 
   // For debugging: Report if we're killing the last holder of our data.
   // This is fine for simulations, but some decentralized reporting would be needed for real systems.
-  if (contact && isThrashing) {
-    for (const key of contact.node.storage.keys()) {
-      let remaining = [];
-      for (const contact of contacts) {
-	if (contact?.isConnected && contact.node.storage.has(key)) remaining.push(contact.node.name);
-      }
-      if (!remaining.length) console.log(`Disconnecting ${contact.node.name}, last holder of ${key}: ${contact.node.storage.get(key)}.`);
-    }
-  }
+  // if (contact && isThrashing) {
+  //   for (const key of contact.node.storage.keys()) {
+  //     let remaining = [];
+  //     for (const contact of contacts) {
+  // 	if (contact?.isConnected && contact.node.storage.has(key)) remaining.push(contact.node.name);
+  //     }
+  //     if (!remaining.length) console.log(`Disconnecting ${contact.node.name}, last holder of ${key}: ${contact.node.storage.get(key)}.`);
+  //   }
+  // }
 
   return await contact?.disconnect();
 }
@@ -48,8 +48,8 @@ export async function read1(contact, key) {
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// Given the above, the following might not need to be redefined on a per-implemmentation basis.
-//
+// Given the above, the following might not need to be redefined on a per-implemmentation basis,
+// but see pingTimeMS in setupServerNodes().
 
 var contacts = [];
 export async function getContacts() {
@@ -107,11 +107,12 @@ async function shutdown(startIndex, stopIndex) { // Internal
   }
 }
 
-export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS) {
+export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS) {
   // Set up nServerNodes, returning a promise that resolves when they are ready to use.
   // See definitions in test suite.
 
   Node.contacts = contacts = []; // Quirk of simulation code.
+  Contact.pingTimeMS = pingTimeMS;
   
   for (let i = 0; i < nServerNodes; i++) {
     contacts.push(await startServerNode(i, contacts[i - 1], refreshTimeIntervalMS));

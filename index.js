@@ -27,7 +27,8 @@ const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
 
 export class Disconnect extends Error {
   static throw(message) { // Let message senders know that message channel was disrupted in some way. Compare TargetDisconnect.
-    throw new this(message);
+    //throw new this(message);
+    return Promise.reject(new this(message));
   }
 }
 export class TargetDisconnect extends Disconnect { // Specifically the target endpoint.
@@ -107,36 +108,37 @@ export class SimulatedContact extends Contact {
   }
   sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
-    if (!sender.isConnected) Disconnect.throw(`RPC from closed sender ${sender.host.name}.`);
+    if (!sender.isConnected) return Disconnect.throw(`RPC from closed sender ${sender.host.name}.`);
     if (sender.key === this.key) return Promise.resolve(this.receiveRpc(method, sender, ...rest));
 
     const start = Date.now();
     return this.transmitRpc(method, sender, ...rest) // The main event.
+      .then(result => {
+	if (!sender.isConnected) return Disconnect.throw(`Sender ${sender.host.name} closed during RPC.`);
+	return result;
+      })
       .catch(rejection => {
 	// Note that recipient is gone.
 	if (rejection instanceof TargetDisconnect) {
 	  // TODO: this common code for all implementations needs to be bottlenecked through Node
 	  if (this.host.key !== this.key) this.host.removeKey(this.key);
 	}
-	throw rejection;
-      })
-      .then(result => {
-	if (!sender.isConnected) Disconnect.throw(`Sender ${sender.host.name} closed during RPC.`);
-	return result;
+	//throw rejection;
+	return Promise.reject(rejection);
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
   }
   async transmitRpc(...rest) {
-    if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
+    if (!this.isConnected) return TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     return await this.receiveRpc(...rest);
   }
-  static pingTime = 10; // ms
-  static async ensureTime(thunk, ms = this.pingTime) { // Promise that thunk takes at least ms to execute.
+  static pingTimeMS = 30; // ms
+  static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.
     const start = Date.now();
     const result = await thunk();
     const elapsed = Date.now() - start;
     if (elapsed > ms) return result;
-    //await new Promise(resolve => setTimeout(resolve, ms - elapsed));
+    await new Promise(resolve => setTimeout(resolve, ms - elapsed));
     return result;
   }
   async receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
@@ -199,9 +201,9 @@ export class SimulatedConnectionContact extends SimulatedContact {
     return true;
   }
   async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
-    if (!this.isConnected) TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
+    if (!this.isConnected) return TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
     Node.assert(this.key !== rest[1].key, 'senderRpc should have presented self-transmission', this, rest);
-    if (!this.hasTransport && !this.connect(rest[0])) TargetDisconnect.throw(`Target ${this.name} is no longer reachable.`);
+    if (!this.hasTransport && !this.connect(rest[0])) return TargetDisconnect.throw(`Target ${this.name} is no longer reachable.`);
     return await this.receiveRpc(...rest);
   }
 }
@@ -590,6 +592,7 @@ export class Node { // An actor within thin DHT.
   stopRefresh() { // Stop repeat timeers in this instance.
     this.refreshTimeIntervalMS = 0;
   }
+  probeSerializer = Promise.resolve();
   repeat(thunk, statisticsKey, interval) {
     // Answer a timer that will execute thunk() in interval, and then  repeat.
     // If not specified, interval computes a new fuzzyInterval each time it repeats.
@@ -605,7 +608,11 @@ export class Node { // An actor within thin DHT.
     return setTimeout(async () => {
       const fired = Date.now();
       this.repeat(thunk, statisticsKey, interval); // Set it now, so as to not be further delayed by thunk.
-      await thunk();
+      // Each actual thunk execution is serialized: Each Node executes its OWN various refreshes and probes
+      // one at a time. This prevents a node from self-DoS'ing, but of course it does not coordinate across
+      // nodes. If the system is bogged down for any reason, then the timeout spacing will get smaller
+      // until finally the node is just running flat out.
+      await (this.probeSerializer = this.probeSerializer.then(thunk));
       const status = Node._stats?.[statisticsKey];
       if (status) {
 	const elapsed = Date.now() - fired; // elapsed in thunk
@@ -665,8 +672,10 @@ export class Node { // An actor within thin DHT.
     // Go until we are sure have written k.
     const k = this.constructor.k;
     let remaining = k;
+    // Ask for more, than needed, and then store to each, one at a time, until we
+    // have replicated k times.
     let helpers = await this.locateNodes(targetKey, remaining * 2);
-    helpers = helpers.reverse(); // So we can pop off the end.
+    helpers = helpers.reverse(); // So we can save best-first by popping off the end.
     // TODO: batches in parallel, if the client and network can handle it. (For now, better to spread it out.)
     while (helpers.length && remaining) {
       const contact = helpers.pop().contact;
@@ -745,14 +754,6 @@ export class Node { // An actor within thin DHT.
   async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
     const targetKey = this.randomTargetInBucket(bucketIndex);
     await this.locateNodes(targetKey); // Side-effect is to update this bucket.
-  }
-  async refreshFIXME() {
-    for (const [key, value] of this.storage.entries()) {
-      await this.storeValue(key, value);
-    }
-    for (let index = 0; index < this.constructor.keySize; index++) {
-      await this.refresh(index);
-    }
   }
   async join(contact) {
     contact = contact.clone(this);
