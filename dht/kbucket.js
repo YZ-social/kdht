@@ -1,9 +1,8 @@
-import { Node } from './node.js';
+import { Node } from './node.js'; // For k and assert.
 const { BigInt } = globalThis; // For linters.
 
 // Bucket in a RoutingTable: a list of up to k Contacts as enforced by addContact().
 export class KBucket {  
-  static k = 20; // System constant.
   constructor(node, index) {
     this.node = node;
     this.index = index;
@@ -20,7 +19,7 @@ export class KBucket {
     return this.contacts.length;
   } 
   get isFull() {  // Are we at capacity?
-    return this.length >= this.constructor.k;
+    return this.length >= Node.k;
   }
   get nTransports() { // How many of our contacts have their own transport connection?
     return this.contacts.reduce((accumulator, contact) => contact.hasTransport ? accumulator + 1 : accumulator, 0);

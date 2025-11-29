@@ -8,6 +8,9 @@ export class NodeKeys {
   constructor(properties) {
     Object.assign(this, properties);
   }
+  static distance(keyA, keyB) { // xor
+    return keyA ^ keyB;
+  }
 
   static async sha256(string) { // Promises a Uint8Array containing the hash of string.
     const msgBuffer = new TextEncoder().encode(string);

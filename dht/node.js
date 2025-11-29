@@ -1,6 +1,6 @@
 import { Helper } from  './helper.js';
 import { KBucket } from './kbucket.js';
-import { NodeKeys } from './keys.js';
+import { NodeKeys } from './nodeKeys.js';
 const { BigInt } = globalThis; // For linters.
 
 /*
@@ -62,9 +62,6 @@ export class Node extends NodeKeys { // An actor within thin DHT.
     stat.elapsed += Date.now() - startTimeMS;
   }
   // Examination
-  static distance(keyA, keyB) { // xor
-    return keyA ^ keyB;
-  }
   routingTable = new Map(); // Maps bit prefix length to KBucket
   forEachBucket(iterator, reverse = false) { // Call iterator(bucket) on each non-empty bucket, stopping as soon as iterator(bucket) returns falsy.
     let buckets = this.routingTable.values();
@@ -184,12 +181,12 @@ export class Node extends NodeKeys { // An actor within thin DHT.
     return Node.contacts?.forEach(c => c.node.report());
   }
 
-  static findClosestHelpers(targetKey, contacts, count = KBucket.k) { // Utility, useful for computing and debugging.
+  static findClosestHelpers(targetKey, contacts, count = this.constructor.k) { // Utility, useful for computing and debugging.
     const helpers = contacts.map(contact => new Helper(contact, this.distance(targetKey, contact.key)));
     helpers.sort(Helper.compare);
     return helpers.slice(0, count);
   }
-  findClosestHelpers(targetKey, count = KBucket.k) { // Answer count closest Helpers to targetKey, including ourself.
+  findClosestHelpers(targetKey, count = this.constructor.k) { // Answer count closest Helpers to targetKey, including ourself.
     const contacts = this.contacts; // Always a fresh copy.
     contacts.push(this.contact); // We are a candidate, too!
     return this.constructor.findClosestHelpers(targetKey, contacts, count);
