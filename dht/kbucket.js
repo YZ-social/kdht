@@ -43,15 +43,10 @@ export class KBucket {
       // think there's room and thus add it twice.
       this.removeKey(head.key);
     }
-    const { node, host } = contact;
-    const bucketIndex = this.node.getBucketIndex(node.key);
-    Node.assert(host === this.node, 'mistmatched bucket.node and contact.host', host?.name, this.node?.name);
-    Node.assert(bucketIndex === this.index, 'mismatched bucket index', bucketIndex, this.index);
-    Node.assert(!this.contacts.find(c => c.name === contact.name), contact.report, 'already exists in', contact.host.contact.report);
     this.contacts.push(contact);
     // Refresh this bucket unless we addContact again before it goes off.
     clearInterval(this.refreshTimer);
-    this.refreshTimer = host.repeat(() => host.refresh(this.index), 'bucket');
+    this.refreshTimer = this.node.repeat(() => this.node.refresh(this.index), 'bucket');
     return added;
   }
 }
