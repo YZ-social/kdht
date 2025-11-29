@@ -1,13 +1,11 @@
+import { NodeUtilities } from './nodeUtilities.js';
 const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
 
 // A node name is (coerced to) a string, and a node key is BigInt of keySize.
-export class NodeKeys {
+export class NodeKeys extends NodeUtilities {
   static zero = 0n;
   static one = 1n;
   static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
-  constructor(properties) {
-    Object.assign(this, properties);
-  }
   static distance(keyA, keyB) { // xor
     return keyA ^ keyB;
   }
