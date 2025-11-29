@@ -1,24 +1,15 @@
 import { Helper } from  './helper.js';
 import { KBucket } from './kbucket.js';
-import { NodeKeys } from './nodeKeys.js';
-const { BigInt } = globalThis; // For linters.
+import { NodeTransports } from './nodeTransports.js';
+const { BigInt, process } = globalThis; // For linters.
 
 /*
-
-  TODO: there are few places where we return a list of Helpers (or Contacts?) that are described in the literature (or method name!) as returning Nodes. Let's do that, since we can get Nodes from Helpers/Contacts, and Contacts from Nodes.
-  TODO: It would be convenient for bucket to cache their host and index. This would allow get rid of some/all? uses of contact.host, and move some operations (randomTargetInBucket, refresh) to KBucket.
-  TODO: should assers be in the Contact or the Node?
+  The chain of superclasses are not really intended to be used separately.
+  They are just broken into smaller peices to make it easier to review the code.
 */
 
-
-export class Node extends NodeKeys { // An actor within thin DHT.
-  constructor ({refreshTimeIntervalMS = Node.refreshTimeIntervalMS, ...properties}) {
-    super({refreshTimeIntervalMS, ...properties});
-  }
+export class Node extends NodeTransports { // An actor within thin DHT.
   static alpha = 3; // How many lookup requests are initially tried in parallel. If no progress, we repeat with up to k more.
-  // TODO: Let's make this as small as possible without flooding network. How do we determine that?
-  static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
-  static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
   log(...rest) { this.constructor.log(this.name, ...rest); }
@@ -62,104 +53,6 @@ export class Node extends NodeKeys { // An actor within thin DHT.
     stat.elapsed += Date.now() - startTimeMS;
   }
   // Examination
-  routingTable = new Map(); // Maps bit prefix length to KBucket
-  forEachBucket(iterator, reverse = false) { // Call iterator(bucket) on each non-empty bucket, stopping as soon as iterator(bucket) returns falsy.
-    let buckets = this.routingTable.values();
-    if (reverse) buckets = buckets.reverse();
-    for (const bucket of buckets) {
-      if (bucket && !iterator(bucket)) return;
-    }
-  }
-  findContact(key) { // Answer the contact for this key, if any, whether in buckets or looseTransports. Does not remove it.
-    const match = contact => contact.key === key;
-    let contact = this.looseTransports.find(match);
-    if (contact) return contact;
-    this.forEachBucket(bucket => !(contact = bucket.contacts.find(match))); // Or we could compute index and look just there.
-    return contact;
-  }
-  looseTransports = [];
-  static maxTransports = Infinity;
-  get nTransports() {
-    let count = this.looseTransports.length;
-    this.forEachBucket(bucket => (count += bucket.nTransports, true));
-    return count;
-  }
-  removeLooseTransport(key) { // Remove the contact for key from looseTransports, and return boolean indicating whether it had been present.
-    const looseIndex = this.looseTransports.findIndex(c => c.key === key);
-    if (looseIndex >= 0) {
-      this.looseTransports.splice(looseIndex, 1);
-      return true;
-    }
-    return false;
-  }
-  noteContactForTransport(contact) { // We're about to use this contact for a message, so keep track of it.
-    // Returns the existing contact, if any, else a clone of contact for this node.
-    // Requires: if we later addToRoutingTable successfully, it should be removed from looseTransports.
-    // Requires: if we later remove contact because of a failed send, it should be removed from looseTransports.
-    const key = contact.key;
-    let existing = this.findContact(contact.key);
-    if (existing) return existing;
-
-    if (false /*fixme this.nTransports >= this.constructor.maxTransports*/) {
-      const sponsor = contact.sponsor;
-      function removeLast(list) { // Remove and return the last element of list that hasTransport
-	const index = list.findLastIndex(element => element.hasTransport && element.key !== sponsor?.key);
-	if (index < 0) return null;
-	const sub = list.splice(index, 1);
-	return sub[0];
-      }
-      let dropped = removeLast(this.looseTransports);
-      if (dropped) {
-	//if (dropped.hasTransport.host.name === '265') console.log('dropping loose transport', dropped.name, 'in', this.name);
-      } else { // Find the bucket with the most connections.
-	//console.log('\n\n*** find best bucket ***\n\n');
-	let bestBucket = null, bestCount = 0;
-	this.forEachBucket(bucket => {
-	  const count = bucket.nTransports;
-	  if (count <= bestCount) return true;
-	  bestBucket = bucket;
-	  bestCount = count;
-	  return true;
-	});
-	dropped = removeLast(bestBucket.contacts);
-      }
-      // if (dropped) {
-      // 	//FIXME? console.log('dropping loose contact', dropped.report, 'from', this.contact.report);
-      // } else { // No loose transport. Must drop from a bucket.
-      // 	const index = this.getBucketIndex(contact.key); // First try the bucket where we will be placed, so that we stick around.
-      // 	const bucket = this.routingTable.get(index);
-      // 	dropped = removeLast(bucket.contacts);
-      // 	if (dropped) {
-      // 	  console.log('\n\n\n**** FIXME', 'dropping bucket contact', dropped.report, 'from', this.contact.report, index);
-      // 	} else { // Nothing there. OK, drop from the bucket with the farthest contacts
-      // 	  this.forEachBucket(bucket => !(dropped = removeLast(bucket.contacts)), 'reverse');
-      // 	  console.log('\n\n\n**** FIXME','dropping bucket contact', dropped.report, 'from', this.contact.report);
-      // 	}
-      // }
-      const farContactForUs = dropped.hasTransport;
-      Node.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
-      Node.assert(farContactForUs.host.key === dropped.key, 'Far contact for us does is not hosted at contact.');
-      farContactForUs.hasTransport = null;
-      // if (farContactForUs.sponsor) 
-      // else {
-      // 	// if (farContactForUs.host.name === '265') {
-      // 	//   console.log('\n\n\n**** FIXME', 'removeKey', this.name, 'from', farContactForUs.host.report(null));
-      // 	// }
-      // 	//fixme farContactForUs.host.removeKey(this.key); // They don't have another path to us because we contacted them directly.
-      // 	farContactForUs.hasTransport = null; // fixme: same as above. simplify
-      // }
-      dropped.hasTransport = null;
-    }
-    contact = contact.clone(this, null);
-    Node.assert(contact.key !== this.key, 'noting contact for self transport', this, contact);
-    this.looseTransports.push(contact);
-    return contact;
-  }
-  get contacts() { // Answer a fresh copy of all contacts for this Node.
-    const contacts = [];
-    this.forEachBucket(bucket => contacts.push(...bucket.contacts));
-    return contacts;
-  }
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.contact?.report || this.name}, ${this.nTransports} transports`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
@@ -181,78 +74,6 @@ export class Node extends NodeKeys { // An actor within thin DHT.
     return Node.contacts?.forEach(c => c.node.report());
   }
 
-  static findClosestHelpers(targetKey, contacts, count = this.constructor.k) { // Utility, useful for computing and debugging.
-    const helpers = contacts.map(contact => new Helper(contact, this.distance(targetKey, contact.key)));
-    helpers.sort(Helper.compare);
-    return helpers.slice(0, count);
-  }
-  findClosestHelpers(targetKey, count = this.constructor.k) { // Answer count closest Helpers to targetKey, including ourself.
-    const contacts = this.contacts; // Always a fresh copy.
-    contacts.push(this.contact); // We are a candidate, too!
-    return this.constructor.findClosestHelpers(targetKey, contacts, count);
-  }
-  static commonPrefixLength(distance) { // Number of leading zeros of distance (within fixed keySize).
-    if (distance === this.zero) return this.keySize; // I.e., zero distance => our own Node => 128 (i.e., one past the farthest bucket).
-    
-    let length = 0;
-    let mask = this.one << BigInt(this.keySize - 1);
-    
-    for (let i = 0; i < this.keySize; i++) {
-      if ((distance & mask) !== this.zero) {
-        return length;
-      }
-      length++;
-      mask >>= this.one;
-    }
-    
-    return this.keySize;
-  }
-  getBucketIndex(key) { // index of routingTable KBucket that should contain the given Node key.
-    // We define bucket 0 for the closest distance, and bucket (keySize - 1) for the farthest,
-    // as in the original paper. Note that some implementation and papers number these in the reverse order.
-    // Significantly, Wikipedia numbers these in the reverse order, AND it implies that the buckets
-    // represent addresses, when in fact they represent a distance from current node's address.
-    const distance = this.constructor.distance(this.key, key);
-    const prefixLength = this.constructor.commonPrefixLength(distance);
-    return 128 - prefixLength - 1;
-  }
-  // Discovery
-  //
-  ensureBucket(index) { // Return bucket at index, creating it if necessary.
-    const routingTable = this.routingTable;
-    let bucket = routingTable.get(index);
-    if (!bucket) {
-      bucket = new KBucket(this, index);
-      routingTable.set(index, bucket);
-    }
-    return bucket;
-  }
-  routingTableSerializer = Promise.resolve();
-  addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
-    return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
-      const key = contact.key;
-      if (key === this.key) return false; // Don't add self
-
-      const bucketIndex = this.getBucketIndex(key);
-      const bucket = this.ensureBucket(bucketIndex);
-
-      // Asynchronous so that this doesn't come within our activity.
-      if (!bucket.contacts.find(c => c.key === key)) this.replicateCloserStorage(contact);
-
-      // Try to add to bucket
-      if (await bucket.addContact(contact)) {
-	this.removeLooseTransport(key); // Can't be in two places.
-	return contact;
-      }
-      return false;
-    });
-  }
-  removeKey(key) { // Removes from node entirely ir present, from looseTransports or bucket as necessary.
-    if (this.removeLooseTransport(key)) return;
-    const bucketIndex = this.getBucketIndex(key);
-    const bucket = this.routingTable.get(bucketIndex);
-    bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.	    
-  }
 
   // Storage
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
