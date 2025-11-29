@@ -1,43 +1,8 @@
-import { NodeContacts } from './nodeContacts.js';
+import { NodeRefresh } from './nodeRefresh.js';
 import { Node } from './node.js';
 
 // Management of Contacts that have a limited number of connections that can transport messages.
-export class NodeTransports extends NodeContacts {
-  findContact(key) { // Answer the contact for this key, if any, whether in buckets or looseTransports. Does not remove it.
-    const match = contact => contact.key === key;
-    let contact = this.looseTransports.find(match);
-    if (contact) return contact;
-    this.forEachBucket(bucket => !(contact = bucket.contacts.find(match))); // Or we could compute index and look just there.
-    return contact;
-  }
-  routingTableSerializer = Promise.resolve();
-  addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
-    return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
-      const key = contact.key;
-      if (key === this.key) return false; // Don't add self
-
-      const bucketIndex = this.getBucketIndex(key);
-      const bucket = this.ensureBucket(bucketIndex);
-
-      // Asynchronous so that this doesn't come within our activity.
-      if (!bucket.contacts.find(c => c.key === key)) this.replicateCloserStorage(contact);
-
-      // Try to add to bucket
-      if (await bucket.addContact(contact)) {
-	this.removeLooseTransport(key); // Can't be in two places.
-	return contact;
-      }
-      return false;
-    });
-  }
-  removeKey(key) { // Removes from node entirely ir present, from looseTransports or bucket as necessary.
-    if (this.removeLooseTransport(key)) return;
-    const bucketIndex = this.getBucketIndex(key);
-    const bucket = this.routingTable.get(bucketIndex);
-    bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.	    
-  }
-
-
+export class NodeTransports extends NodeRefresh {
   looseTransports = [];
   static maxTransports = Infinity;
   get nTransports() {

@@ -1,10 +1,10 @@
-import { NodeRefresh } from './nodeRefresh.js';
+import { NodeTransports } from './nodeTransports.js';
 import { Helper } from './helper.js';
 import { KBucket } from './kbucket.js';
 const { BigInt } = globalThis; // For linters.
 
 // Management of Contacts (but see nodeTransports, too)
-export class NodeContacts extends NodeRefresh {
+export class NodeContacts extends NodeTransports {
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static commonPrefixLength(distance) { // Number of leading zeros of distance (within fixed keySize).
     if (distance === this.zero) return this.keySize; // I.e., zero distance => our own Node => 128 (i.e., one past the farthest bucket).
@@ -52,6 +52,39 @@ export class NodeContacts extends NodeRefresh {
     const contacts = [];
     this.forEachBucket(bucket => contacts.push(...bucket.contacts));
     return contacts;
+  }
+  findContact(key) { // Answer the contact for this key, if any, whether in buckets or looseTransports. Does not remove it.
+    const match = contact => contact.key === key;
+    let contact = this.looseTransports.find(match);
+    if (contact) return contact;
+    this.forEachBucket(bucket => !(contact = bucket.contacts.find(match))); // Or we could compute index and look just there.
+    return contact;
+  }
+  removeKey(key) { // Removes from node entirely ir present, from looseTransports or bucket as necessary.
+    if (this.removeLooseTransport(key)) return;
+    const bucketIndex = this.getBucketIndex(key);
+    const bucket = this.routingTable.get(bucketIndex);
+    bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.	    
+  }
+  routingTableSerializer = Promise.resolve();
+  addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
+    return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
+      const key = contact.key;
+      if (key === this.key) return false; // Don't add self
+
+      const bucketIndex = this.getBucketIndex(key);
+      const bucket = this.ensureBucket(bucketIndex);
+
+      // Asynchronous so that this doesn't come within our activity.
+      if (!bucket.contacts.find(c => c.key === key)) this.replicateCloserStorage(contact);
+
+      // Try to add to bucket
+      if (await bucket.addContact(contact)) {
+	this.removeLooseTransport(key); // Can't be in two places.
+	return contact;
+      }
+      return false;
+    });
   }
   findClosestHelpers(targetKey, count = this.constructor.k) { // Answer count closest Helpers to targetKey, including ourself.
     const contacts = this.contacts; // Always a fresh copy.

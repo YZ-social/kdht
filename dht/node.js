@@ -1,6 +1,6 @@
 import { Helper } from  './helper.js';
 import { KBucket } from './kbucket.js';
-import { NodeTransports } from './nodeTransports.js';
+import { NodeContacts } from './nodeContacts.js';
 const { BigInt, process } = globalThis; // For linters.
 
 /*
@@ -8,7 +8,7 @@ const { BigInt, process } = globalThis; // For linters.
   They are just broken into smaller peices to make it easier to review the code.
 */
 
-export class Node extends NodeTransports { // An actor within thin DHT.
+export class Node extends NodeContacts { // An actor within thin DHT.
   static alpha = 3; // How many lookup requests are initially tried in parallel. If no progress, we repeat with up to k more.
 
   // Storage
