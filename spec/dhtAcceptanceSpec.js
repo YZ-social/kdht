@@ -198,7 +198,7 @@ describe("DHT", function () {
   // For example:
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
   //////test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
-  test({maxClientNodes: 180/*95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
+  test({maxClientNodes: 145/*95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
   ////fail test({maxClientNodes: 35, refreshTimeIntervalMS: 2e3, notes: "Small networks allow faster smoke-testing."});
 
   

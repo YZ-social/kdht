@@ -1,6 +1,6 @@
 import { Node } from './node.js';
 
-// Bucket in a RoutingTable: a list of up to k Node keys as enforced by addContact().
+// Bucket in a RoutingTable: a list of up to k Contacts as enforced by addContact().
 export class KBucket {  
   static k = 20; // System constant.
   constructor(node, index) {
@@ -45,8 +45,8 @@ export class KBucket {
     }
     const { node, host } = contact;
     const bucketIndex = this.node.getBucketIndex(node.key);
-    //Node.assert(bucketIndex === this.index, 'mismatched bucket index', bucketIndex, this.index);
-    //Node.assert(host === this.node, 'mistmatched bucket.node and contact.host');
+    Node.assert(host === this.node, 'mistmatched bucket.node and contact.host', host?.name, this.node?.name);
+    Node.assert(bucketIndex === this.index, 'mismatched bucket index', bucketIndex, this.index);
     Node.assert(!this.contacts.find(c => c.name === contact.name), contact.report, 'already exists in', contact.host.contact.report);
     this.contacts.push(contact);
     // Refresh this bucket unless we addContact again before it goes off.

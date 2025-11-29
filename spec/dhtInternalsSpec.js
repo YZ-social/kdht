@@ -120,23 +120,29 @@ describe("DHT internals", function () {
     });
 
     describe("examination", function () {
-      const random = Array.from({length: 4}, () => BigInt(Math.floor(Math.random() * 1e10)));
+      const keys = [];
       let node;
       beforeAll(async function () {
 	// Applications won't be hand-creating the routingTable, but this test does.
-	node = await Node.create();
-	// In the discovery tests below, we'll put things in the right place and examine results.
-	// But for these test here, we're just testing structure and the keys are NOT being put in the right buckets.
+	const contact = await SimulatedContact.create();
+	node = contact.node;
 	const bucket0 = new KBucket(node, 0);
+	const bucket10 = new KBucket(node, 10);
 	const bucket60 = new KBucket(node, 60);
-	const addTo = (bucket, index) => bucket.addContact(SimulatedContact.fromKey(random[index]));
-	addTo(bucket0, 0);
-	addTo(bucket0, 1);
-	addTo(bucket60, 2);
-	addTo(bucket60, 3);
+	const bucket90 = new KBucket(node, 90);	
+	const addTo = async bucket => {
+	  const key = node.randomTargetInBucket(bucket.index);
+	  keys.push(key);
+	  await bucket.addContact(SimulatedContact.fromKey(key, node));
+	};
+	await addTo(bucket0,);
+	await addTo(bucket10);
+	await addTo(bucket60);
+	await addTo(bucket90);
 	node.routingTable.set(0, bucket0);
+	node.routingTable.set(10, bucket10);	
 	node.routingTable.set(60, bucket60);
-	SimulatedContact.fromNode(node);
+	node.routingTable.set(90, bucket90);	
       });
       it("is initially empty.", async function () {
 	const node = await Node.create();
@@ -145,11 +151,11 @@ describe("DHT internals", function () {
       it("collects from all buckets.", function () {
 	const contacts = node.contacts;
 	const asKeys = contacts.map(c => c.key);
-	expect(asKeys).toEqual(random);
+	expect(asKeys).toEqual(keys);
       });
       it("finds all ordered keys there are.", function () {
 	let target = node.key;
-	let all = [node.key, ...random]; // Our findClosestHelpers includes ourself.
+	let all = [node.key, ...keys]; // Our findClosestHelpers includes ourself.
 	let keysAndDistances = all.map(key => ({key, distance: Node.distance(target, key)}));
 	keysAndDistances.sort(Helper.compare);
 	const closest = node.findClosestHelpers(target);
@@ -160,7 +166,9 @@ describe("DHT internals", function () {
 	let report = node.report(string => string);
 	let expected = `Node: ${node.name}, 0 transports
   0: ${node.routingTable.get(0).contacts.map(c => c.key.toString() + 'n').join(', ')}
-  60: ${node.routingTable.get(60).contacts.map(c => c.key.toString() + 'n').join(', ')}`;
+  10: ${node.routingTable.get(10).contacts.map(c => c.key.toString() + 'n').join(', ')}
+  60: ${node.routingTable.get(60).contacts.map(c => c.key.toString() + 'n').join(', ')}
+  90: ${node.routingTable.get(90).contacts.map(c => c.key.toString() + 'n').join(', ')}`;	
 	expect(report).toBe(expected);
       });
     });
@@ -171,9 +179,10 @@ describe("DHT internals", function () {
 	expect(node.routingTable.size).toBe(0);
       });
       it("places in bucket if room.", async function () {
-	let node = Node.fromKey(Node.zero);
-	let other = Node.fromKey(Node.one); // Closest bucket
-	expect(await node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeTruthy();
+	let contact = SimulatedContact.fromKey(Node.zero);
+	let node = contact.node;
+	let other = SimulatedContact.fromKey(Node.one, node); // Closest bucket
+	expect(await node.addToRoutingTable(other)).toBeTruthy();
 	expect(node.getBucketIndex(Node.one)).toBe(0);
 	const bucket = node.routingTable.get(0);
 	expect(bucket.contacts[0].key).toBe(Node.one);
