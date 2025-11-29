@@ -1,8 +1,8 @@
-import { NodeRefresh } from './nodeRefresh.js';
-import { Node } from './node.js';
+import { NodeStorage } from './nodeStorage.js';
+import { NodeUtilities } from './nodeUtilities.js';
 
 // Management of Contacts that have a limited number of connections that can transport messages.
-export class NodeTransports extends NodeRefresh {
+export class NodeTransports extends NodeStorage {
   looseTransports = [];
   static maxTransports = Infinity;
   get nTransports() {
@@ -63,8 +63,8 @@ export class NodeTransports extends NodeRefresh {
       // 	}
       // }
       const farContactForUs = dropped.hasTransport;
-      Node.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
-      Node.assert(farContactForUs.host.key === dropped.key, 'Far contact for us does is not hosted at contact.');
+      NodeUtilities.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
+      NodeUtilities.assert(farContactForUs.host.key === dropped.key, 'Far contact for us does is not hosted at contact.');
       farContactForUs.hasTransport = null;
       // if (farContactForUs.sponsor) 
       // else {
@@ -77,7 +77,7 @@ export class NodeTransports extends NodeRefresh {
       dropped.hasTransport = null;
     }
     contact = contact.clone(this, null);
-    Node.assert(contact.key !== this.key, 'noting contact for self transport', this, contact);
+    NodeUtilities.assert(contact.key !== this.key, 'noting contact for self transport', this, contact);
     this.looseTransports.push(contact);
     return contact;
   }
