@@ -37,9 +37,11 @@ describe("DHT internals", function () {
       beforeAll(async function () { // Add some data for which we know the expected internal structure.
 	example.storeLocally(await Node.key("foo"), 17); // May or may not have already been set to same value, depending on test order.
 	example.storeLocally(await Node.key("bar"), "baz");
-	let bucket = new KBucket();
-	bucket.contacts.push(await SimulatedContact.fromKey(1));
-	bucket.contacts.push(await SimulatedContact.fromKey(2));
+	const contact = await SimulatedContact.create();
+	const node = contact.node;
+	let bucket = new KBucket(node, 90); // 90 isn't correct, but we're just looking at the structure.
+	bucket.contacts.push(await SimulatedContact.fromKey(1, node));
+	bucket.contacts.push(await SimulatedContact.fromKey(2, node));
 	example.routingTable.set(90, bucket);
       });
       afterAll(function () {
@@ -104,14 +106,14 @@ describe("DHT internals", function () {
 	expect(node.getBucketIndex(distance)).toBe(0);
       });
     });
-    describe("randomTargetInIndex", function () {
+    describe("randomTarget", function () {
       let node;
       beforeAll(async function () {
 	node = await Node.create();
       });
       function test(bucketIndex) {
 	it(`computes random of ${bucketIndex}.`, function () {
-	  const random = node.randomTargetInBucket(bucketIndex);
+	  const random = node.ensureBucket(bucketIndex).randomTarget;
 	  const computedBucket = node.getBucketIndex(random);
 	  expect(computedBucket).toBe(bucketIndex);
 	});
@@ -131,7 +133,7 @@ describe("DHT internals", function () {
 	const bucket60 = new KBucket(node, 60);
 	const bucket90 = new KBucket(node, 90);	
 	const addTo = async bucket => {
-	  const key = node.randomTargetInBucket(bucket.index);
+	  const key = bucket.randomTarget;
 	  keys.push(key);
 	  await bucket.addContact(SimulatedContact.fromKey(key, node));
 	};

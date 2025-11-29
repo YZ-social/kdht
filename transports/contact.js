@@ -71,10 +71,7 @@ export class SimulatedContact extends Contact {
     return this.farHomeContact._connected;
   }
   get report() { // Answer string of name, followed by * if disconnected
-    const distinguish = this.distinguisher !== null;
-    const version = distinguish ? '/' + this.distinguisher : '';
-    const host = distinguish ? `@${this.host.distinguishedName}` : '';
-    return `${this.hasTransport ? '_' : ''}${this.node.distinguishedName}${host}${version}${this.isConnected ? '' : '*'}`;
+    return `${this.hasTransport ? '_' : ''}${this.node.name}${this.isConnected ? '' : '*'}`;
   }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     const { farHomeContact } = this;

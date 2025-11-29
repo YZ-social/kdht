@@ -1,6 +1,7 @@
 import { Helper } from  './helper.js';
 import { KBucket } from './kbucket.js';
-const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
+import { NodeKeys } from './keys.js';
+const { BigInt } = globalThis; // For linters.
 
 /*
 
@@ -10,21 +11,14 @@ const { BigInt, TextEncoder, crypto } = globalThis; // For linters.
 */
 
 
-export class Node { // An actor within thin DHT.
+export class Node extends NodeKeys { // An actor within thin DHT.
+  constructor ({refreshTimeIntervalMS = Node.refreshTimeIntervalMS, ...properties}) {
+    super({refreshTimeIntervalMS, ...properties});
+  }
   static alpha = 3; // How many lookup requests are initially tried in parallel. If no progress, we repeat with up to k more.
   // TODO: Let's make this as small as possible without flooding network. How do we determine that?
   static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
-  static keySize = 128; // Number of bits in a key. Must be multiple of 8 and <= sha256.
-  static distinguisher = null; // If set to number, then each Node gets a unique distinguisher that appears in Contact report.
-  constructor({refreshTimeIntervalMS = Node.refreshTimeIntervalMS, distinguisher = Node.distinguisher, ...properties}) {
-    if (distinguisher !== null) Node.distinguisher = distinguisher + 1;
-    Object.assign(this, {refreshTimeIntervalMS, distinguisher, ...properties});
-  }
-  get distinguishedName() {
-    if (this.distinguisher === null) return this.name;
-    return `${this.name}-${this.distinguisher}`;
-  }
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
   log(...rest) { this.constructor.log(this.name, ...rest); }
@@ -33,42 +27,6 @@ export class Node { // An actor within thin DHT.
     console.error(...rest, new Error("Assert failure").stack); // Not throwing error, because we want to exit. But we are grabbing stack.
     process.exit(1);
   }
-
-  /* Identifiers: A few operations accept string, which are hashed to keySize bits and represented internally as a BigInt. */
-  static async sha256(string) { // Promises a Uint8Array.
-    const msgBuffer = new TextEncoder().encode(string);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const uint8Array = new Uint8Array(hashBuffer);
-    return uint8Array;
-  }
-  static uint8ArrayToHex(uint8Array) {
-    return Array.from(uint8Array)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-  static async key(string) {
-    const uint8Array = await this.sha256(string.toString());
-    const truncated = uint8Array.slice(0, this.keySize / 8);
-    const hex = this.uint8ArrayToHex(truncated);
-    const key = BigInt('0x' + hex);
-    return key;
-  }
-  static counter = 0;
-  static async create(nameOrProperties = {}) { // Create a node with a simple name and matching key.
-    if (['string', 'number'].includes(typeof nameOrProperties)) nameOrProperties = {name: nameOrProperties};
-    let {name = this.counter++, ...rest} = nameOrProperties;
-    name = name.toString();
-    const key = await this.key(name);  
-    return new this({name, key, ...rest});
-  }
-  static fromKey(key) { // Forge specific key for testing.
-    if (typeof(key) !== 'bigint') key = BigInt(key);
-    return new this({name: key.toString() + 'n', key});
-  }
-
-  /* Internal operations that do not talk to other nodes */
-  static zero = 0n;
-  static one = 1n;
   static _stats = {};
   static get statistics() { // Return {bucket, storage, rpc}, where each value is [elapsedInSeconds, count, averageInMSToNearestTenth].
     // If Nodes.contacts is populated, also report average number of buckets and contacts.
@@ -261,34 +219,25 @@ export class Node { // An actor within thin DHT.
     const prefixLength = this.constructor.commonPrefixLength(distance);
     return 128 - prefixLength - 1;
   }
-  randomTargetInBucket(bucketIndex) { // Return a key for which this.getBucketIndex will be the given bucketIndex.
-    const keySize = this.constructor.keySize;
-    const nLeadingZeros = keySize - 1 - bucketIndex;
-    let binary = '0'.repeat(nLeadingZeros);
-    binary += '1'; // Next bit must be one to stay in bucket.
-    // Now fill the rest (if any) with random bits.
-    for (let i = nLeadingZeros + 1; i < keySize; i++) binary += Math.round(Math.random());
-    const distance = BigInt('0b' + binary);
-    const target = this.constructor.distance(distance, this.key);
-    return target;
-  }
   // Discovery
-  // 
+  //
+  ensureBucket(index) { // Return bucket at index, creating it if necessary.
+    const routingTable = this.routingTable;
+    let bucket = routingTable.get(index);
+    if (!bucket) {
+      bucket = new KBucket(this, index);
+      routingTable.set(index, bucket);
+    }
+    return bucket;
+  }
   routingTableSerializer = Promise.resolve();
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
     return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
       const key = contact.key;
       if (key === this.key) return false; // Don't add self
 
-      const routingTable = this.routingTable;
       const bucketIndex = this.getBucketIndex(key);
-
-      // Get or create bucket
-      let bucket = routingTable.get(bucketIndex);
-      if (!bucket) {
-	bucket = new KBucket(this, bucketIndex);
-	routingTable.set(bucketIndex, bucket);
-      }
+      const bucket = this.ensureBucket(bucketIndex);
 
       // Asynchronous so that this doesn't come within our activity.
       if (!bucket.contacts.find(c => c.key === key)) this.replicateCloserStorage(contact);
@@ -480,10 +429,6 @@ export class Node { // An actor within thin DHT.
     }
     return best;
   }
-  async refresh(bucketIndex) { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
-    const targetKey = this.randomTargetInBucket(bucketIndex);
-    await this.locateNodes(targetKey); // Side-effect is to update this bucket.
-  }
   async join(contact) {
     contact = contact.clone(this);
     await this.addToRoutingTable(contact);
@@ -494,9 +439,9 @@ export class Node { // An actor within thin DHT.
       // TODO: Do we really have to perform a refresh on EACH bucket? Won't a refresh of the farthest bucket update the closer ones?
       // TODO: Can it be in parallel?
       const bucket = this.routingTable.get(index);
-      if (!bucket && !started) continue;
+      if (!bucket?.contacts.length && !started) continue;
       if (!started) started = true;
-      else if (!bucket) await this.refresh(index);
+      else if (!bucket?.contacts.length) await this.ensureBucket(index).refresh();
     }
     return this.contact;
   }
