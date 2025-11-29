@@ -1,16 +1,11 @@
-import { NodeKeys } from './nodeKeys.js';
-import { Node } from './node.js';
+import { NodeRefresh } from './nodeRefresh.js';
 import { Helper } from './helper.js';
 import { KBucket } from './kbucket.js';
 const { BigInt } = globalThis; // For linters.
 
 // Management of Contacts (but see nodeTransports, too)
-export class NodeContacts extends NodeKeys {
+export class NodeContacts extends NodeRefresh {
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
-  static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
-  constructor ({refreshTimeIntervalMS = Node.refreshTimeIntervalMS, ...properties}) {
-    super({refreshTimeIntervalMS, ...properties});
-  }
   static commonPrefixLength(distance) { // Number of leading zeros of distance (within fixed keySize).
     if (distance === this.zero) return this.keySize; // I.e., zero distance => our own Node => 128 (i.e., one past the farthest bucket).
     

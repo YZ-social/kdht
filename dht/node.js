@@ -13,48 +13,6 @@ export class Node extends NodeTransports { // An actor within thin DHT.
 
   // Storage
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
-  fuzzyInterval(target = this.refreshTimeIntervalMS/3, margin = target/3) {
-    // Answer a random integer uniformly distributed around target, +/- margin.
-    const adjustment = Math.floor(Math.random() * margin);
-    return Math.floor(target + margin/2 - adjustment);
-  }
-  static stopRefresh() { // Stop all repeat timers in all instances the next time they come around.
-    this.constructor.refreshTimeIntervalMS = 0;
-  }
-  stopRefresh() { // Stop repeat timeers in this instance.
-    this.refreshTimeIntervalMS = 0;
-  }
-  probeSerializer = Promise.resolve();
-  repeat(thunk, statisticsKey, interval) {
-    // Answer a timer that will execute thunk() in interval, and then  repeat.
-    // If not specified, interval computes a new fuzzyInterval each time it repeats.
-    // Does nothing if interval is zero.
-    if (0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval) return null;
-
-    // We use repeated setTimer rather than setInterval because it is important in the
-    // default case to use a different random interval each time, so that we don't have
-    // everything firing at once repeatedly.
-    const timeout = (interval === undefined) ?  this.fuzzyInterval() : interval;
-
-    const scheduled = Date.now();
-    return setTimeout(async () => {
-      const fired = Date.now();
-      this.repeat(thunk, statisticsKey, interval); // Set it now, so as to not be further delayed by thunk.
-      // Each actual thunk execution is serialized: Each Node executes its OWN various refreshes and probes
-      // one at a time. This prevents a node from self-DoS'ing, but of course it does not coordinate across
-      // nodes. If the system is bogged down for any reason, then the timeout spacing will get smaller
-      // until finally the node is just running flat out.
-      await (this.probeSerializer = this.probeSerializer.then(thunk));
-      const status = Node._stats?.[statisticsKey];
-      if (status) {
-	const elapsed = Date.now() - fired; // elapsed in thunk
-	const lag = fired - scheduled - timeout;
-	status.count++;
-	status.elapsed += elapsed;
-	status.lag += lag;
-      }
-    }, timeout);
-  }
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
     if (this.storage.get(key) === value) return; // If not a new value, no need to change refresh schedule.
     this.storage.set(key, value);
@@ -71,7 +29,7 @@ export class Node extends NodeTransports { // An actor within thin DHT.
     const ourKey = this.key;
     for (const key in this.storage.keys()) {
       if (this.constructor.distance(contact.key, key) <= this.constructor.distance(ourKey, key)) {
-	contact.store(key, this.retrieveLocally(key)); // Not awaiting.
+	await contact.store(key, this.retrieveLocally(key));
       }
     }
   }
