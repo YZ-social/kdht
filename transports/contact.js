@@ -112,8 +112,7 @@ export class SimulatedContact extends Contact {
   async receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
     return await this.constructor.ensureTime(() => {
       sender = sender.clone(this.node);
-      this.node.addToRoutingTable(sender); // Asynchronously so as to not overlap.
-      return this.node[method](...rest);
+      return this.node.receiveRPC(method, sender, ...rest);
     });
   }
 }

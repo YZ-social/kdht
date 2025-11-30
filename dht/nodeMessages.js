@@ -21,4 +21,8 @@ export class NodeMessages extends NodeContacts {
     if (value !== undefined) return {value};
     return this.findClosestHelpers(key);
   }
+  receiveRPC(method, sender, ...rest) {
+    this.addToRoutingTable(sender); // Do not wait for it.
+    return this[method](...rest);
+  }
 }
