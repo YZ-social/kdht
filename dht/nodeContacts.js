@@ -75,15 +75,13 @@ export class NodeContacts extends NodeTransports {
       const bucketIndex = this.getBucketIndex(key);
       const bucket = this.ensureBucket(bucketIndex);
 
-      // Asynchronous so that this doesn't come within our activity.
-      if (!bucket.contacts.find(c => c.key === key)) this.replicateCloserStorage(contact);
-
       // Try to add to bucket
-      if (await bucket.addContact(contact)) {
+      const added = await bucket.addContact(contact);
+      if (added !== 'present') { // Not already tracked in bucket.
 	this.removeLooseTransport(key); // Can't be in two places.
-	return contact;
+	this.queueWork(() => this.replicateCloserStorage(contact));
       }
-      return false;
+      return added;
     });
   }
   findClosestHelpers(targetKey, count = this.constructor.k) { // Answer count closest Helpers to targetKey, including ourself.
