@@ -1,6 +1,6 @@
 import { Helper } from  './helper.js';
 import { KBucket } from './kbucket.js';
-import { NodeContacts } from './nodeContacts.js';
+import { NodeMessages } from './nodeMessages.js';
 const { BigInt, process } = globalThis; // For linters.
 
 /*
@@ -8,7 +8,7 @@ const { BigInt, process } = globalThis; // For linters.
   They are just broken into smaller peices to make it easier to review the code.
 */
 
-export class Node extends NodeContacts { // An actor within thin DHT.
+export class Node extends NodeMessages { // An actor within thin DHT.
   static alpha = 3; // How many lookup requests are initially tried in parallel. If no progress, we repeat with up to k more.
 
   /* Active operations involving messages to other Nodes. */
@@ -133,24 +133,5 @@ export class Node extends NodeContacts { // An actor within thin DHT.
       else if (!bucket?.contacts.length) await this.ensureBucket(index).refresh();
     }
     return this.contact;
-  }
-
-  // The four methods we recevieve through RPCs:
-  ping(key) { // Respond with 'pong'. (RPC mechanism doesn't call unless connected.)
-    return 'pong';
-  }
-  store(key, value) { // Tell Entry node to store identifier => value.
-    this.storeLocally(key, value);
-    return 'pong';
-  }
-  findNodes(key) { // Return k closest Contacts from routingTable.
-    // TODO: Currently, this answers a list of Helpers. For security, it should be changed to a list of serialized Contacts.
-    // I.e., send back a list of verifiable signatures and let the receiver verify and then compute the distances.
-    return this.findClosestHelpers(key);
-  }
-  findValue(key) { // Like findNodes, but if other has identifier stored, reject {value} instead.
-    let value = this.retrieveLocally(key);
-    if (value !== undefined) return {value};
-    return this.findClosestHelpers(key);
   }
 }
