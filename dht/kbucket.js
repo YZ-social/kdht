@@ -54,7 +54,7 @@ export class KBucket {
     let added = this.removeKey(contact.key) || 'added';
     if (this.isFull) {
       const head = this.contacts[0];
-      if (await head.sendCatchingRpc('ping', head.key)) { // still alive
+      if (await head.sendRPC('ping', head.key)) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back and update timestamp, below.
       } 

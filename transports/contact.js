@@ -1,27 +1,11 @@
 import { Node } from '../dht/node.js';
 
-export class Disconnect extends Error {
-  static throw(message) { // Let message senders know that message channel was disrupted in some way. Compare TargetDisconnect.
-    //throw new this(message);
-    return Promise.reject(new this(message));
-  }
-}
-export class TargetDisconnect extends Disconnect { // Specifically the target endpoint.
-}
-
 export class Contact {
   // Represents an abstract contact from a host (a Node) to another node.
   // The host calls aContact.sendRpc(...messageParameters) to send the message to node and promises the response.
   // This could be by wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
-  sendCatchingRpc(...rest) {
-    return this.sendRpc(...rest)
-      .catch(error => {
-	if (!(error instanceof Disconnect)) console.error(error);
-	return undefined;
-      });
-  }
   store(key, value) {
-    return this.sendCatchingRpc('store', key, value);
+    return this.sendRPC('store', key, value);
   }
 }
 export class SimulatedContact extends Contact {
@@ -74,30 +58,21 @@ export class SimulatedContact extends Contact {
     farHomeContact._connected = false;
     this.node.stopRefresh();
   }
-  sendRpc(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
+  sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
-    if (!sender.isConnected) return Disconnect.throw(`RPC from closed sender ${sender.host.name}.`);
-    if (sender.key === this.key) return Promise.resolve(this.receiveRpc(method, sender, ...rest));
+    if (!sender.isConnected) return null; // sender closed before call.
+    if (sender.key === this.key) return this.receiveRpc(method, sender, ...rest);
 
     const start = Date.now();
     return this.transmitRpc(method, sender, ...rest) // The main event.
       .then(result => {
-	if (!sender.isConnected) return Disconnect.throw(`Sender ${sender.host.name} closed during RPC.`);
+	if (!sender.isConnected) return null; // Sender closed after call.
 	return result;
-      })
-      .catch(rejection => {
-	// Note that recipient is gone.
-	if (rejection instanceof TargetDisconnect) {
-	  // TODO: this common code for all implementations needs to be bottlenecked through Node
-	  if (this.host.key !== this.key) this.host.removeKey(this.key);
-	}
-	//throw rejection;
-	return Promise.reject(rejection);
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
   }
   async transmitRpc(...rest) {
-    if (!this.isConnected) return TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
+    if (!this.isConnected) return null; // Receiver closed.
     return await this.receiveRpc(...rest);
   }
   static pingTimeMS = 30; // ms
@@ -159,9 +134,9 @@ export class SimulatedConnectionContact extends SimulatedContact {
     return true;
   }
   async transmitRpc(...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
-    if (!this.isConnected) return TargetDisconnect.throw(`Target ${this.name} has disconnected.`);
+    if (!this.isConnected) return null; // Receiver closed.
     Node.assert(this.key !== rest[1].key, 'senderRpc should have presented self-transmission', this, rest);
-    if (!this.hasTransport && !this.connect(rest[0])) return TargetDisconnect.throw(`Target ${this.name} is no longer reachable.`);
+    if (!this.hasTransport && !this.connect(rest[0])) return null; // receiver no longer reachable.
     return await this.receiveRpc(...rest);
   }
 }
