@@ -18,7 +18,7 @@ export class Helper {
     return 0;
   }
   static findClosest(targetKey, contacts, count = this.constructor.k) { // Utility, useful for computing and debugging.
-    const helpers = contacts.map(contact => new Helper(contact, Node.distance(targetKey, contact.key)));
+    const helpers = contacts.map(contact => new Helper(contact, contact.distance(targetKey)));
     helpers.sort(this.compare);
     return helpers.slice(0, count);
   }

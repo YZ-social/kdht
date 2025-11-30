@@ -31,8 +31,7 @@ export class KBucket {
     for (let i = binary.length - 2; i < keySize; i++) binary += Math.round(Math.random());
     const distance = BigInt(binary);
     // Quirk of xor distance that it works backwards like this.
-    const target = nodeClass.distance(distance, this.node.key);
-    return target;
+    return this.node.distance(distance);
   }
   async refresh() { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
     const targetKey = this.randomTarget;

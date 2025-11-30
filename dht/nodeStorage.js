@@ -16,9 +16,8 @@ export class NodeStorage extends NodeRefresh {
   }
   // TODO: also store/retrievePersistent locally.
   async replicateCloserStorage(contact) { // Replicate to new contact any of our data for which contact is closer than us.
-    const ourKey = this.key;
     for (const key in this.storage.keys()) {
-      if (this.constructor.distance(contact.key, key) <= this.constructor.distance(ourKey, key)) {
+      if (contact.distance(key) <= this.distance(key)) { //fixme define distance on contact
 	await contact.store(key, this.retrieveLocally(key));
       }
     }

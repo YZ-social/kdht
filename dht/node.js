@@ -58,6 +58,6 @@ export class Node extends NodeProbe {
       if (!started) started = true;
       else if (!bucket?.contacts.length) await this.ensureBucket(index).refresh();
     }
-    return this.contact;
+    return this.contact; // Handy for chaining or keeping track of contacts being made and joined.
   }
 }

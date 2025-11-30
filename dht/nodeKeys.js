@@ -42,6 +42,9 @@ export class NodeKeys extends NodeUtilities {
     return new this({name: key.toString() + 'n', key});
   }
 
+  distance(targetKey) { // Distance from this node to targetKey.
+    return this.constructor.distance(this.key, targetKey);
+  }
   async ensureKey(targetKey) { // If targetKey is not already a real key, hash it into one.
     if (typeof(targetKey) !== 'bigint') targetKey = await this.constructor.key(targetKey);
     return targetKey;

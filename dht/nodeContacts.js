@@ -28,7 +28,7 @@ export class NodeContacts extends NodeTransports {
     // as in the original paper. Note that some implementation and papers number these in the reverse order.
     // Significantly, Wikipedia numbers these in the reverse order, AND it implies that the buckets
     // represent addresses, when in fact they represent a distance from current node's address.
-    const distance = this.constructor.distance(this.key, key);
+    const distance = this.distance(key);
     const prefixLength = this.constructor.commonPrefixLength(distance);
     return 128 - prefixLength - 1;
   }

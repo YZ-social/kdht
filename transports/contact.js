@@ -13,12 +13,18 @@ export class Contact {
   // Represents an abstract contact from a host (a Node) to another node.
   // The host calls aContact.sendRpc(...messageParameters) to send the message to node and promises the response.
   // This could be by wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
-  static distinguisher = null; // If set to a number, then each Node gets a unique distinguisher that appears in Contact report.
-  constructor() {
-    this.distinguisher = Contact.distinguisher;
-    if (Contact.distinguisher !== null) Contact.distinguisher++;
+  sendCatchingRpc(...rest) {
+    return this.sendRpc(...rest)
+      .catch(error => {
+	if (!(error instanceof Disconnect)) console.error(error);
+	return undefined;
+      });
   }
-
+  store(key, value) {
+    return this.sendCatchingRpc('store', key, value);
+  }
+}
+export class SimulatedContact extends Contact {
   static fromNode(node, host = node) {
     const contact = new this();
     // Every Contact is unique to a host Node, from which it sends messages to a specific "far" node.
@@ -38,18 +44,8 @@ export class Contact {
   get name() { return this.node.name; }
   get key() { return this.node.key; }
   join(other) { return this.node.join(other); }
-  sendCatchingRpc(...rest) {
-    return this.sendRpc(...rest)
-      .catch(error => {
-	if (!(error instanceof Disconnect)) console.error(error);
-	return undefined;
-      });
-  }
-  store(key, value) {
-    return this.sendCatchingRpc('store', key, value);
-  }
-}
-export class SimulatedContact extends Contact {
+  distance(key) { return this.node.distance(key); }
+
   get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
     return this.node.contact;
   }

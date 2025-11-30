@@ -1,4 +1,4 @@
-import { Node, KBucket, SimulatedContact, Contact, Helper } from '../index.js';
+import { Node, KBucket, SimulatedContact, Helper } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
 describe("DHT internals", function () {
@@ -12,7 +12,7 @@ describe("DHT internals", function () {
   describe("structure", function () {
     let example;
     beforeAll(async function () {
-      const contact = await Contact.create(0);
+      const contact = await SimulatedContact.create(0);
       example = contact.node;
     });
     it("has key.", function () {
