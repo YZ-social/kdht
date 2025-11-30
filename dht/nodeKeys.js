@@ -41,4 +41,9 @@ export class NodeKeys extends NodeUtilities {
     if (typeof(key) !== 'bigint') key = BigInt(key);
     return new this({name: key.toString() + 'n', key});
   }
+
+  async ensureKey(targetKey) { // If targetKey is not already a real key, hash it into one.
+    if (typeof(targetKey) !== 'bigint') targetKey = await this.constructor.key(targetKey);
+    return targetKey;
+  }
 }
