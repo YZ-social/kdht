@@ -18,9 +18,8 @@ export class NodeProbe extends NodeMessages {
     await this.addToRoutingTable(helper.contact); // Live node, so update bucket.
     if (this.constructor.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
-      // Results are (helpers around) contacts. Clone them for this host.
-      results = results.map(h => new Helper(h.contact.clone(this), h.distance));
-      results.forEach(h => h.contact.sponsor = contact); // Record the contact that introduced us to this new contact.
+      // Results are (helpers around) contacts. Set them up for this host.
+      results = results.map(h => new Helper(this.ensureContact(h.contact, contact), h.distance));
     }
     return results;
   }

@@ -10,8 +10,9 @@ export class NodeUtilities {
   static assert(ok, ...rest) { // If !ok, log rests and exit.
     if (ok) return;
     console.error(...rest, new Error("Assert failure").stack); // Not throwing error, because we want to exit. But we are grabbing stack.
-    process.exit(1);
+    globalThis.process?.exit(1);
   }
+  // TODO: Instead of a global collector (which won't work when distributed across devices), 
   static _stats = {};
   static get statistics() { // Return {bucket, storage, rpc}, where each value is [elapsedInSeconds, count, averageInMSToNearestTenth].
     // If Nodes.contacts is populated, also report average number of buckets and contacts.
@@ -46,7 +47,6 @@ export class NodeUtilities {
     stat.count++;
     stat.elapsed += Date.now() - startTimeMS;
   }
-  // Examination
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.contact?.report || this.name}, ${this.nTransports} transports`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
@@ -64,4 +64,8 @@ export class NodeUtilities {
     }
     return logger ? logger(report) : report;
   }
+  static reportAll() {
+    this.contacts?.forEach(contact => contact.node.report());
+  }
 }
+

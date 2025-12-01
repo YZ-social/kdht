@@ -10,7 +10,7 @@ const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach} = glob
 import { setupServerNodes, shutdownServerNodes,
 	 start1, setupClientsByTime, shutdownClientNodes,
 	 getContacts, getRandomLiveContact,
-	 startThrashing, write1, read1 } from './dhtImplementation.js';
+	 startThrashing, write1, read1, Node } from './dhtImplementation.js';
 
 // Some definitions:
 //
@@ -87,7 +87,7 @@ async function awaitNonNullContact(contacts, i) { // Kind of stupid...
   await delay(50);
   return await awaitNonNullContact(contacts, i);
 }
-import { SimulatedConnectionContact as Contact, Node } from '../index.js';
+
 async function parallelWriteAll() {
   // Persist a unique string through each contact all at once, but not resolving until all are ready.
   const contacts = await getContacts();
@@ -132,7 +132,6 @@ async function serialReadAll() { // One-at-a-time alternative of above, useful f
   return contacts.length;
 }
 
-
 describe("DHT", function () {
   function test(parameters = {}) {
     // Define a suite of tests with the given parameters.
@@ -174,6 +173,7 @@ describe("DHT", function () {
 				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
 	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 3 * setupTimeMS);
 	afterAll(async function () {
+	  //await Node.reportAll();
 	  await shutdownClientNodes(nServerNodes, nJoined);
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
 	});
@@ -198,9 +198,11 @@ describe("DHT", function () {
   // For example:
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
   //////test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
-  test({maxClientNodes: 130/*95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
+  test({maxClientNodes: 100/*130 95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
   ////fail test({maxClientNodes: 35, refreshTimeIntervalMS: 2e3, notes: "Small networks allow faster smoke-testing."});
 
+  //test({maxClientNodes: 21, refreshTimeIntervalMS: 0, startThrashingBefore: 'never'});
+  //test({maxClientNodes: 100});
   
   // To pass, we need to work with the default parameters, and assess the output.
   //test();

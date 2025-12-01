@@ -7,6 +7,8 @@
 // In the present case, these manipulate a Contact that directly contains a
 // DHT node with simulated networking.
 import { SimulatedConnectionContact as Contact, Node } from '../index.js';
+export { Node };
+
 
 export async function start1(name, bootstrapContact, refreshTimeIntervalMS, isServerNode = false) {
   const contact = await Contact.create({name, refreshTimeIntervalMS, isServerNode});

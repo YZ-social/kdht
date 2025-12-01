@@ -17,5 +17,3 @@ A [Contact](./transports/contact.js) is the means through which a Node interacts
 - In our system, I imagine that it will serialize as signature so that keys cannot be forged.
 
 While a Node maintains several Contacts in its KBuckets, these are organized based on the distance from the Contact's key to the Node's key. However, each network-probing operation requires the ephermal creation of Contact information that is based on the distance to the target key being probed for. For this purpose, we wrap the Contacts in a [Helper](./dht/helper.js) object that caches the distance to the target.
-
-

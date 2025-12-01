@@ -60,6 +60,13 @@ export class NodeContacts extends NodeTransports {
     this.forEachBucket(bucket => !(contact = bucket.contacts.find(match))); // Or we could compute index and look just there.
     return contact;
   }
+  ensureContact(contact, sponsor) { // Return existing contact, if any (including looseTransports), else clone a new one for this host. Set sponsor.
+    // Subtle: SimulatedContact clone uses findContact (above) to reuse and existing contact on the host, if possible.
+    // This is vital for SimulatedContact bookkeeping through connections and sponsorship.
+    contact = contact.clone(this); // Includes findContact.
+    contact.sponsor = sponsor; // TODO: maintain a set of sponsors.
+    return contact;
+  }
   removeKey(key) { // Removes from node entirely ir present, from looseTransports or bucket as necessary.
     if (this.removeLooseTransport(key)) return;
     const bucketIndex = this.getBucketIndex(key);
@@ -68,17 +75,18 @@ export class NodeContacts extends NodeTransports {
   }
   routingTableSerializer = Promise.resolve();
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
-    return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
-      const key = contact.key;
-      if (key === this.key) return false; // Don't add self
+    if (contact.key === this.key) return null; // Do not add self.
 
-      const bucketIndex = this.getBucketIndex(key);
+    this.constructor.assert(contact.hasConnection, 'Adding contact without connection', contact.report, 'in', this.contact.report);
+
+    return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
+      const bucketIndex = this.getBucketIndex(contact.key);
       const bucket = this.ensureBucket(bucketIndex);
 
       // Try to add to bucket
       const added = await bucket.addContact(contact);
       if (added !== 'present') { // Not already tracked in bucket.
-	this.removeLooseTransport(key); // Can't be in two places.
+	this.removeLooseTransport(contact.key); // Can't be in two places.
 	this.queueWork(() => this.replicateCloserStorage(contact));
       }
       return added;

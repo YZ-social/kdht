@@ -45,19 +45,25 @@ export class Node extends NodeProbe {
     return k - remaining;
   }
   async join(contact) {
-    contact = contact.clone(this);
+    contact = this.ensureContact(contact);
+    await contact.connect();
     await this.addToRoutingTable(contact);
     await this.locateNodes(this.key); // Discovers between us and otherNode.
+
     // Refresh every bucket farther out than our closest neighbor.
-    let started = false;
-    for (let index = 0; index < this.constructor.keySize; index++) {
-      // TODO: Do we really have to perform a refresh on EACH bucket? Won't a refresh of the farthest bucket update the closer ones?
-      // TODO: Can it be in parallel?
-      const bucket = this.routingTable.get(index);
-      if (!bucket?.contacts.length && !started) continue;
-      if (!started) started = true;
-      else if (!bucket?.contacts.length) await this.ensureBucket(index).refresh();
-    }
-    return this.contact; // Handy for chaining or keeping track of contacts being made and joined.
+    // I think(?) that this can be done by refreshing "just" the farthest bucket:
+    this.ensureBucket(this.constructor.keySize - 1).refresh();
+    // But if it turns out to be necessary to explicitly refresh each next bucket in turn, this is how:
+    // let started = false;
+    // for (let index = 0; index < this.constructor.keySize; index++) {
+    //   // TODO: Do we really have to perform a refresh on EACH bucket? Won't a refresh of the farthest bucket update the closer ones?
+    //   // TODO: Can it be in parallel?
+    //   const bucket = this.routingTable.get(index);
+    //   if (!bucket?.contacts.length && !started) continue;
+    //   if (!started) started = true;
+    //   else if (!bucket?.contacts.length) await this.ensureBucket(index).refresh();
+    // }
+
+    return this.contact; // Answering this node's home contact is handy for chaining or keeping track of contacts being made and joined.
   }
 }
