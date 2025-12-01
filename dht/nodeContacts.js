@@ -67,7 +67,7 @@ export class NodeContacts extends NodeTransports {
     contact.sponsor = sponsor; // TODO: maintain a set of sponsors.
     return contact;
   }
-  removeKey(key) { // Removes from node entirely ir present, from looseTransports or bucket as necessary.
+  removeKey(key) { // Removes from node entirely if present, from looseTransports or bucket as necessary.
     if (this.removeLooseTransport(key)) return;
     const bucketIndex = this.getBucketIndex(key);
     const bucket = this.routingTable.get(bucketIndex);

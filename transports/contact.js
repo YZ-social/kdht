@@ -110,23 +110,25 @@ export class SimulatedConnectionContact extends SimulatedContact {
   }
   async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
-    // TODO: use nodeContactForTransport
     // TODO: Simulate webrtc signaling.
     const contact = this;
     let { host, node, sponsor, isServerNode } = contact;
 
     // Anyone can connect to a server node using the server's connect endpoint.
     // Anyone in the DHT can connect to another DHT node through a sponsor.
-    // TODO: confirm that sponsor node has a connected contact to the node we are trying to reach.
-    Node.assert(isServerNode || this.sponsor?.hasConnection, 'Connecting to non-server without sponsor', node.name, 'in', host.name);
+    if (!isServerNode) {
+      Node.assert(sponsor?.hasConnection, 'Connecting to non-server without connected sponsor', this.report, 'in', host.name, 'sponsor', sponsor?.report);
+      const sponsorsContact = sponsor.node.findContact(this.node.key);
+      //Node.assert(sponsorsContact?.hasConnection, 'Sponsor', sponsor.report, 'is not connected to', this.report, ':', sponsorsContact?.report, 'method:', forMethod);
+    }
     
     const farContactForUs = node.ensureContact(host.contact, contact.sponsor);
 
     contact.hasTransport = farContactForUs;
-    if (!host.findContact(node.key)) host.looseTransports.push(contact);
+    host.noteContactForTransport(contact);
 
     farContactForUs.hasTransport = contact;
-    if (!node.findContact(host.key)) node.looseTransports.push(farContactForUs);
+    node.noteContactForTransport(farContactForUs);
     
     return contact;
   }
