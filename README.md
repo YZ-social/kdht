@@ -3,6 +3,12 @@
 A Kademlia Distributed Hash Table
 See [paper](https://www.scs.stanford.edu/~dm/home/papers/kpos.pdf) and [wikipedia](https://en.wikipedia.org/wiki/Kademlia)
 
+This repo allows us to experiment with a pure kdht, to see the effects of changes and and optimizations.
+For example, there is a class that implements connections to nodes running on the same computer, so that tests can be run without any networking at all (as long as the CPU isn't overwhelmed from running too many nodes).
+There is a repeatable test suite that can be used to confirm behavior as changes are made.
+
+### Classes
+
 A [Node](./dht/node.js) is an actor in the DHT, and it has a key - a [BigInt](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/BigInt) of Node.keySize bits:
 - A typical client will have one Node instance through which it interacts with one DHT.
 - A server or simulation might have many Node instances to each interact with the same DHT.
