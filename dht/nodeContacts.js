@@ -67,19 +67,24 @@ export class NodeContacts extends NodeTransports {
     contact.noteSponsor(sponsor);
     return contact;
   }
-  removeKey(key) { // Removes from node entirely if present, from looseTransports or bucket as necessary.
-    if (this.removeLooseTransport(key)) return;
-    const bucketIndex = this.getBucketIndex(key);
-    const bucket = this.routingTable.get(bucketIndex);
-    bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.	    
-  }
   routingTableSerializer = Promise.resolve();
+  queueRoutingTableChange(thunk) { // Promise to resolve thunk() -- after all previous queued thunks have resolved.
+    return this.routingTableSerializer = this.routingTableSerializer.then(thunk);
+  }
+  removeKey(key) { // Removes from node entirely if present, from looseTransports or bucket as necessary.
+    return this.queueRoutingTableChange(() => {
+      if (this.removeLooseTransport(key)) return;
+      const bucketIndex = this.getBucketIndex(key);
+      const bucket = this.routingTable.get(bucketIndex);
+      bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.
+    });
+  }
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
     if (contact.key === this.key) return null; // Do not add self.
 
     this.constructor.assert(contact.hasConnection, 'Adding contact without connection', contact.report, 'in', this.contact.report);
 
-    return this.routingTableSerializer = this.routingTableSerializer.then(async () => {
+    return this.queueRoutingTableChange(async () => {
       const bucketIndex = this.getBucketIndex(contact.key);
       const bucket = this.ensureBucket(bucketIndex);
 

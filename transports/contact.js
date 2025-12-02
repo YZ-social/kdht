@@ -113,12 +113,19 @@ export class SimulatedContact extends Contact {
 
 export class SimulatedConnectionContact extends SimulatedContact {
   hasTransport = null; // The cached connection (to another node's connected contact back to us) over which messages can be directly sent, if any.
-  disconnect() {
+  async disconnect() {
     super.disconnect();
-    this.host.contacts.forEach(contact => contact.hasTransport?.host.removeKey(this.key));
+    this.host.contacts.forEach(async contact => await contact.hasTransport?.host.removeKey(this.key));
   }
   get hasConnection() {
     return this.hasTransport;
+  }
+  disconnectTransport() {
+    const farContactForUs = this.hasTransport;
+    Node.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
+    Node.assert(farContactForUs.host.key === this.key, 'Far contact for us is not hosted at contact.');
+    farContactForUs.hasTransport = null;
+    this.hasTransport = null;
   }
   async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.

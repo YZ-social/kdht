@@ -27,9 +27,8 @@ export class NodeTransports extends NodeStorage {
     if (existing) return existing;
     
     if (this.nTransports >= this.constructor.maxTransports) { // Do we have to drop one first?
-      assert(false, 'wtf are we doing here now?');
       function removeLast(list) { // Remove and return the last element of list that hasTransport and is NOT sponsor.
-	const index = list.findLastIndex(element => element.hasTransport && contact.hasSponsor(element.key));
+	const index = list.findLastIndex(element => element.hasConnection && !contact.hasSponsor(element.key));
 	if (index < 0) return null;
 	const sub = list.splice(index, 1);
 	return sub[0];
@@ -47,13 +46,10 @@ export class NodeTransports extends NodeStorage {
 	  return true;
 	});
 	dropped = removeLast(bestBucket.contacts);
+	if (!dropped) console.log('Unable to find something to drop in', this.report(null));
 	console.log('dropping transport in contact', dropped.name, 'in', this.name, bestBucket.index, 'among', bestCount);
       }
-      const farContactForUs = dropped.hasTransport;
-      assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
-      assert(farContactForUs.host.key === dropped.key, 'Far contact for us is not hosted at contact.');
-      farContactForUs.hasTransport = null;
-      dropped.hasTransport = null;
+      dropped.disconnectTransport();
     }
 
     this.looseTransports.push(contact); // Now add it as loose. If we later addToRoutingTable, it will then be moved from looseTransports.
