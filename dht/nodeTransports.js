@@ -16,7 +16,7 @@ export class NodeTransports extends NodeStorage {
     }
     return false;
   }
-  static maxTransports = Infinity; //fixme: test at 95;
+  static maxTransports = 200;
   noteContactForTransport(contact) { // We're about to use this contact for a message, so keep track of it.
     // Requires: if we later addToRoutingTable successfully, it should be removed from looseTransports.
     // Requires: if we later remove contact because of a failed send, it should be removed from looseTransports.

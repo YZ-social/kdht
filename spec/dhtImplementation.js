@@ -109,11 +109,12 @@ async function shutdown(startIndex, stopIndex) { // Internal
   }
 }
 
-export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS) {
+export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS, maxTransports) {
   // Set up nServerNodes, returning a promise that resolves when they are ready to use.
   // See definitions in test suite.
 
   Node.contacts = contacts = []; // Quirk of simulation code.
+  Node.maxTransports = maxTransports;
   Contact.pingTimeMS = pingTimeMS;
   
   for (let i = 0; i < nServerNodes; i++) {

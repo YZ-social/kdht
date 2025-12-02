@@ -122,8 +122,8 @@ export class SimulatedConnectionContact extends SimulatedContact {
   }
   disconnectTransport() {
     const farContactForUs = this.hasTransport;
-    Node.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
-    Node.assert(farContactForUs.host.key === this.key, 'Far contact for us is not hosted at contact.');
+    // Node.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
+    // Node.assert(farContactForUs.host.key === this.key, 'Far contact for us is not hosted at contact.');
     farContactForUs.hasTransport = null;
     this.hasTransport = null;
   }

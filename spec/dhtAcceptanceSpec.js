@@ -137,6 +137,7 @@ describe("DHT", function () {
     // Define a suite of tests with the given parameters.
     const {nServerNodes = 10,
 	   pingTimeMS = 40, // Round-trip network time. Implementation should pad network calls to achieve what is specified here.
+	   maxTransports = 200, // How many direct connections are allowed per node?
 	   maxClientNodes = 0, // If zero, will try to make as many as it can in refreshTimeIntervalMS.
 	   refreshTimeIntervalMS = 15e3, // How long on average does a client stay up?
 	   runtimeBeforeWriteMS = 3 * refreshTimeIntervalMS, // How long to probe (and thrash) before writing starts.
@@ -144,14 +145,14 @@ describe("DHT", function () {
 	   startThrashingBefore = 'creation', // When to start thrashing clients: before creation|writing|reading. Anything else is no thrashing.
 	   notes = ''
 	  } = parameters;
-    const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes || Infinity}, ping: ${pingTimeMS}ms, refresh: ${refreshTimeIntervalMS.toFixed(3)}ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)}ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)}ms, thrash before: ${startThrashingBefore}`;
+    const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes || Infinity}, ping: ${pingTimeMS}ms, max connections: ${maxTransports}, refresh: ${refreshTimeIntervalMS.toFixed(3)}ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)}ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)}ms, thrash before: ${startThrashingBefore}`;
     
     describe(suiteLabel, function () {
       beforeAll(async function () {
 	console.log('\n' + suiteLabel);
 	if (notes) console.log(notes);
 	await delay(3e3); // For gc
-	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS, setupServerNodes),
+	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS, setupServerNodes, maxTransports),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes);
       });
@@ -200,16 +201,15 @@ describe("DHT", function () {
   /// fails: test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
   test({maxClientNodes: 100/*130 95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
   test({maxClientNodes: 30, refreshTimeIntervalMS: 3e3, notes: "Small networks allow faster smoke-testing."});
+  test({maxTransports: 95, maxClientNodes: 100, notes: "Limit number of transports enough to exercise the reconnect logic."});
 
-  //test({maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
-  //test({maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});
-  //test({maxClientNodes: 100});
+  //test({maxTransports: 95, maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
+  //test({maxTransports: 95, maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});
+
   
   // To pass, we need to work with the default parameters, and assess the output.
-  //test();
   // TODO:
   // Persistence Test that joins+writes one at a time until period, runs 3xperiod, then quits one a time until gone, then one node join and reads all
-  // maxConnections
   // collect and confirm data from each node on shutdown.
   // pub/sub
   // 1k nodes
