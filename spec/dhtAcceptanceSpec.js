@@ -197,11 +197,12 @@ describe("DHT", function () {
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
   // For example:
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
-  //////test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
+  /// fails: test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
   test({maxClientNodes: 100/*130 95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
-  ////fail test({maxClientNodes: 35, refreshTimeIntervalMS: 2e3, notes: "Small networks allow faster smoke-testing."});
+  test({maxClientNodes: 30, refreshTimeIntervalMS: 2e3, notes: "Small networks allow faster smoke-testing."});
 
-  //test({maxClientNodes: 21, refreshTimeIntervalMS: 0, startThrashingBefore: 'never'});
+  //test({maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
+  //test({maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});
   //test({maxClientNodes: 100});
   
   // To pass, we need to work with the default parameters, and assess the output.

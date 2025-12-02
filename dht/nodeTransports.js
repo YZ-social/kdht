@@ -16,8 +16,7 @@ export class NodeTransports extends NodeStorage {
     }
     return false;
   }
-  static maxTransports = Infinity; //fixme 95;
-  // FIXME: this is a mess. (And not used just yet.)
+  static maxTransports = Infinity; //fixme: test at 95;
   noteContactForTransport(contact) { // We're about to use this contact for a message, so keep track of it.
     // Requires: if we later addToRoutingTable successfully, it should be removed from looseTransports.
     // Requires: if we later remove contact because of a failed send, it should be removed from looseTransports.
@@ -29,9 +28,8 @@ export class NodeTransports extends NodeStorage {
     
     if (this.nTransports >= this.constructor.maxTransports) { // Do we have to drop one first?
       assert(false, 'wtf are we doing here now?');
-      const sponsor = contact.sponsor;
       function removeLast(list) { // Remove and return the last element of list that hasTransport and is NOT sponsor.
-	const index = list.findLastIndex(element => element.hasTransport && element.key !== sponsor?.key);
+	const index = list.findLastIndex(element => element.hasTransport && contact.hasSponsor(element.key));
 	if (index < 0) return null;
 	const sub = list.splice(index, 1);
 	return sub[0];

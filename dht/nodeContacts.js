@@ -64,7 +64,7 @@ export class NodeContacts extends NodeTransports {
     // Subtle: SimulatedContact clone uses findContact (above) to reuse and existing contact on the host, if possible.
     // This is vital for SimulatedContact bookkeeping through connections and sponsorship.
     contact = contact.clone(this); // Includes findContact.
-    contact.sponsor = sponsor; // TODO: maintain a set of sponsors.
+    contact.noteSponsor(sponsor);
     return contact;
   }
   removeKey(key) { // Removes from node entirely if present, from looseTransports or bucket as necessary.

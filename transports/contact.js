@@ -101,10 +101,22 @@ export class SimulatedContact extends Contact {
       return this.node.receiveRPC(method, sender, ...rest);
     });
   }
+  _sponsors = new Map();
+  noteSponsor(contact) {
+    if (!contact) return;
+    this._sponsors.set(contact.key, contact);
+  }
+  hasSponsor(key) {
+    return this._sponsors.get(key);
+  }
 }
 
 export class SimulatedConnectionContact extends SimulatedContact {
   hasTransport = null; // The cached connection (to another node's connected contact back to us) over which messages can be directly sent, if any.
+  disconnect() {
+    super.disconnect();
+    this.host.contacts.forEach(contact => contact.hasTransport?.host.removeKey(this.key));
+  }
   get hasConnection() {
     return this.hasTransport;
   }
@@ -112,14 +124,17 @@ export class SimulatedConnectionContact extends SimulatedContact {
     // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
     // TODO: Simulate webrtc signaling.
     const contact = this;
-    let { host, node, sponsor, isServerNode } = contact;
+    let { host, node, isServerNode } = contact;
 
     // Anyone can connect to a server node using the server's connect endpoint.
     // Anyone in the DHT can connect to another DHT node through a sponsor.
     if (!isServerNode) {
-      Node.assert(sponsor?.hasConnection, 'Connecting to non-server without connected sponsor', this.report, 'in', host.name, 'sponsor', sponsor?.report);
-      const sponsorsContact = sponsor.node.findContact(this.node.key);
-      //Node.assert(sponsorsContact?.hasConnection, 'Sponsor', sponsor.report, 'is not connected to', this.report, ':', sponsorsContact?.report, 'method:', forMethod);
+      let mutualSponsor = null;
+      for (const sponsor of this._sponsors.values()) {
+	if (!sponsor.hasConnection || !sponsor.node.findContact(this.node.key)?.hasConnection) continue;
+	mutualSponsor = sponsor;
+      }
+      if (!mutualSponsor) return null;
     }
     
     const farContactForUs = node.ensureContact(host.contact, contact.sponsor);
@@ -134,11 +149,8 @@ export class SimulatedConnectionContact extends SimulatedContact {
   }
   async transmitRpc(method, ...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     if (!this.isConnected) return null; // Receiver closed.
-    const farContactForUs = this.hasTransport || (await this.connect(method)).hasTransport;
-    //fixme restore if (!farContactForUs) return null; // receiver no longer reachable.
-    Node.assert(farContactForUs, 'Sending without far contact for us', this.report);
-    Node.assert(farContactForUs.hasTransport, 'Sending without far transport back to us', this.report, farContactForUs.report);    
-    Node.assert(this.hasTransport, 'Sending without transport', this.report);
+    const farContactForUs = this.hasTransport || (await this.connect(method))?.hasTransport;
+    if (!farContactForUs) return null; // receiver no longer reachable.
     return await this.receiveRpc(method, farContactForUs, ...rest);
   }
 }
