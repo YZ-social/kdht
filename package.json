@@ -1,7 +1,7 @@
 {
-  "name": "kdht",
+  "name": "@YZ-social/kdht",
   "version": "0.0.1",
-  "description": "",
+  "description": "Pure Kademlia base, for testing variations.",
   "main": "index.js",
   "type": "module",
   "scripts": {
