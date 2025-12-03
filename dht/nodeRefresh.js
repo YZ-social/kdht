@@ -12,7 +12,7 @@ export class NodeRefresh extends NodeKeys {
   stopRefresh() { // Stop repeat timeers in this instance.
     this.refreshTimeIntervalMS = 0;
   }
-  fuzzyInterval(target = this.refreshTimeIntervalMS/3, margin = target/3) {
+  fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/3) {
     // Answer a random integer uniformly distributed around target, +/- margin.
     // The default target slightly exceeds the Nyquist condition of sampling at a frequency at
     // least twice the signal being observed. In particular, allowing for some randomization,

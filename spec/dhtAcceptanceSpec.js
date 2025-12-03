@@ -198,10 +198,10 @@ describe("DHT", function () {
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
   // For example:
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
-  /// fails: test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."});
-  test({maxClientNodes: 100/*130 95/*110*/, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
-  test({maxClientNodes: 30, refreshTimeIntervalMS: 3e3, notes: "Small networks allow faster smoke-testing."});
-  test({maxTransports: 95, maxClientNodes: 100, notes: "Limit number of transports enough to exercise the reconnect logic."});
+  /* fails test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."}); */
+  test({maxClientNodes: 240, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
+  test({maxClientNodes: 80, refreshTimeIntervalMS: 3e3, notes: "Small networks allow faster smoke-testing."});
+  test({maxTransports: 95, maxClientNodes: 90, notes: "Limit number of transports enough to exercise the reconnect logic."});
 
   //test({maxTransports: 95, maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
   //test({maxTransports: 95, maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});
