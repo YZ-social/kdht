@@ -54,7 +54,7 @@ export class SimulatedContact extends Contact {
     return this.farHomeContact._connected;
   }
   get hasConnection() { // TODO: unify this and the above.
-    return true;
+    return this.hasTransport;
   }
   async connect() {
     return this;
@@ -115,13 +115,19 @@ export class SimulatedConnectionContact extends SimulatedContact {
   hasTransport = null; // The cached connection (to another node's connected contact back to us) over which messages can be directly sent, if any.
   async disconnect() {
     super.disconnect();
-    this.host.contacts.forEach(async contact => await contact.hasTransport?.host.removeKey(this.key));
+    this.host.contacts.forEach(async contact => {
+      const far = contact.hasTransport;
+      if (!far) return;
+      await far.host.removeKey(this.key);
+      this.disconnectTransport();
+    });
   }
   get hasConnection() {
     return this.hasTransport;
   }
   disconnectTransport() {
     const farContactForUs = this.hasTransport;
+    if (!farContactForUs) return;
     // Node.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
     // Node.assert(farContactForUs.host.key === this.key, 'Far contact for us is not hosted at contact.');
     farContactForUs.hasTransport = null;

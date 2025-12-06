@@ -1,5 +1,5 @@
 {
-  "name": "@YZ-social/kdht",
+  "name": "@yz-social/kdht",
   "version": "0.0.1",
   "description": "Pure Kademlia base, for testing variations.",
   "main": "index.js",
@@ -7,7 +7,18 @@
   "scripts": {
     "test": "npx jasmine"
   },
-  "dev-dependencies": {
+  "dependencies": {
+    "@yz-social/webrtc": "^0.0.1"
+  },
+  "devDependencies": {
+    "express": "^5.2.1",
     "jasmine": "^5.12.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YZ-social/kdht.git"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
   }
 }

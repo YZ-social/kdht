@@ -1,12 +1,18 @@
 // An example of the control functions needed for testing.
 
+// For running a server
+import express from 'express';
+import http from 'http';
+//import { router } from './routes/index.js';
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // This section certainly needs to be modified for any given implementation.
 //
 
 // In the present case, these manipulate a Contact that directly contains a
 // DHT node with simulated networking.
-import { SimulatedConnectionContact as Contact, Node } from '../index.js';
+import { WebContact as Contact, Node } from '../index.js';
+//import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 export { Node };
 
 
@@ -109,6 +115,14 @@ async function shutdown(startIndex, stopIndex) { // Internal
   }
 }
 
+
+const app = express();
+const port = 3000;
+app.set('port', port);
+app.use(express.json());
+//app.use('/test', router);
+app.listen(port);
+
 export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS, maxTransports) {
   // Set up nServerNodes, returning a promise that resolves when they are ready to use.
   // See definitions in test suite.
@@ -116,6 +130,7 @@ export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, ping
   Node.contacts = contacts = []; // Quirk of simulation code.
   Node.maxTransports = maxTransports;
   Contact.pingTimeMS = pingTimeMS;
+
   
   for (let i = 0; i < nServerNodes; i++) {
     contacts.push(await startServerNode(i, contacts[i - 1], refreshTimeIntervalMS));
@@ -143,7 +158,7 @@ async function serialSetupClientsByTime(refreshTimeIntervalMS, nServerNodes, max
     const nBootstraps = contacts.length;
     let done = false, index = nBootstraps, count = 0;
     setTimeout(() => done = true, runtimeMS);
-    while (!done && (!maxClientNodes || (count++ < maxClientNodes))) {
+    while (!done && (count++ < maxClientNodes)) {
       const bootstrapContact = await getBootstrapContact(nBootstraps);
       const contact = await op(index, bootstrapContact, refreshTimeIntervalMS);
       if (!done) { // Don't include it if we're now over time.

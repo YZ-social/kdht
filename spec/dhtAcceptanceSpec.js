@@ -145,20 +145,24 @@ describe("DHT", function () {
 	   startThrashingBefore = 'creation', // When to start thrashing clients: before creation|writing|reading. Anything else is no thrashing.
 	   notes = ''
 	  } = parameters;
-    const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes || Infinity}, ping: ${pingTimeMS}ms, max connections: ${maxTransports}, refresh: ${refreshTimeIntervalMS.toFixed(3)}ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)}ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)}ms, thrash before: ${startThrashingBefore}`;
+    const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes ?? Infinity}, ping: ${pingTimeMS}ms, max connections: ${maxTransports}, refresh: ${refreshTimeIntervalMS.toFixed(3)}ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)}ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)}ms, thrash before: ${startThrashingBefore}`;
     
     describe(suiteLabel, function () {
       beforeAll(async function () {
+	let start = Date.now();
 	console.log('\n' + suiteLabel);
 	if (notes) console.log(notes);
 	await delay(3e3); // For gc
 	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS, setupServerNodes, maxTransports),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes);
+	console.log('setup complete in', Date.now() - start);
       });
       afterAll(async function () {
+	let start = Date.now();
 	await shutdownServerNodes(nServerNodes);
 	expect(await getContactsLength()).toBe(0);
+	console.log('teardown complete in', Date.now() - start);
       });
 
       describe("joins within a refresh interval", function () {
@@ -197,14 +201,17 @@ describe("DHT", function () {
 
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
   // For example:
-  test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
-  /* fails test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."}); */
-  test({maxClientNodes: 240, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
-  test({maxClientNodes: 80, refreshTimeIntervalMS: 3e3, notes: "Small networks allow faster smoke-testing."});
-  test({maxTransports: 95, maxClientNodes: 90, notes: "Limit number of transports enough to exercise the reconnect logic."});
+  // test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
+  // /* fails test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."}); */
+  // test({maxClientNodes: 230, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
+  // test({maxClientNodes: 80, refreshTimeIntervalMS: 3e3, notes: "Small networks allow faster smoke-testing."});
+  // test({maxTransports: 95, maxClientNodes: 90, notes: "Limit number of transports enough to exercise the reconnect logic."});
 
   //test({maxTransports: 95, maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
   //test({maxTransports: 95, maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});
+
+  //test({maxClientNodes: 7, nServerNodes: 5, refreshTimeIntervalMS: 3e3, runtimeBeforeWriteMS: 0e3, runtimeBeforeReadMS: 0e3, startThrashingBefore: 'never'});
+  test({maxClientNodes: 3, nServerNodes: 3, refreshTimeIntervalMS: 3e3, runtimeBeforeWriteMS: 6e3, runtimeBeforeReadMS: 6e3});
 
   
   // To pass, we need to work with the default parameters, and assess the output.
