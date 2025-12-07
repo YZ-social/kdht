@@ -64,9 +64,9 @@ export class SimulatedContact extends Contact {
     return `${this.hasTransport ? '_' : ''}${this.node.name}${this.isConnected ? '' : '*'}`; // simpler version
   }
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
-    const { farHomeContact } = this;
-    farHomeContact._connected = false;
-    this.node.stopRefresh();
+    Node.assert(this.host === this.node, "Disconnect", this.node.name, "not invoked on home contact", this.host.name);
+    this.host.contact._connected = false;
+    this.host.stopRefresh();
   }
   sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
@@ -118,8 +118,9 @@ export class SimulatedConnectionContact extends SimulatedContact {
     this.host.contacts.forEach(async contact => {
       const far = contact.hasTransport;
       if (!far) return;
+      Node.assert(far.host.key === contact.node.key, contact.host.name, 'contact', contact.node.name, 'hasTransport.host', far.host.name, 'does not match');
       await far.host.removeKey(this.key);
-      this.disconnectTransport();
+      contact.disconnectTransport();
     });
   }
   get hasConnection() {
@@ -128,8 +129,8 @@ export class SimulatedConnectionContact extends SimulatedContact {
   disconnectTransport() {
     const farContactForUs = this.hasTransport;
     if (!farContactForUs) return;
-    // Node.assert(farContactForUs.key === this.key, 'Far contact for us does not point to us.');
-    // Node.assert(farContactForUs.host.key === this.key, 'Far contact for us is not hosted at contact.');
+    Node.assert(farContactForUs.key === this.host.key, 'Far contact backpointer', farContactForUs.node.name, 'does not point to us', this.host.name);
+    Node.assert(farContactForUs.host.key === this.key, 'Far contact host', farContactForUs.host.name, 'is not hosted at contact', this.name);
     farContactForUs.hasTransport = null;
     this.hasTransport = null;
   }

@@ -11,8 +11,8 @@ import http from 'http';
 
 // In the present case, these manipulate a Contact that directly contains a
 // DHT node with simulated networking.
-import { WebContact as Contact, Node } from '../index.js';
-//import { SimulatedConnectionContact as Contact, Node } from '../index.js';
+//import { WebContact as Contact, Node } from '../index.js';
+import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 export { Node };
 
 
@@ -133,7 +133,8 @@ export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, ping
 
   
   for (let i = 0; i < nServerNodes; i++) {
-    contacts.push(await startServerNode(i, contacts[i - 1], refreshTimeIntervalMS));
+    const node = await startServerNode(i, contacts[i - 1], refreshTimeIntervalMS);
+    contacts.push(node);
   }
 }
 export async function shutdownServerNodes(nServerNodes) {
