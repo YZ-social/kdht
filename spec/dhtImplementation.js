@@ -11,7 +11,7 @@ import http from 'http';
 
 // In the present case, these manipulate a Contact that directly contains a
 // DHT node with simulated networking.
-//import { WebContact as Contact, Node } from '../index.js';
+//import { InProcessWebContact as Contact, Node } from '../index.js';
 import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 export { Node };
 
@@ -113,6 +113,7 @@ async function shutdown(startIndex, stopIndex) { // Internal
   for (let i = startIndex; i < stopIndex; i++) {
     await stop1(contacts.pop());
   }
+  await new Promise(resolve => setTimeout(resolve, 3e3));
 }
 
 
@@ -175,5 +176,6 @@ async function serialSetupClientsByTime(refreshTimeIntervalMS, nServerNodes, max
 }
 export async function shutdownClientNodes(nServerNodes, nClientNodes) {
   await stopThrashing();
+  await new Promise(resolve => setTimeout(resolve, 5e3));
   await shutdown(nServerNodes, nClientNodes + nServerNodes);
 }

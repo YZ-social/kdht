@@ -3,7 +3,8 @@ export class NodeUtilities {
   constructor(properties) {
     Object.assign(this, properties);
   }
-
+  isRunning = true;
+  
   static debug = false;
   static log(...rest) { if (this.debug) console.log(...rest); }
   log(...rest) { this.constructor.log(this.name, ...rest); }

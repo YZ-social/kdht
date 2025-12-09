@@ -1,20 +1,25 @@
 import { Node } from '../dht/node.js';
-import { Contact, SimulatedContact, SimulatedConnectionContact } from './contact.js';
 import { WebRTC } from '@yz-social/webrtc';
 
-export class InProcessWebContact extends SimulatedConnectionContact {
-  // Still a SimulatedContacConnection, but does create the real bidirectional webrtc connection.
-  // Of course, testing requires that there be very few nodes, because:
-  // - Each node is running in one instance, so the limited number of WebRTC instances gets used up per process instead of per node.
-  // - Each connection takes two in-process WebRTC instances - one for each end.
-  static count = 0;
+
+export class WebContact {
+  constructor({node, host = node, ...rest}) {
+    Object.assign(this, {node, host, ...rest});
+  }
+  async fetchSignals(url, signalsToSend) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signalsToSend)
+    });
+    return await response.json();
+  }
   static serializer = Promise.resolve();
   async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
     // TODO: Simulate webrtc signaling.
-    const contact = this;
-    let { host, node, isServerNode } = contact;
-    if (contact.webrtc) throw Error('wtf');
+    let { host, node, isServerNode } = this;
+    if (this.webrtc) throw Error('wtf');
 
     // Anyone can connect to a server node using the server's connect endpoint.
     // Anyone in the DHT can connect to another DHT node through a sponsor.
@@ -26,45 +31,34 @@ export class InProcessWebContact extends SimulatedConnectionContact {
       }
       if (!mutualSponsor) return null;
     }
-    const farContactForUs = node.ensureContact(host.contact, contact.sponsor);
 
-    // FIXME
-    // Just makes the connection and bashes it into place at both ends.
-    // Only works because the contact has access to both ends.
     await (this.constructor.serializer = this.constructor.serializer.then(async () => {
-      const a = new WebRTC({label: 'initiator' + host.name + '/' + node.name});
-      const b = new WebRTC({label: 'contacted' + node.name + '/' + host.name});
-      const channelName = 'kdht';
-      this.constructor.count += 2;
-      const aDataChannelPromise = a.ensureDataChannel(channelName);
-      await a.signalsReady;
-      const bDataChannelPromise = b.ensureDataChannel(channelName, {}, a.signals);
-      await b.signalsReady;
-      await a.connectVia(signals => b.respond(signals));
-      const aDataChannel = await aDataChannelPromise;
-      const bDataChannel = await bDataChannelPromise;
-      let onclose = contact => {
-	this.constructor.count--;
-	//console.log('disconnect', contact.host.name, 'to', contact.node.name, this.constructor.count);
-	contact.webrtc = null;
-      };
-      aDataChannel.addEventListener('close', () => onclose(contact));
-      bDataChannel.addEventListener('close', () => onclose(farContactForUs));
-      contact.webrtc = a;
-      farContactForUs.webrtc = b;
-      //console.log(`${host.name}->${node.name}, ${this.constructor.count} webrtc peers`);
+      const connection = new WebRTC({label: 'client-' + host});
+      const ready = connection.signalsReady;
+      const dataChannelPromise = connection.ensureDataChannel('kdht');
+      let target = 'random';
+      await ready;
+      connection.connectVia(async signals => {
+	const response = await this.fetchSignals(`http://localhost:3000/kdht/join/${host}/${target}`, signals);
+	const [method, data] = response[0];
+	if (method === 'tag') { // We were told the target tag in a pseudo-signal. Use it going forward.
+	  target = data;
+	  response.shift();
+	}
+	return response;
+      });
+      const dataChannel = await dataChannelPromise;
+      connection.reportConnection(true);
+      this.webrtc = connection;
+      // fixme message
+      dataChannel.addEventListener('close', () => {
+	console.log(host, 'closed connection to', target);
+	this.webrtc = null;
+      });
     }));
-
-    contact.hasTransport = farContactForUs;
-    host.noteContactForTransport(contact);
-
-    farContactForUs.hasTransport = contact;
-    node.noteContactForTransport(farContactForUs);
-    
-    return contact;
+    return this;
   }
   disconnectTransport() {
     this.webrtc?.close();
-    super.disconnectTransport();
   }
 }

@@ -4,11 +4,10 @@ export class Contact {
   // Represents an abstract contact from a host (a Node) to another node.
   // The host calls aContact.sendRpc(...messageParameters) to send the message to node and promises the response.
   // This could be by wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
-  store(key, value) {
-    return this.sendRPC('store', key, value);
-  }
-}
-export class SimulatedContact extends Contact {
+
+  // Creation
+  // host should be a dht Node.
+  // node is the far end of the contact, and could be Node (for in-process simulation) or a serialization of a key.
   static counter = 0;
   static fromNode(node, host = node) {
     const contact = new this();
@@ -27,15 +26,6 @@ export class SimulatedContact extends Contact {
     const node = Node.fromKey(key);
     return this.fromNode(node, host || node);
   }
-  get name() { return this.node.name; }
-  get key() { return this.node.key; }
-  get isServerNode() { return this.node.isServerNode; }
-  join(other) { return this.node.join(other); }
-  distance(key) { return this.node.distance(key); }
-
-  get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
-    return this.node.contact;
-  }
   clone(hostNode, searchHost = true) { // Answer a Contact that is set up for hostNode - either this instance or a new one.
     // Unless searchHost is null, any existing contact on hostNode will be returned.
     if (this.host === hostNode) return this; // All good.
@@ -49,9 +39,44 @@ export class SimulatedContact extends Contact {
     const clone = this.constructor.fromNode(this.node, hostNode);
     return clone;
   }
-  _connected = true;
+
+  // Sponsorship
+  _sponsors = new Map();
+  noteSponsor(contact) {
+    if (!contact) return;
+    this._sponsors.set(contact.key, contact);
+  }
+  hasSponsor(key) {
+    return this._sponsors.get(key);
+  }
+
+  // Utilities
+  join(other) { return this.host.join(other); }
+  store(key, value) {
+    return this.sendRPC('store', key, value);
+  }
+  distance(key) { return this.host.constructor.distance(this.key, key); }
+
+  static pingTimeMS = 30; // ms
+  static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.
+    const start = Date.now();
+    const result = await thunk();
+    const elapsed = Date.now() - start;
+    if (elapsed > ms) return result;
+    await new Promise(resolve => setTimeout(resolve, ms - elapsed));
+    return result;
+  }
+}
+export class SimulatedContact extends Contact {
+  get name() { return this.node.name; }
+  get key() { return this.node.key; }
+  get isServerNode() { return this.node.isServerNode; }
+
+  // get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
+  //   return this.node.contact;
+  // }
   get isConnected() { // Ask our canonical home contact.
-    return this.farHomeContact._connected;
+    return this.node.isRunning;
   }
   get hasConnection() { // TODO: unify this and the above.
     return this.hasTransport;
@@ -66,6 +91,7 @@ export class SimulatedContact extends Contact {
   disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     Node.assert(this.host === this.node, "Disconnect", this.node.name, "not invoked on home contact", this.host.name);
     this.host.contact._connected = false;
+    this.host.isRunning = false;
     this.host.stopRefresh();
   }
   sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
@@ -85,29 +111,12 @@ export class SimulatedContact extends Contact {
     if (!this.isConnected) return null; // Receiver closed.
     return await this.receiveRpc(method, this.node.ensureContact(this.host.contact), ...rest);
   }
-  static pingTimeMS = 30; // ms
-  static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.
-    const start = Date.now();
-    const result = await thunk();
-    const elapsed = Date.now() - start;
-    if (elapsed > ms) return result;
-    await new Promise(resolve => setTimeout(resolve, ms - elapsed));
-    return result;
-  }
   async receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
     return await this.constructor.ensureTime(() => {
       Node.assert(typeof(method)==='string', 'no method', method);
       Node.assert(sender instanceof SimulatedContact, 'no sender', sender);
       return this.node.receiveRPC(method, sender, ...rest);
     });
-  }
-  _sponsors = new Map();
-  noteSponsor(contact) {
-    if (!contact) return;
-    this._sponsors.set(contact.key, contact);
-  }
-  hasSponsor(key) {
-    return this._sponsors.get(key);
   }
 }
 

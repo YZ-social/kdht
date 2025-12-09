@@ -8,11 +8,12 @@
     "test": "npx jasmine"
   },
   "dependencies": {
-    "@yz-social/webrtc": "^0.0.3"
+    "@yz-social/webrtc": "^0.0.5"
   },
   "devDependencies": {
     "express": "^5.2.1",
-    "jasmine": "^5.12.0"
+    "jasmine": "^5.12.0",
+    "uuid": "^13.0.0"
   },
   "repository": {
     "type": "git",

@@ -37,7 +37,7 @@ export class NodeProbe extends NodeMessages {
     let toQuery = pool.slice(0, alpha);
     pool = pool.slice(alpha); // Yes, this could be done with splice instead of slice, above, but it makes things hard to trace.
     let best = []; // The accumulated closest-first result.    
-    while (toQuery.length && this.contact.isConnected) { // Stop if WE disconnect.
+    while (toQuery.length && this.isRunning) { // Stop if WE disconnect.
       let requests = toQuery.map(helper => this.step(targetKey, finder, helper, keysSeen));
       let results = await Promise.all(requests);
       if (trace) console.log(toQuery.map(h => h.name), '=>', results.map(r => r.map?.(h => h.name) || r));
