@@ -14,7 +14,10 @@ export class NodeProbe extends NodeMessages {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     const contact = helper.contact;
     let results = await contact.sendRPC(finder, targetKey);
-    if (!results) return []; // disconnected
+    if (!results) { // disconnected
+      await this.removeKey(contact.key);
+      return [];
+    }
     await this.addToRoutingTable(contact); // Live node, so update bucket.
     if (this.constructor.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));

@@ -140,19 +140,20 @@ describe("DHT", function () {
 	   maxTransports = 152, // How many direct connections are allowed per node?
 	   maxClientNodes = Infinity, // If zero, will try to make as many as it can in refreshTimeIntervalMS.
 	   refreshTimeIntervalMS = 15e3, // How long on average does a client stay up?
+	   setupTimeMS = Math.max(2e3, refreshTimeIntervalMS), // How long to create the test nodes.
 	   runtimeBeforeWriteMS = 3 * refreshTimeIntervalMS, // How long to probe (and thrash) before writing starts.
 	   runtimeBeforeReadMS = runtimeBeforeWriteMS, // How long to probe (and thrash) before reading starts.
 	   startThrashingBefore = 'creation', // When to start thrashing clients: before creation|writing|reading. Anything else is no thrashing.
 	   notes = ''
 	  } = parameters;
-    const suiteLabel = `Server nodes: ${nServerNodes}, max client nodes: ${maxClientNodes ?? Infinity}, ping: ${pingTimeMS}ms, max connections: ${maxTransports}, refresh: ${refreshTimeIntervalMS.toFixed(3)}ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)}ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)}ms, thrash before: ${startThrashingBefore}`;
+    const suiteLabel = `Server nodes: ${nServerNodes}, setup time: ${setupTimeMS}, max client nodes: ${maxClientNodes ?? Infinity}, ping: ${pingTimeMS}ms, max connections: ${maxTransports}, refresh: ${refreshTimeIntervalMS.toFixed(3)}ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)}ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)}ms, thrash before: ${startThrashingBefore}`;
     
     describe(suiteLabel, function () {
       beforeAll(async function () {
 	console.log('\n' + suiteLabel);
 	if (notes) console.log(notes);
 	await delay(3e3); // For gc
-	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS, setupServerNodes, maxTransports),
+	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS, maxTransports),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes); // sanity check
       });
@@ -163,12 +164,12 @@ describe("DHT", function () {
 
       describe("joins within a refresh interval", function () {
 	let nJoined = 0, nWritten = 0;
-	const setupTimeMS = Math.max(refreshTimeIntervalMS, 2e3); // Even if we turn off refresh, allow at least 2 seconds for setup.
 	beforeAll(async function () {
 	  if (startThrashingBefore === 'creation') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(refreshTimeIntervalMS, nServerNodes, maxClientNodes, setupTimeMS),
 				    elapsed => `Created ${nJoined} / ${elapsed} = ${(elapsed/nJoined).toFixed(3)} client nodes/second.`);
 	  expect(await getContactsLength()).toBe(nJoined + nServerNodes); // Sanity check
+	  if (maxClientNodes < Infinity) expect(nJoined).toBe(maxClientNodes); // Sanity check
 	  if (startThrashingBefore === 'writing') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  await delay(runtimeBeforeWriteMS, 'pause before writing');
 	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
@@ -198,11 +199,11 @@ describe("DHT", function () {
 
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
   // For example:
-  // FIXME: Did I break this? test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probling and disconnects turned off."});
-  /* fails test({pingTimeMS: 0, startThrashingBefore: 'never', notes: "Overwhelms a simulation with so much probing, even without disconnects."}); */
-  test({maxClientNodes: 190, notes: "Runs normally, but with a deliberately restricted network size, that is nonetheless > 2*k."});
-  test({maxClientNodes: 40, refreshTimeIntervalMS: 3e3, notes: "Small networks allow faster smoke-testing."});
-  test({maxTransports: 90, maxClientNodes: 90, notes: "Limit number of transports enough to exercise the reconnect logic."});
+  test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probing and disconnects turned off."});
+  test({setupTimeMS: 2e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
+  test({maxClientNodes: 30, pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster smoke-testing."});
+  test({maxTransports: 90, maxClientNodes: 90, pingTimeMS: 5, setupTimeMS: 20e3, notes: "Limit number of transports enough to exercise the reconnect logic."});
+  test({maxClientNodes: 140, setupTimeMS: 60e3, pingTimeMS: 10, notes: "Runs normally, but with a deliberately restricted network size that is nonetheless > 2*k."});
 
   //test({maxTransports: 95, maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
   //test({maxTransports: 95, maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});

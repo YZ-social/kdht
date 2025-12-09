@@ -49,6 +49,11 @@ export class Contact {
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     this.host.isRunning = false;
     this.host.stopRefresh();
+    this.host.contacts.forEach(async contact => {
+      const far = contact.connection;
+      if (!far) return;
+      contact.disconnectTransport();
+    });
   }
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
@@ -56,15 +61,20 @@ export class Contact {
   sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
     if (!sender.isRunning) return null; // sender closed before call.
-    if (sender.key === this.key) return this.receiveRpc(method, sender, ...rest);
+    if (sender.key === this.key) return this.receiveRPC(method, sender, ...rest);
 
     const start = Date.now();
-    return this.transmitRpc(method, ...rest) // The main event.
+    return this.transmitRPC(method, ...rest) // The main event.
       .then(result => {
 	if (!sender.isRunning) return null; // Sender closed after call.
 	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
+  }
+  async receiveRPC(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
+    Node.assert(typeof(method)==='string', 'no method', method);
+    Node.assert(sender instanceof SimulatedContact, 'no sender', sender);
+    return this.host.receiveRPC(method, sender, ...rest);
   }
   // Sponsorship
   _sponsors = new Map();
@@ -78,8 +88,8 @@ export class Contact {
 
   // Utilities
   get report() { // Answer string of name, followed by * if disconnected
-    //return `${this.hasTransport ? '_' : ''}${this.node.name}${this.isRunning ? '' : '*'}@${this.host.name}v${this.counter}`; // verbose version
-    return `${this.hasTransport ? '_' : ''}${this.name}${this.isRunning ? '' : '*'}`; // simpler version
+    //return `${this.connection ? '_' : ''}${this.node.name}${this.isRunning ? '' : '*'}@${this.host.name}v${this.counter}`; // verbose version
+    return `${this.connection ? '_' : ''}${this.name}${this.isRunning ? '' : '*'}`; // simpler version
   }
   static pingTimeMS = 30; // ms
   static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.
@@ -99,47 +109,26 @@ export class SimulatedContact extends Contact {
   get isRunning() { // Ask our canonical home contact.
     return this.node.isRunning;
   }
-  get hasConnection() { // TODO: unify this and the above.
-    return this.hasTransport;
-  }
-  async connect() {
-    return this;
-  }
-  async transmitRpc(method, ...rest) {
-    if (!this.isRunning) return null; // Receiver closed.
-    return await this.receiveRpc(method, this.node.ensureContact(this.host.contact), ...rest);
-  }
-  async receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
-    return await this.constructor.ensureTime(() => {
-      Node.assert(typeof(method)==='string', 'no method', method);
-      Node.assert(sender instanceof SimulatedContact, 'no sender', sender);
-      return this.node.receiveRPC(method, sender, ...rest);
+  connection = null;
+  async connect() { return this; }
+  disconnectTransport() { }
+  async transmitRPC(method, ...rest) { // Transmit the call to the receiving node's contact.
+    return await this.constructor.ensureTime(async () => {
+      if (!this.isRunning) return null; // Receiver closed.
+      return await this.node.contact.receiveRPC(method, this.node.ensureContact(this.host.contact), ...rest);
     });
   }
 }
 
 export class SimulatedConnectionContact extends SimulatedContact {
-  hasTransport = null; // The cached connection (to another node's connected contact back to us) over which messages can be directly sent, if any.
-  async disconnect() {
-    super.disconnect();
-    this.host.contacts.forEach(async contact => {
-      const far = contact.hasTransport;
-      if (!far) return;
-      Node.assert(far.host.key === contact.node.key, contact.host.name, 'contact', contact.node.name, 'hasTransport.host', far.host.name, 'does not match');
-      await far.host.removeKey(this.key);
-      contact.disconnectTransport();
-    });
-  }
-  get hasConnection() {
-    return this.hasTransport;
-  }
+  connection = null; // The cached connection (to another node's connected contact back to us) over which messages can be directly sent, if any.
   disconnectTransport() {
-    const farContactForUs = this.hasTransport;
+    const farContactForUs = this.connection;
     if (!farContactForUs) return;
     Node.assert(farContactForUs.key === this.host.key, 'Far contact backpointer', farContactForUs.node.name, 'does not point to us', this.host.name);
     Node.assert(farContactForUs.host.key === this.key, 'Far contact host', farContactForUs.host.name, 'is not hosted at contact', this.name);
-    farContactForUs.hasTransport = null;
-    this.hasTransport = null;
+    farContactForUs.connection = null;
+    this.connection = null;
   }
   async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
@@ -152,7 +141,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     if (!isServerNode) {
       let mutualSponsor = null;
       for (const sponsor of this._sponsors.values()) {
-	if (!sponsor.hasConnection || !sponsor.node.findContact(this.node.key)?.hasConnection) continue;
+	if (!sponsor.connection || !sponsor.node.findContact(this.node.key)?.connection) continue;
 	mutualSponsor = sponsor;
       }
       if (!mutualSponsor) return null;
@@ -160,18 +149,18 @@ export class SimulatedConnectionContact extends SimulatedContact {
     
     const farContactForUs = node.ensureContact(host.contact, contact.sponsor);
 
-    contact.hasTransport = farContactForUs;
+    contact.connection = farContactForUs;
     host.noteContactForTransport(contact);
 
-    farContactForUs.hasTransport = contact;
+    farContactForUs.connection = contact;
     node.noteContactForTransport(farContactForUs);
     
     return contact;
   }
-  async transmitRpc(method, ...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
+  async transmitRPC(method, ...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
     if (!this.isRunning) return null; // Receiver closed.
-    const farContactForUs = this.hasTransport || (await this.connect(method))?.hasTransport;
+    const farContactForUs = this.connection || (await this.connect(method))?.connection;
     if (!farContactForUs) return null; // receiver no longer reachable.
-    return await this.receiveRpc(method, farContactForUs, ...rest);
+    return await this.constructor.ensureTime(() => farContactForUs.receiveRPC(method, farContactForUs, ...rest));
   }
 }

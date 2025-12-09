@@ -12,6 +12,7 @@ import http from 'http';
 // In the present case, these manipulate a Contact that directly contains a
 // DHT node with simulated networking.
 //import { InProcessWebContact as Contact, Node } from '../index.js';
+//import { SimulatedContact as Contact, Node } from '../index.js';
 import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 export { Node };
 
@@ -85,7 +86,9 @@ var isThrashing = false;
 const thrashers = [];
 function thrash(i, nServerNodes, refreshTimeIntervalMS) { // Start disconnect/reconnect timer on contact i.
   // If we are asked to thrash with a zero refreshTimeIntervalMS, average one second anyway.
-  const runtimeMS = randomInteger(2 * (refreshTimeIntervalMS || 2e3));
+  const average = Math.max(refreshTimeIntervalMS, 2e3);
+  const min = Math.min(average / 2, 2e3);
+  const runtimeMS = randomInteger(2 * (average - min)) + min;
   thrashers[i] = setTimeout(async () => {
     if (!isThrashing) return;
     const contact = contacts[i];
@@ -131,7 +134,6 @@ export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, ping
   Node.contacts = contacts = []; // Quirk of simulation code.
   Node.maxTransports = maxTransports;
   Contact.pingTimeMS = pingTimeMS;
-
   
   for (let i = 0; i < nServerNodes; i++) {
     const node = await startServerNode(i, contacts[i - 1], refreshTimeIntervalMS);

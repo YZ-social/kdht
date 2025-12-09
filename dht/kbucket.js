@@ -21,7 +21,7 @@ export class KBucket {
     return this.length >= this.node.constructor.k;
   }
   get nTransports() { // How many of our contacts have their own transport connection?
-    return this.contacts.reduce((accumulator, contact) => contact.hasConnection ? accumulator + 1 : accumulator, 0);
+    return this.contacts.reduce((accumulator, contact) => contact.connection ? accumulator + 1 : accumulator, 0);
   }
   get randomTarget() { // Return a key for which this.getBucketIndex will be the given bucketIndex.
     const nodeClass = this.node.constructor;

@@ -84,7 +84,7 @@ export class NodeContacts extends NodeTransports {
 
     // In most cases there should be a connection, but it sometimes happens that by the time we get here,
     // we have already dropped the connection.
-    //this.constructor.assert(contact.hasConnection, 'Adding contact without connection', contact.report, 'in', this.contact.report);
+    //this.constructor.assert(contact.connection, 'Adding contact without connection', contact.report, 'in', this.contact.report);
 
     return this.queueRoutingTableChange(async () => {
       const bucketIndex = this.getBucketIndex(contact.key);
