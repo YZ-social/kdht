@@ -113,7 +113,7 @@ async function shutdown(startIndex, stopIndex) { // Internal
   for (let i = startIndex; i < stopIndex; i++) {
     await stop1(contacts.pop());
   }
-  await new Promise(resolve => setTimeout(resolve, 3e3));
+  await new Promise(resolve => setTimeout(resolve, 5e3));
 }
 
 

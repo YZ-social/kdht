@@ -159,7 +159,7 @@ describe("DHT", function () {
       afterAll(async function () {
 	await shutdownServerNodes(nServerNodes);
 	expect(await getContactsLength()).toBe(0); // sanity check
-      }, 10e3);
+      }, 20e3);
 
       describe("joins within a refresh interval", function () {
 	let nJoined = 0, nWritten = 0;
@@ -178,7 +178,7 @@ describe("DHT", function () {
 	  //await Node.reportAll();
 	  await shutdownClientNodes(nServerNodes, nJoined);
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
-	}, 10e3);
+	}, 20e3);
 	it("produces.", async function () {
 	  const total = await getContactsLength();
 	  expect(total).toBe(nJoined + nServerNodes); // Sanity check

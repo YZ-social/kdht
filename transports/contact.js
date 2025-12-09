@@ -32,7 +32,7 @@ export class Contact {
 
     // Reuse existing contact in hostNode -- if still connected.
     let existing = searchHost && hostNode.findContact(this.key);
-    if (existing?.isConnected) return existing;
+    if (existing?.isRunning) return existing;
 
     // Make one.
     Node.assert(this.key !== hostNode.key, 'Cloning self-contact', this, hostNode);
@@ -40,6 +40,32 @@ export class Contact {
     return clone;
   }
 
+  // Operations
+  join(other) { return this.host.join(other); }
+  store(key, value) {
+    return this.sendRPC('store', key, value);
+  }
+  disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
+    Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
+    this.host.isRunning = false;
+    this.host.stopRefresh();
+  }
+  distance(key) { return this.host.constructor.distance(this.key, key); }
+
+  // RPC
+  sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
+    const sender = this.host.contact;
+    if (!sender.isRunning) return null; // sender closed before call.
+    if (sender.key === this.key) return this.receiveRpc(method, sender, ...rest);
+
+    const start = Date.now();
+    return this.transmitRpc(method, ...rest) // The main event.
+      .then(result => {
+	if (!sender.isRunning) return null; // Sender closed after call.
+	return result;
+      })
+      .finally(() => Node.noteStatistic(start, 'rpc'));
+  }
   // Sponsorship
   _sponsors = new Map();
   noteSponsor(contact) {
@@ -51,12 +77,10 @@ export class Contact {
   }
 
   // Utilities
-  join(other) { return this.host.join(other); }
-  store(key, value) {
-    return this.sendRPC('store', key, value);
+  get report() { // Answer string of name, followed by * if disconnected
+    //return `${this.hasTransport ? '_' : ''}${this.node.name}${this.isRunning ? '' : '*'}@${this.host.name}v${this.counter}`; // verbose version
+    return `${this.hasTransport ? '_' : ''}${this.name}${this.isRunning ? '' : '*'}`; // simpler version
   }
-  distance(key) { return this.host.constructor.distance(this.key, key); }
-
   static pingTimeMS = 30; // ms
   static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.
     const start = Date.now();
@@ -72,10 +96,7 @@ export class SimulatedContact extends Contact {
   get key() { return this.node.key; }
   get isServerNode() { return this.node.isServerNode; }
 
-  // get farHomeContact() { // Answer the canonical home Contact for the node at the far end of this one.
-  //   return this.node.contact;
-  // }
-  get isConnected() { // Ask our canonical home contact.
+  get isRunning() { // Ask our canonical home contact.
     return this.node.isRunning;
   }
   get hasConnection() { // TODO: unify this and the above.
@@ -84,31 +105,8 @@ export class SimulatedContact extends Contact {
   async connect() {
     return this;
   }
-  get report() { // Answer string of name, followed by * if disconnected
-    //return `${this.hasTransport ? '_' : ''}${this.node.name}${this.isConnected ? '' : '*'}@${this.host.name}v${this.counter}`; // verbose version
-    return `${this.hasTransport ? '_' : ''}${this.node.name}${this.isConnected ? '' : '*'}`; // simpler version
-  }
-  disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
-    Node.assert(this.host === this.node, "Disconnect", this.node.name, "not invoked on home contact", this.host.name);
-    this.host.contact._connected = false;
-    this.host.isRunning = false;
-    this.host.stopRefresh();
-  }
-  sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
-    const sender = this.host.contact;
-    if (!sender.isConnected) return null; // sender closed before call.
-    if (sender.key === this.key) return this.receiveRpc(method, sender, ...rest);
-
-    const start = Date.now();
-    return this.transmitRpc(method, ...rest) // The main event.
-      .then(result => {
-	if (!sender.isConnected) return null; // Sender closed after call.
-	return result;
-      })
-      .finally(() => Node.noteStatistic(start, 'rpc'));
-  }
   async transmitRpc(method, ...rest) {
-    if (!this.isConnected) return null; // Receiver closed.
+    if (!this.isRunning) return null; // Receiver closed.
     return await this.receiveRpc(method, this.node.ensureContact(this.host.contact), ...rest);
   }
   async receiveRpc(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
@@ -171,7 +169,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     return contact;
   }
   async transmitRpc(method, ...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
-    if (!this.isConnected) return null; // Receiver closed.
+    if (!this.isRunning) return null; // Receiver closed.
     const farContactForUs = this.hasTransport || (await this.connect(method))?.hasTransport;
     if (!farContactForUs) return null; // receiver no longer reachable.
     return await this.receiveRpc(method, farContactForUs, ...rest);
