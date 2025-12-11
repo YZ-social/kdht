@@ -39,6 +39,13 @@ export class Contact {
     const clone = this.constructor.fromNode(this.node, hostNode);
     return clone;
   }
+  static serverSignifier = 'S';
+  get sname() { // Serialized name, indicating whether it is a server node.
+    if (this._sname) return this._sname;
+    if (this.name.length < 36) return this._sname = this.name; // Kluge: index of portal node.
+    if (this.isServerNode) return this._sname = this.constructor.serverSignifier + this.name;
+    return this._sname = this.name;
+  }
 
   // Operations
   join(other) { return this.host.join(other); }
@@ -60,8 +67,12 @@ export class Contact {
   // RPC
   sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
+    this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
     if (!sender.isRunning) return null; // sender closed before call.
-    if (sender.key === this.key) return this.receiveRPC(method, sender, ...rest);
+    if (sender.key === this.key) {
+      const result = this.receiveRPC(method, sender, ...rest);
+      return result;
+    }
 
     const start = Date.now();
     return this.transmitRPC(method, ...rest) // The main event.

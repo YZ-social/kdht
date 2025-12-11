@@ -50,7 +50,10 @@ export class NodeContacts extends NodeTransports {
   }
   get contacts() { // Answer a fresh copy of all contacts for this Node.
     const contacts = [];
-    this.forEachBucket(bucket => contacts.push(...bucket.contacts));
+    this.forEachBucket(bucket => {
+      contacts.push(...bucket.contacts);
+      return true;  // Subtle: an empty bucket will return 0 from push(), which will stop iteration and miss later buckets.
+    });
     return contacts;
   }
   findContact(match) { // Answer the contact for which match predicate is true, if any, whether in buckets or looseTransports. Does not remove it.

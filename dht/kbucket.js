@@ -35,21 +35,24 @@ export class KBucket {
     return this.node.distance(distance);
   }
   async refresh() { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
-    if (this.node.isStopped() || !this.contacts.length) return;
+    if (this.node.isStopped() || !this.contacts.length) return false;
+    this.node.log('refresh bucket', this.index);
     const targetKey = this.randomTarget;
     await this.node.locateNodes(targetKey); // Side-effect is to update this bucket.
-    this.node.log('refreshed', this.index, this.node.report(null));
+    return true; // Keep repeating.
   }
   resetRefresh() { // We are organically performing a lookup in this bucket. Reset the timer.
     clearInterval(this.refreshTimer);
     this.refreshTimer = this.node.repeat(() => this.refresh(), 'bucket');
   }
 
-  removeKey(key) { // Removes item specified by key (if present) from bucket and return 'present' if it was, else false.
+  removeKey(key, deleteIfEmpty = true) { // Removes item specified by key (if present) from bucket and return 'present' if it was, else false.
     const { contacts } = this;
     let index = contacts.findIndex(item => item.key === key);
     if (index !== -1) {
       contacts.splice(index, 1);
+      // Subtle: ensures that if contact is later added, it will resetRefresh.
+      if (deleteIfEmpty && !contacts.length) this.node.routingTable.delete(this.index);
       return 'present';
     }
     return false;
@@ -58,14 +61,16 @@ export class KBucket {
   async addContact(contact) { // Returns 'present' or 'added' if it was added to end within capacity, else false.
     // Resets refresh timer.
     this.node.constructor.assert(contact.node.key !== this.node.key, 'attempt to add self contact to bucket');
-    let added = this.removeKey(contact.key) || 'added';
+    let added = this.removeKey(contact.key, false) || 'added';
     //this.node.log('addContact', contact.name, this.index, added, this.isFull ? 'full' : '');
     if (this.isFull) {
+      if (added === 'present') this.node.looseTransports.push(contact); // So no findContact will fail during ping. Should we instead serialize findContact?
       const head = this.contacts[0];
       if (await head.sendRPC('ping', head.key)) { // still alive
 	added = false;  // New contact will not be added.
-	contact = head; // Add head back and update timestamp, below.
-      } 
+	contact = head; // Add head back, below.
+      }
+      if (added === 'present') this.node.removeLooseTransport(contact.key);
       // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
       // Subtle: Don't remove before waiting for the ping, as there can be overlap with other activity that could
       // think there's room and thus add it twice.

@@ -15,7 +15,7 @@ export class NodeProbe extends NodeMessages {
     const contact = helper.contact;
     let results = await contact.sendRPC(finder, targetKey);
     if (!results) { // disconnected
-      //console.log('removing unconnected contact', contact.sname, 'from', this.report(null));
+      this.log('removing unconnected contact', contact.sname);
       await this.removeKey(contact.key);
       return [];
     }
@@ -48,7 +48,7 @@ export class NodeProbe extends NodeMessages {
     while (toQuery.length && this.isRunning) { // Stop if WE disconnect.
       let requests = toQuery.map(helper => this.step(targetKey, finder, helper, keysSeen));
       let results = await Promise.all(requests);
-      if (trace) console.log(toQuery.map(h => h.name), '=>', results.map(r => r.map?.(h => h.name) || r));
+      if (trace) this.log(toQuery.map(h => h.name), '=>', results.map(r => r.map?.(h => h.name) || r));
       
       let found = results.find(isValueResult); // Did we get back a 'findValue' result.
       if (found) {

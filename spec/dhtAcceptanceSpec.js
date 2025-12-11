@@ -202,8 +202,8 @@ describe("DHT", function () {
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probing and disconnects turned off."});
   test({setupTimeMS: 1e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
   test({maxClientNodes: 30, pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster smoke-testing."});
-  test({maxTransports: 90, maxClientNodes: 90, pingTimeMS: 5, setupTimeMS: 20e3, notes: "Limit number of transports enough to exercise the reconnect logic."});
-  test({maxClientNodes: 140, setupTimeMS: 60e3, pingTimeMS: 10, notes: "Runs normally, but with a deliberately restricted network size that is nonetheless > 2*k."});
+  test({maxTransports: 85, maxClientNodes: 90, pingTimeMS: 10, setupTimeMS: 20e3, notes: "Limit number of transports enough to exercise the reconnect logic."});
+  test({maxClientNodes: 140, setupTimeMS: 60e3, pingTimeMS: 10, notes: "Relatively larger network size."});
 
   //test({maxTransports: 95, maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
   //test({maxTransports: 95, maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});

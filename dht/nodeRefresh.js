@@ -43,21 +43,12 @@ export class NodeRefresh extends NodeKeys {
     const scheduled = Date.now();
     return setTimeout(async () => {
       if (this.isStopped(interval)) return;
-      const fired = Date.now();
-      this.repeat(thunk, statisticsKey, interval); // Set it now, so as to not be further delayed by thunk.
       // Each actual thunk execution is serialized: Each Node executes its OWN various refreshes and probes
       // one at a time. This prevents a node from self-DoS'ing, but of course it does not coordinate across
       // nodes. If the system is bogged down for any reason, then the timeout spacing will get smaller
       // until finally the node is just running flat out.
-      await this.queueWork(thunk);
-      const status = this.constructor._stats?.[statisticsKey];
-      if (status) {
-	const elapsed = Date.now() - fired; // elapsed in thunk
-	const lag = fired - scheduled - timeout;
-	status.count++;
-	status.elapsed += elapsed;
-	status.lag += lag;
-      }
+      if (!await this.queueWork(thunk)) return;
+      this.repeat(thunk, statisticsKey, interval);
     }, timeout);
   }
 
