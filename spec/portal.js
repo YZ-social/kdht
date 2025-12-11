@@ -3,7 +3,9 @@ import process from 'node:process';
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { WebRTC } from '@yz-social/webrtc';
-const nBots = 10;
+import { WebContact, Node } from '../index.js';
+
+const nBots = 3;
 
 // NodeJS cluster forks a group of process that each communicate with the primary via send/message.
 // Each fork is a stateful kdht node that can each handle multiple WebRTC connections. The parent runs
@@ -23,6 +25,7 @@ if (cluster.isPrimary) {
   for (const worker of workers) {
     worker.on('message', message => {
       if (!worker.tag) {  // The very first message from a worker will identify it's tag.
+	console.log('set worker', worker.id, 'tag', message);
 	bots[message] = worker;
 	worker.tag = message;
 	worker.conversations = {};
@@ -45,15 +48,18 @@ if (cluster.isPrimary) {
     // through multiple POSTS.
     const {params, body} = req;
     // Find the specifed worker, or pick one at random.
-    const worker = (params.to === 'random') ? workers[Math.floor(Math.random() * nBots)] : bots[params.to];
+    const worker = (params.to === 'random') ?
+	  workers[Math.floor(Math.random() * nBots)] :
+	  (bots[params.to] || workers[params.to - 1]); // to can be a guid, or worker id, which alas, starts from 1.
+    console.log('post from:', params.from, 'to:', params.to, 'handled by', worker?.id, worker?.tag);
     // Each kdht worker node can handle connections from multiple clients. Specify which one.
     body.unshift(params.from);
     const response = new Promise(resolve => worker.conversations[params.from] = resolve);
     worker.send(body);
     let responding = await response;
-    delete worker.conversations[params.from];
+    delete worker.conversations[params.from]; // Now that we have the response.
     // If needed, let the client know who they are talking to so later posts go to the right worker.
-    if (params.to === 'random') responding = [['tag', worker.tag], ...responding];
+    if (params.to !== worker.tag) responding = [['tag', worker.tag], ...responding];
     res.send(responding);
   });
 
@@ -69,28 +75,47 @@ if (cluster.isPrimary) {
 
   const host = uuidv4();
   process.title = 'portal-' + host;
-  const connections = {};
-  process.send(host);
+  const contact = await WebContact.create({name: host, isServerNode: true, debug: cluster.worker.id === 1});
+  process.send(contact.sname); // Report in to server.
+  //console.log(cluster.worker.id, contact.sname);
+
+  // Handle signaling that comes as a message from the server.
+  const inFlight = {};
   process.on('message', async ([target, ...incomingSignals]) => {
-    let connection = connections[target];
-    //console.log('bot incoming from', target, 'to', host, connection?.peer.iceGatheringState, incomingSignals.map(s => s[0]));
-    if (!connection) {
-      connection = connections[target] = new WebRTC({label: 'portal-' + host});
-      const timer = setTimeout(() => { connection.close(); delete connections[target]; }, 15e3); // Enough to complete the connection.
-      const dataPromise = connection.dataChannelPromise = connection.ensureDataChannel('kdht', {}, incomingSignals);
-      incomingSignals = []; // Nothing further to respond() to just yet.
-      dataPromise.then(dataChannel => {
-	clearTimeout(timer);
-	connection.reportConnection(true);
-	dataChannel.addEventListener('close', () => {
-	  console.log(host, 'closed connection to', target);
-	  connection.close();
-	  delete connections[target];
+    let webrtc = inFlight[target];
+    if (!webrtc) {
+      console.log('\n    starting portal connection at', contact.sname, 'from', target);
+      webrtc = inFlight[target] = new WebRTC({label: 'portal-' + host});
+      const requestingContact = await contact.ensureRemoteContact(target);
+
+      const timer = setTimeout(() => { webrtc.close(); delete inFlight[target]; }, 15e3); // Enough to complete the connection.
+      console.log('    setting portal contact connection to promise');
+      requestingContact.connection = webrtc.ensureDataChannel('kdht', {}, incomingSignals)
+	.then(async dataChannel => {
+	  console.log('    portal got data channel');
+	  clearTimeout(timer);
+	  webrtc.reportConnection(true);
+	  dataChannel.addEventListener('close', () => {
+	    console.log(host, '    closed connection to', target);
+	    webrtc.close();
+	  });
+	  dataChannel.onmessage = event => requestingContact.receiveWebRTC(event.data);
+	  delete inFlight[target];
+	  return dataChannel;
 	});
-	dataChannel.onmessage = event => dataChannel.send(event.data); // FIXME
-      });
+      incomingSignals = []; // Nothing further to respond() to just yet.
     }
-    const responding = await connection.respond(incomingSignals);
+    // Give signals to webrtc, and send response to server for relaying back to remote node.
+    const responding = await webrtc.respond(incomingSignals);
     process.send([target, ...responding]);
   });
+
+  // TODO: if id === 1, connect to global network
+  if (cluster.worker.id > 1) {
+    await new Promise(resolve => setTimeout(resolve, 2e3));
+    const bootstrap = await contact.ensureRemoteContact('S' + (cluster.worker.id - 1));
+    //await bootstrap.connect();
+    contact.join(bootstrap);
+  }
+
 }

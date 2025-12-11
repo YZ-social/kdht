@@ -1,7 +1,7 @@
 import cluster from 'node:cluster';
 import process from 'node:process';
 import { v4 as uuidv4 } from 'uuid';
-import { WebContact } from '../index.js';
+import { WebContact, Node } from '../index.js';
 const nBots = 1;
 
 const host = uuidv4();
@@ -14,5 +14,7 @@ if (cluster.isPrimary) {
 }
 
 await new Promise(resolve => setTimeout(resolve, 2e3));
-const contact = new WebContact({host, node: 'random', isServerNode: true});
-await contact.connect();
+const contact = await WebContact.create({name: host});
+const c2 = await WebContact.create({name: '', isServerNode: true}, contact.node);
+//await c2.connect();
+contact.join(c2);

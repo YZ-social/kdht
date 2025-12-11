@@ -5,9 +5,9 @@ export class NodeUtilities {
   }
   isRunning = true;
   
-  static debug = false;
-  static log(...rest) { if (this.debug) console.log(...rest); }
-  log(...rest) { this.constructor.log(this.name, ...rest); }
+  debug = false;
+  log(...rest) { if (this.debug) console.log(this.name, ...rest); }
+  xlog(...rest) { console.log(this.name, ...rest); }  
   static assert(ok, ...rest) { // If !ok, log rests and exit.
     if (ok) return;
     console.error(...rest, new Error("Assert failure").stack); // Not throwing error, because we want to exit. But we are grabbing stack.

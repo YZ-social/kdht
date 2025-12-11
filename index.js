@@ -1,5 +1,6 @@
-export { Contact, SimulatedContact, SimulatedConnectionContact } from './transports/contact.js';
-export { InProcessWebContact } from './transports/inProcessWebrtc.js';
+export { Contact } from './transports/contact.js';
+export { SimulatedContact, SimulatedConnectionContact } from './transports/simulations.js';
+//export { InProcessWebContact } from './transports/inProcessWebrtc.js';
 export { WebContact } from './transports/webrtc.js';
 export { Helper } from './dht/helper.js';
 export { KBucket } from './dht/kbucket.js';

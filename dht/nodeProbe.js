@@ -15,6 +15,7 @@ export class NodeProbe extends NodeMessages {
     const contact = helper.contact;
     let results = await contact.sendRPC(finder, targetKey);
     if (!results) { // disconnected
+      //console.log('removing unconnected contact', contact.sname, 'from', this.report(null));
       await this.removeKey(contact.key);
       return [];
     }
@@ -31,12 +32,16 @@ export class NodeProbe extends NodeMessages {
     // Promise a best-first list of k Helpers from the network, by repeatedly trying to improve our closest known by applying finder.
     // But if any finder operation answer isValueResult, answer that instead.
 
+    const bucketIndex = this.getBucketIndex(targetKey);
+    const bucket = this.routingTable.get(bucketIndex);
+    bucket?.resetRefresh(); // Subtle: if we don't have one now, but will after, refreshes will be kicked off by KBucket constructor.
+    
     // Each iteration uses a bigger pool than asked for, because some will have disconnected.
     let pool = this.findClosestHelpers(targetKey, 2*k); // The k best-first Helpers known so far, that we have NOT queried yet.
     const isValueResult = this.constructor.isValueResult;
     const alpha = Math.min(pool.length, this.constructor.alpha);
     const keysSeen = new Set(pool.map(h => h.key));    // Every key we've seen at all (candidates and all responses).
-    keysSeen.add(this.key); // We might or might not be in our list of closest helpers, but we could be in someone else's.
+    keysSeen.add(this.key); // We might or might not be in our list of closest helpers, and we could be in someone else's.
     let toQuery = pool.slice(0, alpha);
     pool = pool.slice(alpha); // Yes, this could be done with splice instead of slice, above, but it makes things hard to trace.
     let best = []; // The accumulated closest-first result.    

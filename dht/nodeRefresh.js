@@ -12,6 +12,9 @@ export class NodeRefresh extends NodeKeys {
   stopRefresh() { // Stop repeat timeers in this instance.
     this.refreshTimeIntervalMS = 0;
   }
+  isStopped(interval) {
+    return !this.isRunning || 0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval;
+  }
   fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/3) {
     // Answer a random integer uniformly distributed around target, +/- margin.
     // The default target slightly exceeds the Nyquist condition of sampling at a frequency at
@@ -29,7 +32,8 @@ export class NodeRefresh extends NodeKeys {
     // Answer a timer that will execute thunk() in interval, and then  repeat.
     // If not specified, interval computes a new fuzzyInterval each time it repeats.
     // Does nothing if interval is zero.
-    if (0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval) return null;
+    //this.log(statisticsKey, 'interval:', interval, 'instance:', this.refreshTimeIntervalMS, 'class:', this.constructor.refreshTimeIntervalMS);
+    if (this.isStopped(interval)) return null;
 
     // We use repeated setTimer rather than setInterval because it is important in the
     // default case to use a different random interval each time, so that we don't have
@@ -38,6 +42,7 @@ export class NodeRefresh extends NodeKeys {
 
     const scheduled = Date.now();
     return setTimeout(async () => {
+      if (this.isStopped(interval)) return;
       const fired = Date.now();
       this.repeat(thunk, statisticsKey, interval); // Set it now, so as to not be further delayed by thunk.
       // Each actual thunk execution is serialized: Each Node executes its OWN various refreshes and probes

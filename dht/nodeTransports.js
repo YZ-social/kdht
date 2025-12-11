@@ -23,7 +23,7 @@ export class NodeTransports extends NodeStorage {
     const assert = this.constructor.assert;
     assert(contact.key !== this.key, 'noting contact for self transport', this, contact);
     assert(contact.host.key === this.key, 'Contact', contact.report, 'is not hosted by', this.contact.report);
-    let existing = this.findContact(contact.key);
+    let existing = this.findContactByKey(contact.key);
     if (existing) return existing;
     
     if (this.nTransports >= this.constructor.maxTransports) { // Do we have to drop one first?

@@ -94,8 +94,11 @@ function thrash(i, nServerNodes, refreshTimeIntervalMS) { // Start disconnect/re
     const contact = contacts[i];
     contacts[i] = null;
     await stop1(contact);
+    if (!isThrashing) return;
     const bootstrapContact = await getBootstrapContact(nServerNodes);
-    contacts[i] = await start1(i, bootstrapContact, refreshTimeIntervalMS);
+    const started = await start1(i, bootstrapContact, refreshTimeIntervalMS);
+    if (!isThrashing) return; 
+   contacts[i] = started;
     thrash(i, nServerNodes, refreshTimeIntervalMS);
   }, runtimeMS);
 }
@@ -116,7 +119,6 @@ async function shutdown(startIndex, stopIndex) { // Internal
   for (let i = startIndex; i < stopIndex; i++) {
     await stop1(contacts.pop());
   }
-  await new Promise(resolve => setTimeout(resolve, 5e3));
 }
 
 

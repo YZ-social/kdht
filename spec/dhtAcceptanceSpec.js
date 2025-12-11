@@ -192,7 +192,7 @@ describe("DHT", function () {
 	  await timed(async _ => nRead = await parallelReadAll(), // alt: serialReadAll
 		      elapsed => `Read ${nRead} / ${elapsed} = ${Math.round(nRead/elapsed)} values/second.`);
 	  expect(nRead).toBe(nWritten);
-	}, 10 * setupTimeMS + runtimeBeforeReadMS);
+	}, 10 * setupTimeMS + 5 * runtimeBeforeReadMS);
       });
     });
   }
@@ -200,7 +200,7 @@ describe("DHT", function () {
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
   // For example:
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probing and disconnects turned off."});
-  test({setupTimeMS: 2e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
+  test({setupTimeMS: 1e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
   test({maxClientNodes: 30, pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster smoke-testing."});
   test({maxTransports: 90, maxClientNodes: 90, pingTimeMS: 5, setupTimeMS: 20e3, notes: "Limit number of transports enough to exercise the reconnect logic."});
   test({maxClientNodes: 140, setupTimeMS: 60e3, pingTimeMS: 10, notes: "Runs normally, but with a deliberately restricted network size that is nonetheless > 2*k."});

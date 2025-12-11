@@ -53,17 +53,19 @@ export class NodeContacts extends NodeTransports {
     this.forEachBucket(bucket => contacts.push(...bucket.contacts));
     return contacts;
   }
-  findContact(key) { // Answer the contact for this key, if any, whether in buckets or looseTransports. Does not remove it.
-    const match = contact => contact.key === key;
+  findContact(match) { // Answer the contact for which match predicate is true, if any, whether in buckets or looseTransports. Does not remove it.
     let contact = this.looseTransports.find(match);
     if (contact) return contact;
     this.forEachBucket(bucket => !(contact = bucket.contacts.find(match))); // Or we could compute index and look just there.
     return contact;
   }
-  ensureContact(contact, sponsor) { // Return existing contact, if any (including looseTransports), else clone a new one for this host. Set sponsor.
-    // Subtle: SimulatedContact clone uses findContact (above) to reuse and existing contact on the host, if possible.
-    // This is vital for SimulatedContact bookkeeping through connections and sponsorship.
-    contact = contact.clone(this); // Includes findContact.
+  findContactByKey(key) { // findContact matching the specified key.
+    return this.findContact(contact => contact.key === key);
+  }
+  ensureContact(contact, sponsor = null) { // Return existing contact, if any (including looseTransports), else clone a new one for this host. Set sponsor.
+    // Subtle: SimulatedContact clone uses findContactByKey (above) to reuse an existing contact on the host, if possible.
+    // This is vital for bookkeeping through connections and sponsorship.
+    contact = contact.clone(this); // Includes findContactByKey.
     contact.noteSponsor(sponsor);
     return contact;
   }
@@ -100,8 +102,9 @@ export class NodeContacts extends NodeTransports {
     });
   }
   findClosestHelpers(targetKey, count = this.constructor.k) { // Answer count closest Helpers to targetKey, including ourself.
+    if (!this.contact) return []; // Can happen while we are shutting down during a probe.
     const contacts = this.contacts; // Always a fresh copy.
-    contacts.push(this.contact); // We are a candidate, too!
+    contacts.push(this.contact); // We are a candidate, too! TODO: Handle this separately in iterate so that we don't have to marshal our contacts.
     return Helper.findClosest(targetKey, contacts, count);
   }
 }

@@ -11,6 +11,7 @@ export class KBucket {
     const nLeadingZeros = keySize - 1 - this.index;
     // The next bit after the leading zeros must be one to stay in this bucket.
     this.binaryPrefix = '0b' + '0'.repeat(nLeadingZeros) + '1';
+    this.resetRefresh();
   }
 
   contacts = [];
@@ -34,8 +35,14 @@ export class KBucket {
     return this.node.distance(distance);
   }
   async refresh() { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
+    if (this.node.isStopped() || !this.contacts.length) return;
     const targetKey = this.randomTarget;
     await this.node.locateNodes(targetKey); // Side-effect is to update this bucket.
+    this.node.log('refreshed', this.index, this.node.report(null));
+  }
+  resetRefresh() { // We are organically performing a lookup in this bucket. Reset the timer.
+    clearInterval(this.refreshTimer);
+    this.refreshTimer = this.node.repeat(() => this.refresh(), 'bucket');
   }
 
   removeKey(key) { // Removes item specified by key (if present) from bucket and return 'present' if it was, else false.
@@ -52,6 +59,7 @@ export class KBucket {
     // Resets refresh timer.
     this.node.constructor.assert(contact.node.key !== this.node.key, 'attempt to add self contact to bucket');
     let added = this.removeKey(contact.key) || 'added';
+    //this.node.log('addContact', contact.name, this.index, added, this.isFull ? 'full' : '');
     if (this.isFull) {
       const head = this.contacts[0];
       if (await head.sendRPC('ping', head.key)) { // still alive
@@ -59,14 +67,11 @@ export class KBucket {
 	contact = head; // Add head back and update timestamp, below.
       } 
       // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
-      // Don't remove before waiting for the ping, as there can be overlap with other activity that could
+      // Subtle: Don't remove before waiting for the ping, as there can be overlap with other activity that could
       // think there's room and thus add it twice.
       this.removeKey(head.key);
     }
     this.contacts.push(contact);
-    // Refresh this bucket unless we addContact again before it goes off.
-    clearInterval(this.refreshTimer);
-    this.refreshTimer = this.node.repeat(() => this.refresh(this.index), 'bucket');
     return added;
   }
 }
