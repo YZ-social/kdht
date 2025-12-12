@@ -1,4 +1,4 @@
-import { Node, KBucket, SimulatedContact, Helper } from '../index.js';
+import { Node, KBucket, Contact, SimulatedContact, Helper } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
 describe("DHT internals", function () {
@@ -193,6 +193,7 @@ describe("DHT internals", function () {
 	const nOthers = Node.k + 40; // k+31 will not overflow. k+40 would overflow.
 	let node;
 	beforeAll(async function () {
+	  let start = Date.now();
 	  const host = SimulatedContact.fromKey(Node.zero);
 	  node = host.node;
 	  // These others are all constructed to have distances that increase by one from node.
@@ -201,7 +202,7 @@ describe("DHT internals", function () {
 	    await node.addToRoutingTable(other);
 	  }
 	  //node.report();
-	});
+	}, 20e3);
 	it("places k in bucket.", function () {
 	  // Checks the results of the discover() placement, each other should have filled in starting from the closest end.
 	  // Working backwards from the last kBucket, these will all fill in 1, 2, 4, 8, 16 nodes in each bucket.

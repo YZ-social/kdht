@@ -123,8 +123,8 @@ export class WebContact extends Contact {
     } else { // An incoming request.
       const [method, senderLabel, key, ...rest] = data;
       const sender = await this.ensureRemoteContact(senderLabel);
+      //this.host.log('dispatched', method, 'from', sender.sname);
       let response = await this.receiveRPC(method, sender, BigInt(key), ...rest);
-      //this.host.log('dispatched', {sender: sender.name, isServerNode: sender.isServerNode, method, key, rest, response}); //fixme
       if (this.host.constructor.isArrayResult(response)) response = response.map(helper => [helper.contact.sname, helper.distance.toString()]);
       this.send([messageTag, response]);
     }

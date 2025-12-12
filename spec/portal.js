@@ -116,11 +116,12 @@ if (cluster.isPrimary) {
 	  dataChannel.addEventListener('close', cleanup);
 	  dataChannel.addEventListener('message', event => requestingContact.receiveWebRTC(event.data));
 	  delete inFlight[senderSname];
-	  // contact.host.addToRoutingTable(requestingContact) // fixme remove: we should receive rpcs from sender that will cause us to add it
-	  //   .then(() => contact.host.report());
+	  setTimeout(() => contact.host.report(), 500);
 	  return dataChannel;
 	});
       incomingSignals = []; // Nothing further to respond() to (below) just yet.
+    } else {
+      contact.host.log('additional signaling message from', senderSname);
     }
     // Give signals to webrtc, and send response to server for relaying back to remote node.
     const responding = await webrtc.respond(incomingSignals);

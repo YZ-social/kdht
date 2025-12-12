@@ -156,15 +156,19 @@ describe("DHT", function () {
 	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS, maxTransports),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes); // sanity check
+	//console.log('end server setup');
       });
       afterAll(async function () {
+	//console.log('start server shutdown');
 	await shutdownServerNodes(nServerNodes);
 	expect(await getContactsLength()).toBe(0); // sanity check
+	//console.log('end server shutdown');	
       }, 20e3);
 
       describe("joins within a refresh interval", function () {
 	let nJoined = 0, nWritten = 0;
 	beforeAll(async function () {
+	  //console.log('start client setup');
 	  if (startThrashingBefore === 'creation') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(refreshTimeIntervalMS, nServerNodes, maxClientNodes, setupTimeMS),
 				    elapsed => `Created ${nJoined} / ${elapsed} = ${(elapsed/nJoined).toFixed(3)} client nodes/second.`);
@@ -174,11 +178,14 @@ describe("DHT", function () {
 	  await delay(runtimeBeforeWriteMS, 'pause before writing');
 	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
 				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
+	  //console.log('end client setup');
 	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 3 * setupTimeMS);
 	afterAll(async function () {
+	  //console.log('start client shutdown');
 	  //await Node.reportAll();
 	  await shutdownClientNodes(nServerNodes, nJoined);
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
+	  //console.log('end client shutdown');	  
 	}, 20e3);
 	it("produces.", async function () {
 	  const total = await getContactsLength();

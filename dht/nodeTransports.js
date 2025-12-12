@@ -48,7 +48,7 @@ export class NodeTransports extends NodeStorage {
 	});
 	dropped = removeLast(bestBucket.contacts);
 	if (!dropped) console.log('Unable to find something to drop in', this.report(null));
-	console.log('dropping transport in contact', dropped.name, 'in', this.name, bestBucket.index, 'among', bestCount);
+	else console.log('dropping transport', dropped.name, 'in', this.name, bestBucket.index, 'among', bestCount);
       }
       dropped.disconnectTransport();
     }

@@ -3,14 +3,12 @@ import { NodeRefresh } from './nodeRefresh.js';
 // Keeping application data.
 export class NodeStorage extends NodeRefresh {
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
-  timers = new Map();
   // TODO: store across sessions
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
     this.storage.set(key, value);
     // TODO: The paper says this can be optimized.
     // Claude.ai suggests just writing to the next in line, but that doesn't work.
-    clearInterval(this.timers.get(key));
-    this.timers.set(key, this.repeat(() => this.storeValue(key, value), 'storage'));
+    this.schedule(key, 'storage', () => this.storeValue(key, value));
   }
   retrieveLocally(key) {     // Retrieve from memory.
     return this.storage.get(key);

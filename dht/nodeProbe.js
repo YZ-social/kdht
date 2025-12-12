@@ -32,9 +32,12 @@ export class NodeProbe extends NodeMessages {
     // Promise a best-first list of k Helpers from the network, by repeatedly trying to improve our closest known by applying finder.
     // But if any finder operation answer isValueResult, answer that instead.
 
-    const bucketIndex = this.getBucketIndex(targetKey);
-    const bucket = this.routingTable.get(bucketIndex);
-    bucket?.resetRefresh(); // Subtle: if we don't have one now, but will after, refreshes will be kicked off by KBucket constructor.
+    if (targetKey !== this.key) {
+      const bucketIndex = this.getBucketIndex(targetKey);
+      const bucket = this.routingTable.get(bucketIndex);
+      // Subtle: if we don't have one now, but will after, refreshes will be rescheduled by KBucket constructor.
+      bucket?.resetRefresh();
+    }
     
     // Each iteration uses a bigger pool than asked for, because some will have disconnected.
     let pool = this.findClosestHelpers(targetKey, 2*k); // The k best-first Helpers known so far, that we have NOT queried yet.

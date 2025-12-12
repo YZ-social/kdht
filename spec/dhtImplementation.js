@@ -129,12 +129,15 @@ app.use(express.json());
 //app.use('/test', router);
 app.listen(port);
 
+let ping, transports;
 export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS, maxTransports) {
   // Set up nServerNodes, returning a promise that resolves when they are ready to use.
   // See definitions in test suite.
 
   Node.contacts = contacts = []; // Quirk of simulation code.
+  transports = Node.maxTransports;
   Node.maxTransports = maxTransports;
+  ping = Contact.pingTimeMS;
   Contact.pingTimeMS = pingTimeMS;
   
   for (let i = 0; i < nServerNodes; i++) {
@@ -148,6 +151,9 @@ export async function shutdownServerNodes(nServerNodes) {
   // The purpose here is to kill any persisted data so that the next call
   // to setupServerNodes will start fresh.
   await shutdown(0, nServerNodes);
+  Contact.pingTimeMS = ping;
+  Node.maxTransports = transports;
+  Node.contacts = [];
 }
 
 export async function setupClientsByTime(...rest) {

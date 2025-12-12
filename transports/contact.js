@@ -67,7 +67,7 @@ export class Contact {
   // RPC
   sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
-    this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
+    //this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
     if (!sender.isRunning) return null; // sender closed before call.
     if (sender.key === this.key) {
       const result = this.receiveRPC(method, sender, ...rest);
@@ -99,8 +99,8 @@ export class Contact {
 
   // Utilities
   get report() { // Answer string of name, followed by * if disconnected
-    //return `${this.connection ? '_' : ''}${this.node.name}${this.isRunning ? '' : '*'}@${this.host.name}v${this.counter}`; // verbose version
-    return `${this.connection ? '_' : ''}${this.name}${this.isRunning ? '' : '*'}`; // simpler version
+    //return `${this.connection ? '_' : ''}${this.sname}${this.isRunning ? '' : '*'}@${this.host.contact.sname}v${this.counter}`; // verbose version
+    return `${this.connection ? '_' : ''}${this.sname}${this.isRunning ? '' : '*'}`; // simpler version
   }
   static pingTimeMS = 30; // ms
   static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.

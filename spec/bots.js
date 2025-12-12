@@ -14,9 +14,9 @@ if (cluster.isPrimary) {
 }
 
 await new Promise(resolve => setTimeout(resolve, 2e3));
-const contact = await WebContact.create({name: host});
-const c2 = await WebContact.create({name: '', isServerNode: true
-				    , debug: true
-				   }, contact.node);
+const contact = await WebContact.create({name: host
+					 , debug: true
+					});
+const c2 = await WebContact.create({name: '', isServerNode: true}, contact.node);
 //await c2.connect();
 contact.join(c2);

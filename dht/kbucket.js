@@ -35,15 +35,16 @@ export class KBucket {
     return this.node.distance(distance);
   }
   async refresh() { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
-    if (this.node.isStopped() || !this.contacts.length) return false;
+    if (this.node.isStopped() || !this.contacts.length) return false; // fixme skip isStopped?
     this.node.log('refresh bucket', this.index);
     const targetKey = this.randomTarget;
     await this.node.locateNodes(targetKey); // Side-effect is to update this bucket.
-    return true; // Keep repeating.
+    return true;
   }
   resetRefresh() { // We are organically performing a lookup in this bucket. Reset the timer.
-    clearInterval(this.refreshTimer);
-    this.refreshTimer = this.node.repeat(() => this.refresh(), 'bucket');
+    // clearInterval(this.refreshTimer);
+    // this.refreshTimer = this.node.repeat(() => this.refresh(), 'bucket');
+    this.node.schedule(this.index, 'bucket', () => this.refresh());
   }
 
   removeKey(key, deleteIfEmpty = true) { // Removes item specified by key (if present) from bucket and return 'present' if it was, else false.

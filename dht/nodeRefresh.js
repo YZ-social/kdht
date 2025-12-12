@@ -15,7 +15,7 @@ export class NodeRefresh extends NodeKeys {
   isStopped(interval) {
     return !this.isRunning || 0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval;
   }
-  fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/3) {
+  fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/2) {
     // Answer a random integer uniformly distributed around target, +/- margin.
     // The default target slightly exceeds the Nyquist condition of sampling at a frequency at
     // least twice the signal being observed. In particular, allowing for some randomization,
@@ -28,29 +28,30 @@ export class NodeRefresh extends NodeKeys {
   queueWork(thunk) { // Promise to resolve thunk() -- after all previous queued thunks have resolved.
     return this.workQueue = this.workQueue.then(thunk);
   }
-  repeat(thunk, statisticsKey, interval) {
-    // Answer a timer that will execute thunk() in interval, and then  repeat.
-    // If not specified, interval computes a new fuzzyInterval each time it repeats.
-    // Does nothing if interval is zero.
-    //this.log(statisticsKey, 'interval:', interval, 'instance:', this.refreshTimeIntervalMS, 'class:', this.constructor.refreshTimeIntervalMS);
-    if (this.isStopped(interval)) return null;
-
-    // We use repeated setTimer rather than setInterval because it is important in the
-    // default case to use a different random interval each time, so that we don't have
-    // everything firing at once repeatedly.
-    const timeout = (interval === undefined) ?  this.fuzzyInterval() : interval;
-
-    const scheduled = Date.now();
-    return setTimeout(async () => {
-      if (this.isStopped(interval)) return;
+  timers = new Map();
+  schedule(timerKey, statisticsKey, thunk) {    
+    // Schedule thunk() to occur at a fuzzyInterval from now, cancelling any
+    // existing timer at the same key. This is used in such a way that:
+    // 1. A side effect of calling thunk() is that it will be scheduled again, if appropriate.
+    //    E.g., A bucket refresh calls iterate, which schedules, and storeValue schedules.
+    // 2. The timerKeys are treated appropriately under Map.
+    //    E.g., bucket index 1 === 1 and stored value key BigInt(1) === BigInt(1), but 1 !== BigInt(1)
+    if (this.isStopped()) return;
+    const start = Date.now();
+    const timeout = this.fuzzyInterval();
+    //this.log('scheduling', statisticsKey, timerKey, 'for', timeout);
+    clearInterval(this.timers.get(timerKey));
+    this.timers.set(timerKey, setTimeout(async () => {
+      const lag = Date.now() - start - timeout;
+      this.timers.delete(timerKey);
+      if (this.isStopped()) return;
+      if (lag > 250) console.log(`** System is overloaded by ${lag.toLocaleString()} ms. **`);
       // Each actual thunk execution is serialized: Each Node executes its OWN various refreshes and probes
       // one at a time. This prevents a node from self-DoS'ing, but of course it does not coordinate across
       // nodes. If the system is bogged down for any reason, then the timeout spacing will get smaller
       // until finally the node is just running flat out.
-      if (!await this.queueWork(thunk)) return;
-      this.repeat(thunk, statisticsKey, interval);
-    }, timeout);
+      await this.queueWork(thunk);
+    }, timeout));
   }
-
 }
   
