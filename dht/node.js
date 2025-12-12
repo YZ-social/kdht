@@ -46,8 +46,8 @@ export class Node extends NodeProbe {
   }
   async join(contact) {
     contact = this.ensureContact(contact);
-    await this.addToRoutingTable(contact);
     await contact.connect();
+    await this.addToRoutingTable(contact);
     await this.locateNodes(this.key); // Discovers between us and otherNode.
 
     // Refresh every bucket farther out than our closest neighbor.
