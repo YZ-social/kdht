@@ -39,7 +39,6 @@ export class NodeRefresh extends NodeKeys {
     if (this.isStopped()) return;
     const start = Date.now();
     const timeout = this.fuzzyInterval();
-    this.log('scheduling', statisticsKey, timerKey, 'for', timeout);
     clearInterval(this.timers.get(timerKey));
     this.timers.set(timerKey, setTimeout(async () => {
       const lag = Date.now() - start - timeout;
@@ -50,9 +49,8 @@ export class NodeRefresh extends NodeKeys {
       // one at a time. This prevents a node from self-DoS'ing, but of course it does not coordinate across
       // nodes. If the system is bogged down for any reason, then the timeout spacing will get smaller
       // until finally the node is just running flat out.
-      this.log('queue', statisticsKey, timerKey, timeout);
+      // this.log('queue', statisticsKey, timerKey, timeout);
       await this.queueWork(thunk);
-      this.log('completed work', statisticsKey, timerKey, timeout);      
     }, timeout));
   }
 }

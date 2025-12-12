@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebRTC } from '@yz-social/webrtc';
 import { WebContact, Node } from '../index.js';
 
-const nBots = 1;
+const nBots = 5;
 
 // NodeJS cluster forks a group of process that each communicate with the primary via send/message.
 // Each fork is a stateful kdht node that can each handle multiple WebRTC connections. The parent runs
@@ -54,6 +54,10 @@ if (cluster.isPrimary) {
 	  workers[Math.floor(Math.random() * nBots)] :
 	  (bots[params.to] || workers[params.to - 1]); // 'to' can be a guid, or worker id, which alas, starts from 1.
     //console.log('post from:', params.from, 'to:', params.to, 'handled by', worker?.id, worker?.tag);
+    if (!worker.tag) { // Has not yet reported in
+      res.sendStatus(403);
+      return;
+    }
 
     // Each kdht worker node can handle connections from multiple clients. Specify which one.
     body.unshift(params.from); // Adds sender sname at front of body, so that the worker can direct the message.
@@ -84,8 +88,6 @@ if (cluster.isPrimary) {
   const contact = await WebContact.create({name: hostName, isServerNode: true
 					   , debug: cluster.worker.id === 1 // id starts from 1
 					  });
-  process.send(contact.sname); // Report in to server.
-
   // Handle signaling that comes as a message from the server.
   const inFlight = {}; // maps sender sname => WebRTC instance during signaling (i.e., until connected).
   process.on('message', async ([senderSname, ...incomingSignals]) => { // Signals from a sender through the server.
@@ -96,15 +98,15 @@ if (cluster.isPrimary) {
       contact.host.noteContactForTransport(requestingContact);
       if (requestingContact.connection) { // Can happen if we receive client ICE after we have created data channel.
 	contact.host.log('already has a connection from', senderSname);
-	process.end([senderSname]); // Just enough for server to clean up.
-	return; // Leaks
+	process.send([senderSname]); // Just enough for server to clean up.
+	return;
       }
       webrtc = inFlight[senderSname] = new WebRTC({label: 'p' + requestingContact.webrtcLabel});
       webrtc.contact = requestingContact;
       let {promise, resolve} = Promise.withResolvers();
       requestingContact.closed = promise;
       function cleanup() { // Free for GC.
-	console.log(hostName, 'closed connection to', senderSname);
+	console.log(contact.sname, 'closed connection to', senderSname);
 	webrtc.close();
 	contact.host.removeKey(webrtc.contact.key);
 	delete inFlight[senderSname]; // If not already gone.
@@ -119,7 +121,7 @@ if (cluster.isPrimary) {
 	  dataChannel.addEventListener('close', cleanup);
 	  dataChannel.addEventListener('message', event => requestingContact.receiveWebRTC(event.data));
 	  delete inFlight[senderSname];
-	  setTimeout(() => contact.host.report(), 500);
+	  //setTimeout(() => contact.host.report(), 500);
 	  return dataChannel;
 	});
       incomingSignals = []; // Nothing further to respond() to (below) just yet.
@@ -131,6 +133,7 @@ if (cluster.isPrimary) {
     process.send([senderSname, ...responding]);
   });
 
+  process.send(contact.sname); // Report in to server.
   if (cluster.worker.id === 1) {
     // TODO: connect to global network
   } else {

@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { Node } from '../dht/node.js';
 import { Helper } from '../dht/helper.js';
 import { Contact } from './contact.js';
@@ -26,7 +27,7 @@ export class WebContact extends Contact {
   static serializer = Promise.resolve();
   async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
     const contact = this.host.noteContactForTransport(this);
-    this.host.log('ensuring connection for', contact.sname, contact.connection ? 'exists' : 'must create');
+    //this.host.log('ensuring connection for', contact.sname, contact.connection ? 'exists' : 'must create');
     if (contact.connection) return contact.connection;
 
     //console.log('setting client contact connection promise');
@@ -48,13 +49,13 @@ export class WebContact extends Contact {
       const connection = new WebRTC({label: contact.webrtcLabel});
       let resolveClosed;
       contact.closed = new Promise(resolve => resolveClosed = resolve);
-      console.log('fixme setting closed promise', contact.closed, this.counter, contact.counter);
       const ready = connection.signalsReady;
       const dataChannelPromise = connection.ensureDataChannel('kdht');
       await ready;
       connection.connectVia(async signals => {
 	const response = await contact.fetchSignals(`http://localhost:3000/kdht/join/${host.contact.sname}/${target || 'random'}`, signals);
-	const [method, data] = response[0];
+	//fixme remove console.log('fetch response', response.map(s => s[0]));
+	const [method, data] = response.length ? response[0] : [];
 	if (method === 'tag') { // We were told the target tag in a pseudo-signal. Use it going forward.
 	  console.warn(`${host.name} connected to target '${data}' instead of '${target}'.`);
 	  // KLUGE: When we connect through a portal, we don't yet know the name of the node to which we will connect, but
@@ -79,8 +80,8 @@ export class WebContact extends Contact {
       return dataChannel;
     });
   }
-  send(message) { // Promise to send through previously opened connection promise.
-    return this.connection.then(channel => channel.send(JSON.stringify(message)));
+  async send(message) { // Promise to send through previously opened connection promise.
+    return this.connection.then(channel => channel?.send(JSON.stringify(message))); // Connection could be reset to null
   }
   getName(sname) { // Answer name from sname.
     if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
@@ -97,24 +98,25 @@ export class WebContact extends Contact {
     if (sname === this.host.contact.sname) return this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
     let contact = this.host.findContact(contact => contact.sname === sname);
     if (contact) return contact;
-    this.host.log(`ensureRemoteContact is creating contact for ${sname} in (${this.sname}) ${this.host.report(null)}.`); // fixme report()
+    this.host.log(`ensureRemoteContact is creating contact for ${sname} in ${this.sname}.`);
     const name = this.getName(sname);
     const isServerNode = name !== sname;
     contact = await this.constructor.create({name, isServerNode}, this.host);
     return contact;
   }
-  messageTag = 0;
   inFlight = new Map();
   async transmitRPC(method, key, ...rest) { // Must return a promise.
-    this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
+    // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     await this.connect();
     const sender = this.host.contact.sname;
-    const messageTag = this.messageTag++;
+    // uuid so that the two sides don't send a request with the same id to each other.
+    // Alternatively, we could concatenate a counter to our host.name.
+    const messageTag = uuidv4();
     const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
-    this.host.log('sending to', this.sname);
+    // this.host.log('sending to', this.sname);
     this.send([messageTag, method, sender, key.toString(), ...rest]);
     const response = await Promise.race([responsePromise, this.closed]);
-    this.host.log('got response from', this.sname);
+    // this.host.log('got response from', this.sname);
     return response;
   }
   async receiveWebRTC(dataString) {
