@@ -25,8 +25,6 @@ export class WebContact extends Contact {
   }
   static serializer = Promise.resolve();
   async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
-    // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
-    // TODO: Simulate webrtc signaling.
     const contact = this.host.noteContactForTransport(this);
     this.host.log('ensuring connection for', contact.sname, contact.connection ? 'exists' : 'must create');
     if (contact.connection) return contact.connection;
@@ -62,13 +60,9 @@ export class WebContact extends Contact {
 	  // KLUGE: When we connect through a portal, we don't yet know the name of the node to which we will connect, but
 	  // we do have to keep the contact (in bucket or loose transports). So now that we know the true name, we re-add it.
 	  // Note that should not be two overlapping connections in flight to the same target name, including an empty name.
-	  const oldKey = contact.node.key;
-	  await this.host.removeKey(oldKey); // Serialized operation.
 	  target = data;
-	  delete contact._sname; // So that it gets re-cached.
-	  contact.node.name = data.slice(1); // Name from server always has a leading 'S'.
-	  contact.node.key = await Node.key(contact.node.name); // Hashes name.
-	  connection.label = contact.webrtcLabel;
+	  await contact.setName(data);
+	  connection.label = contact.webrtcLabel; // After setName.
 	  await this.host.addToRoutingTable(contact); // Serialized operation.
 	  response.shift();
 	}
@@ -85,18 +79,28 @@ export class WebContact extends Contact {
       return dataChannel;
     });
   }
-  send(message) {
+  send(message) { // Promise to send through previously opened connection promise.
     return this.connection.then(channel => channel.send(JSON.stringify(message)));
   }
-  async ensureRemoteContact(sname, connection = null, forceServer = false) {
+  getName(sname) { // Answer name from sname.
+    if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
+    return sname;
+  }
+  async setName(sname) { // A contact may have a temporary name that gets changed once connected. This fixing things.
+    const oldKey = this.node.key;
+    await this.host.removeKey(oldKey); // Serialized operation.
+    delete this._sname; // So that it gets re-cached.
+    this.node.name = this.getName(sname);
+    this.node.key = await Node.key(this.node.name); // Hashes name.
+  }
+  async ensureRemoteContact(sname) {
     if (sname === this.host.contact.sname) return this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
     let contact = this.host.findContact(contact => contact.sname === sname);
     if (contact) return contact;
     this.host.log(`ensureRemoteContact is creating contact for ${sname} in (${this.sname}) ${this.host.report(null)}.`); // fixme report()
-    const isServerNode = sname.startsWith(this.constructor.serverSignifier);
-    const name = isServerNode ? sname.slice(1) : sname;
+    const name = this.getName(sname);
+    const isServerNode = name !== sname;
     contact = await this.constructor.create({name, isServerNode}, this.host);
-    //if (connection) contact.connection = connection;
     return contact;
   }
   messageTag = 0;
@@ -109,7 +113,6 @@ export class WebContact extends Contact {
     const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
     this.host.log('sending to', this.sname);
     this.send([messageTag, method, sender, key.toString(), ...rest]);
-    //const response = await responsePromise;
     const response = await Promise.race([responsePromise, this.closed]);
     this.host.log('got response from', this.sname);
     return response;
