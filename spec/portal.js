@@ -101,11 +101,14 @@ if (cluster.isPrimary) {
       }
       webrtc = inFlight[senderSname] = new WebRTC({label: 'p' + requestingContact.webrtcLabel});
       webrtc.contact = requestingContact;
+      let {promise, resolve} = Promise.withResolvers();
+      requestingContact.closed = promise;
       function cleanup() { // Free for GC.
 	console.log(hostName, 'closed connection to', senderSname);
 	webrtc.close();
 	contact.host.removeKey(webrtc.contact.key);
 	delete inFlight[senderSname]; // If not already gone.
+	resolve();
       }
       const timer = setTimeout(cleanup, 15e3); // Enough to complete the connection.
 

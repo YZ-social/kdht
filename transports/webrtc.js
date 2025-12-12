@@ -48,6 +48,9 @@ export class WebContact extends Contact {
       let target = contact.sname;
       //console.log(`starting client signaling ${host.name} => '${target}' (${node.name})`);
       const connection = new WebRTC({label: contact.webrtcLabel});
+      let resolveClosed;
+      contact.closed = new Promise(resolve => resolveClosed = resolve);
+      console.log('fixme setting closed promise', contact.closed, this.counter, contact.counter);
       const ready = connection.signalsReady;
       const dataChannelPromise = connection.ensureDataChannel('kdht');
       await ready;
@@ -76,6 +79,7 @@ export class WebContact extends Contact {
       dataChannel.addEventListener('close', () => {
 	console.log(host.name, 'closed connection to', target);
 	contact.connection = null;
+	resolveClosed(null);
       });
       dataChannel.addEventListener('message', event => contact.receiveWebRTC(event.data));
       return dataChannel;
@@ -103,8 +107,11 @@ export class WebContact extends Contact {
     const sender = this.host.contact.sname;
     const messageTag = this.messageTag++;
     const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
+    this.host.log('sending to', this.sname);
     this.send([messageTag, method, sender, key.toString(), ...rest]);
-    const response = await responsePromise;
+    //const response = await responsePromise;
+    const response = await Promise.race([responsePromise, this.closed]);
+    this.host.log('got response from', this.sname);
     return response;
   }
   async receiveWebRTC(dataString) {

@@ -13,13 +13,16 @@ export class NodeProbe extends NodeMessages {
   async step(targetKey, finder, helper, keysSeen) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     const contact = helper.contact;
+    this.log('step with', contact.sname);
     let results = await contact.sendRPC(finder, targetKey);
+    this.log('step got result from', contact.sname, !!results);
     if (!results) { // disconnected
       this.log('removing unconnected contact', contact.sname);
       await this.removeKey(contact.key);
       return [];
     }
     await this.addToRoutingTable(contact); // Live node, so update bucket.
+    this.log('step added contact', contact.sname);    
     if (this.constructor.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
       // Results are (helpers around) contacts. Set them up for this host.
@@ -28,7 +31,7 @@ export class NodeProbe extends NodeMessages {
     return results;
   }
   static alpha = 3; // How many lookup requests are initially tried in parallel. If no progress, we repeat with up to k more.
-  async iterate(targetKey, finder, k = this.constructor.k, trace = false) {
+  async iterate(targetKey, finder, k = this.constructor.k, trace = true) {
     // Promise a best-first list of k Helpers from the network, by repeatedly trying to improve our closest known by applying finder.
     // But if any finder operation answer isValueResult, answer that instead.
 
@@ -49,6 +52,7 @@ export class NodeProbe extends NodeMessages {
     pool = pool.slice(alpha); // Yes, this could be done with splice instead of slice, above, but it makes things hard to trace.
     let best = []; // The accumulated closest-first result.    
     while (toQuery.length && this.isRunning) { // Stop if WE disconnect.
+      if (trace) this.log('iterate', toQuery.length);
       let requests = toQuery.map(helper => this.step(targetKey, finder, helper, keysSeen));
       let results = await Promise.all(requests);
       if (trace) this.log(toQuery.map(h => h.name), '=>', results.map(r => r.map?.(h => h.name) || r));
