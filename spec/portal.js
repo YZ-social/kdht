@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebRTC } from '@yz-social/webrtc';
 import { WebContact, Node } from '../index.js';
 
-const nBots = 5;
+const nBots = 4;
 
 // NodeJS cluster forks a group of process that each communicate with the primary via send/message.
 // Each fork is a stateful kdht node that can each handle multiple WebRTC connections. The parent runs
@@ -43,34 +43,36 @@ if (cluster.isPrimary) {
   // Router
   const app = express();
   const router = express.Router();
+
+  router.get('/name/:label', (req, res, next) => { // Answer the actual sname corresponding to label.
+    const label = req.params.label;
+    // label can be a worker id, which alas starts from 1.
+    const index = (label === 'random') ? Math.floor(Math.random() * nBots) : label - 1;
+    const worker =  workers[index];
+    res.json(worker.tag);
+  });
+
   router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON POST requests.
     // Our WebRTC send [['offer', ...], ['icecandidate', ...], ...]
     // and accept responses of [['answer', ...], ['icecandidate', ...], ...]
     // through multiple POSTS.
     const {params, body} = req;
-
     // Find the specifed worker, or pick one at random.
-    const worker = (params.to === 'random') ?
-	  workers[Math.floor(Math.random() * nBots)] :
-	  (bots[params.to] || workers[params.to - 1]); // 'to' can be a guid, or worker id, which alas, starts from 1.
+    const worker = bots[params.to];
     //console.log('post from:', params.from, 'to:', params.to, 'handled by', worker?.id, worker?.tag);
-    if (!worker.tag) { // Has not yet reported in
-      res.sendStatus(403);
-      return;
-    }
+    if (!worker) return res.sendStatus(404);
+    if (!worker.tag) return res.sendStatus(403);
 
     // Each kdht worker node can handle connections from multiple clients. Specify which one.
-    body.unshift(params.from); // Adds sender sname at front of body, so that the worker can direct the message.
+    body.unshift(params.from); // Adds sender sname at front of body.
 
     // Pass the POST body to the worker and await the response.
-    const response = new Promise(resolve => worker.requestResolvers[params.from] = resolve);
+    const promise = new Promise(resolve => worker.requestResolvers[params.from] = resolve);
     worker.send(body);
-    let responding = await response;
+    let response = await promise;
     delete worker.requestResolvers[params.from]; // Now that we have the response.
 
-    // If needed, let the client know who they are talking to so later posts go to the right worker.
-    if (params.to !== worker.tag) responding = [['tag', worker.tag], ...responding];
-    res.send(responding);
+    return res.send(response);
   });
 
   // Portal server
@@ -140,8 +142,8 @@ if (cluster.isPrimary) {
     // TODO: Maybe have server support faster startup by remembering posts that it is not yet ready for?
     await new Promise(resolve => setTimeout(resolve, 2e3)); 
 
-    const bootstrap = await contact.ensureRemoteContact('S' + (cluster.worker.id - 1));
-    //await bootstrap.connect();
+    const bootstrapName = await contact.fetchBootstrap(cluster.worker.id - 1);
+    const bootstrap = await contact.ensureRemoteContact(bootstrapName);
     contact.join(bootstrap);
   }
 

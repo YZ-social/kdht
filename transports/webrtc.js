@@ -21,9 +21,15 @@ export class WebContact extends Contact {
     });
     return await response.json();
   }
+  async fetchBootstrap(label = 'random') {
+    const response = await fetch(`http://localhost:3000/kdht/name/${label}`);
+    return await response.json();
+  }
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;
   }
+  // Within a process, there is only one WebContact.serializer, so each process can only complete one  connection at a time.
+  // (It can maintain Node.maxTransports open connections. The serialization is a limit on the connection/signal process.)
   static serializer = Promise.resolve();
   async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
     const contact = this.host.noteContactForTransport(this);
@@ -52,23 +58,8 @@ export class WebContact extends Contact {
       const ready = connection.signalsReady;
       const dataChannelPromise = connection.ensureDataChannel('kdht');
       await ready;
-      connection.connectVia(async signals => {
-	const response = await contact.fetchSignals(`http://localhost:3000/kdht/join/${host.contact.sname}/${target || 'random'}`, signals);
-	//fixme remove console.log('fetch response', response.map(s => s[0]));
-	const [method, data] = response.length ? response[0] : [];
-	if (method === 'tag') { // We were told the target tag in a pseudo-signal. Use it going forward.
-	  console.warn(`${host.name} connected to target '${data}' instead of '${target}'.`);
-	  // KLUGE: When we connect through a portal, we don't yet know the name of the node to which we will connect, but
-	  // we do have to keep the contact (in bucket or loose transports). So now that we know the true name, we re-add it.
-	  // Note that should not be two overlapping connections in flight to the same target name, including an empty name.
-	  target = data;
-	  await contact.setName(data);
-	  connection.label = contact.webrtcLabel; // After setName.
-	  await this.host.addToRoutingTable(contact); // Serialized operation.
-	  response.shift();
-	}
-	return response;
-      });
+      await connection.connectVia(signals => contact.fetchSignals(`http://localhost:3000/kdht/join/${host.contact.sname}/${target}`, signals));
+
       const dataChannel = await dataChannelPromise;
       connection.reportConnection(true);
       dataChannel.addEventListener('close', () => {
@@ -86,13 +77,6 @@ export class WebContact extends Contact {
   getName(sname) { // Answer name from sname.
     if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
     return sname;
-  }
-  async setName(sname) { // A contact may have a temporary name that gets changed once connected. This fixing things.
-    const oldKey = this.node.key;
-    await this.host.removeKey(oldKey); // Serialized operation.
-    delete this._sname; // So that it gets re-cached.
-    this.node.name = this.getName(sname);
-    this.node.key = await Node.key(this.node.name); // Hashes name.
   }
   async ensureRemoteContact(sname) {
     if (sname === this.host.contact.sname) return this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
@@ -114,6 +98,7 @@ export class WebContact extends Contact {
     const messageTag = uuidv4();
     const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
     // this.host.log('sending to', this.sname);
+    Node.assert(this.connection, 'Connect failed to leave connection', this.connection, 'to', this.report, 'in', this.host.report(null));
     this.send([messageTag, method, sender, key.toString(), ...rest]);
     const response = await Promise.race([responsePromise, this.closed]);
     // this.host.log('got response from', this.sname);

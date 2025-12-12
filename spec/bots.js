@@ -8,6 +8,7 @@ const host = uuidv4();
 process.title = 'kdhtbot-' + host;
 
 if (cluster.isPrimary) {
+  console.log(Date.now());
   for (let i = 1; i < nBots; i++) {
     cluster.fork();
   }
@@ -17,6 +18,9 @@ await new Promise(resolve => setTimeout(resolve, 2e3));
 const contact = await WebContact.create({name: host
 					 , debug: true
 					});
-const c2 = await WebContact.create({name: '', isServerNode: true}, contact.node);
-//await c2.connect();
-contact.join(c2);
+const bootstrapName = await contact.fetchBootstrap();
+const c2 = await contact.ensureRemoteContact(bootstrapName);
+await contact.join(c2);
+console.log('\n\n\n**** joined ***\n\n');
+console.log(Date.now());
+

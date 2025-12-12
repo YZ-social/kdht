@@ -26,7 +26,7 @@ export class NodeTransports extends NodeStorage {
     let existing = this.findContactByKey(contact.key);
     if (existing) return existing;
     
-    if (this.nTransports >= this.constructor.maxTransports) { // Do we have to drop one first?
+    if (this.nTransports >= this.constructor.maxTransports) { // Determine if we have to drop one first, and do so.
       //console.log(this.name, 'needs to drop a transport');
       function removeLast(list) { // Remove and return the last element of list that has connction and is NOT sponsor.
 	const index = list.findLastIndex(element => element.connection && !contact.hasSponsor(element.key));
