@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebRTC } from '@yz-social/webrtc';
 import { WebContact, Node } from '../index.js';
 
-const nBots = 5;
+const nBots = 20;
 
 // NodeJS cluster forks a group of process that each communicate with the primary via send/message.
 // Each fork is a stateful kdht node that can each handle multiple WebRTC connections. The parent runs
@@ -91,48 +91,9 @@ if (cluster.isPrimary) {
 					   , debug: cluster.worker.id === 1 // id starts from 1
 					  });
   // Handle signaling that comes as a message from the server.
-  const inFlight = {}; // maps sender sname => WebRTC instance during signaling (i.e., until connected).
   process.on('message', async ([senderSname, ...incomingSignals]) => { // Signals from a sender through the server.
-    let webrtc = inFlight[senderSname];
-    if (!webrtc) {
-      contact.host.log('starting portal connection from', senderSname);
-      const requestingContact = await contact.ensureRemoteContact(senderSname);
-      contact.host.noteContactForTransport(requestingContact);
-      if (requestingContact.connection) { // Can happen if we receive client ICE after we have created data channel.
-	contact.host.log('already has a connection from', senderSname);
-	process.send([senderSname]); // Just enough for server to clean up.
-	return;
-      }
-      webrtc = inFlight[senderSname] = new WebRTC({label: 'p' + requestingContact.webrtcLabel});
-      webrtc.contact = requestingContact;
-      let {promise, resolve} = Promise.withResolvers();
-      requestingContact.closed = promise;
-      function cleanup() { // Free for GC.
-	console.log(contact.sname, 'closed connection to', senderSname);
-	webrtc.close();
-	contact.host.removeContact(webrtc.contact);
-	delete inFlight[senderSname]; // If not already gone.
-	resolve();
-      }
-      const timer = setTimeout(cleanup, 15e3); // Enough to complete the connection.
-
-      requestingContact.connection = webrtc.ensureDataChannel('kdht', {}, incomingSignals)
-	.then(async dataChannel => {
-	  clearTimeout(timer);
-	  webrtc.reportConnection(true);
-	  dataChannel.addEventListener('close', cleanup);
-	  dataChannel.addEventListener('message', event => requestingContact.receiveWebRTC(event.data));
-	  delete inFlight[senderSname];
-	  //setTimeout(() => contact.host.report(), 500);
-	  return dataChannel;
-	});
-      incomingSignals = []; // Nothing further to respond() to (below) just yet.
-    } else {
-      contact.host.log('additional signaling message from', senderSname);
-    }
-    // Give signals to webrtc, and send response to server for relaying back to remote node.
-    const responding = await webrtc.respond(incomingSignals);
-    process.send([senderSname, ...responding]);
+    const response = await contact.signals(senderSname, ...incomingSignals);
+    process.send([senderSname, ...response]);
   });
 
   process.send(contact.sname); // Report in to server.

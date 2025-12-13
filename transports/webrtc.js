@@ -31,17 +31,43 @@ export class WebContact extends Contact {
   // Within a process, there is only one WebContact.serializer, so each process can only complete one  connection at a time.
   // (It can maintain Node.maxTransports open connections. The serialization is a limit on the connection/signal process.)
   static serializer = Promise.resolve();
-  async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
+  channelName = 'kdht';
+
+  ensureWebRTC(initialSignals) { // If not already configured, sets up contact to have properties:
+    // - connection - a promise for an open webrtc data channel:
+    //   send(string) puts data on the channel
+    //   incomming messages are dispatched to receiveWebRTC(string)
+    // - closed - resolves when webrtc closes.
+    // - webrtc - an instance of WebRTC (which may be used for webrtc.respond()
+    // initialSignals should be a list, or null for the creator of the offer.
+    if (this.webrtc) return this.webrtc;
+
+    const webrtc = this.webrtc = new WebRTC({label: this.webrtcLabel});
+    let {promise, resolve} = Promise.withResolvers();
+    this.closed = promise;
+    const dataChannelPromise = webrtc.ensureDataChannel(this.channelName, {}, initialSignals);
+    dataChannelPromise.then(dataChannel => {
+      webrtc.reportConnection(true);
+      dataChannel.addEventListener('close', () => {
+	this.connection = this.webrtc = null;
+	resolve(null);
+      });
+      dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
+    });
+    return dataChannelPromise;
+  }
+  connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
+    // Creates a WebRTC instance and uses it's connectVia to to signal.
     const contact = this.host.noteContactForTransport(this);
     //this.host.log('ensuring connection for', contact.sname, contact.connection ? 'exists' : 'must create');
     if (contact.connection) return contact.connection;
 
     //console.log('setting client contact connection promise');
-    return contact.connection = contact.constructor.serializer = contact.constructor.serializer.then(async () => {
+    return contact.connection = contact.constructor.serializer = contact.constructor.serializer.then(async () => { // TODO: do we need this serialization?
       const { host, node, isServerNode } = contact;
       // Anyone can connect to a server node using the server's connect endpoint.
       // Anyone in the DHT can connect to another DHT node through a sponsor.
-      if (!isServerNode) {
+      if (!isServerNode) { // FIXME handle this.
 	console.log(`\n\n\n*** non-server node ${node.name} ***\n\n`);
 	let mutualSponsor = null;
 	// for (const sponsor of contact._sponsors.values()) {
@@ -50,26 +76,19 @@ export class WebContact extends Contact {
 	// }
 	if (!mutualSponsor) return null;
       }
-      let target = contact.sname;
-      //console.log(`starting client signaling ${host.name} => '${target}' (${node.name})`);
-      const connection = new WebRTC({label: contact.webrtcLabel});
-      let resolveClosed;
-      contact.closed = new Promise(resolve => resolveClosed = resolve);
-      const ready = connection.signalsReady;
-      const dataChannelPromise = connection.ensureDataChannel('kdht');
-      await ready;
-      await connection.connectVia(signals => contact.fetchSignals(`http://localhost:3000/kdht/join/${host.contact.sname}/${target}`, signals));
-
-      const dataChannel = await dataChannelPromise;
-      connection.reportConnection(true);
-      dataChannel.addEventListener('close', () => {
-	console.log(host.name, 'closed connection to', target);
-	contact.connection = null;
-	resolveClosed(null);
-      });
-      dataChannel.addEventListener('message', event => contact.receiveWebRTC(event.data));
-      return dataChannel;
+      const dataChannelPromise = contact.ensureWebRTC(null);
+      await this.webrtc.signalsReady;
+      await this.webrtc.connectVia(signals => this.fetchSignals(`http://localhost:3000/kdht/join/${this.host.contact.sname}/${this.sname}`, signals)); // fixme other channels
+      return await dataChannelPromise;
     });
+  }
+  async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the new contact on
+    // host to receive them, and promising a response.
+    let contact = await this.ensureRemoteContact(senderSname);
+    if (contact.webrtc) return await contact.webrtc.respond(signals); // TODO: move this and its counterpart on connect to ensureWebRTC?
+    this.host.noteContactForTransport(contact);
+    contact.connection = contact.ensureWebRTC(signals);
+    return await contact.webrtc.respond([]);
   }
   async send(message) { // Promise to send through previously opened connection promise.
     return this.connection.then(channel => channel?.send(JSON.stringify(message))); // Connection could be reset to null
