@@ -41,7 +41,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     if (!isServerNode) {
       let mutualSponsor = null;
       for (const sponsor of this._sponsors.values()) {
-	if (!sponsor.connection || !sponsor.node.findContactByKey(this.node.key)?.connection) continue;
+	if (!sponsor.connection || !sponsor.node.existingContact(this.node.name)?.connection) continue;
 	mutualSponsor = sponsor;
       }
       if (!mutualSponsor) return null;

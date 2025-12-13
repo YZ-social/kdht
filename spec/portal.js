@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebRTC } from '@yz-social/webrtc';
 import { WebContact, Node } from '../index.js';
 
-const nBots = 4;
+const nBots = 5;
 
 // NodeJS cluster forks a group of process that each communicate with the primary via send/message.
 // Each fork is a stateful kdht node that can each handle multiple WebRTC connections. The parent runs
@@ -110,7 +110,7 @@ if (cluster.isPrimary) {
       function cleanup() { // Free for GC.
 	console.log(contact.sname, 'closed connection to', senderSname);
 	webrtc.close();
-	contact.host.removeKey(webrtc.contact.key);
+	contact.host.removeContact(webrtc.contact);
 	delete inFlight[senderSname]; // If not already gone.
 	resolve();
       }

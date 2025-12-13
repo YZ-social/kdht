@@ -56,19 +56,26 @@ export class NodeContacts extends NodeTransports {
     });
     return contacts;
   }
+  contactDictionary = {}; // maps name => contact for lifetime of Node instance until removeContact.
+  existingContact(name) { // Returns contact with the given name for this node, without searching buckets or looseTransports.
+    return this.contactDictionary[name];
+  }
+  addExistingContact(contact) { // Adds to set of contactDictionary.
+    this.contactDictionary[contact.name] = contact;
+  }
   findContact(match) { // Answer the contact for which match predicate is true, if any, whether in buckets or looseTransports. Does not remove it.
     let contact = this.looseTransports.find(match);
     if (contact) return contact;
     this.forEachBucket(bucket => !(contact = bucket.contacts.find(match))); // Or we could compute index and look just there.
     return contact;
   }
-  findContactByKey(key) { // findContact matching the specified key.
+  findContactByKey(key) { // findContact matching the specified key. To be found, contact must be in routingTable or looseTransports (which is different from existingContact()).
     return this.findContact(contact => contact.key === key);
   }
   ensureContact(contact, sponsor = null) { // Return existing contact, if any (including looseTransports), else clone a new one for this host. Set sponsor.
-    // Subtle: SimulatedContact clone uses findContactByKey (above) to reuse an existing contact on the host, if possible.
+    // Subtle: Contact clone uses existingContact (above) to reuse an existing contact on the host, if possible.
     // This is vital for bookkeeping through connections and sponsorship.
-    contact = contact.clone(this); // Includes findContactByKey.
+    contact = contact.clone(this);
     contact.noteSponsor(sponsor);
     return contact;
   }
@@ -76,12 +83,14 @@ export class NodeContacts extends NodeTransports {
   queueRoutingTableChange(thunk) { // Promise to resolve thunk() -- after all previous queued thunks have resolved.
     return this.routingTableSerializer = this.routingTableSerializer.then(thunk);
   }
-  removeKey(key) { // Removes from node entirely if present, from looseTransports or bucket as necessary.
+  removeContact(contact) { // Removes from node entirely if present, from looseTransports or bucket as necessary.
     return this.queueRoutingTableChange(() => {
+      delete this.contactDictionary[contact.name];
+      const key = contact.key;
       if (this.removeLooseTransport(key)) return;
       const bucketIndex = this.getBucketIndex(key);
       const bucket = this.routingTable.get(bucketIndex);
-      bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet.
+      bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet, so maybe no bucket.
     });
   }
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.

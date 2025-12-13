@@ -44,10 +44,10 @@ export class WebContact extends Contact {
       if (!isServerNode) {
 	console.log(`\n\n\n*** non-server node ${node.name} ***\n\n`);
 	let mutualSponsor = null;
-	for (const sponsor of contact._sponsors.values()) {
-	  if (!sponsor.hasConnection || !sponsor.node.findContactByKey(contact.node.key)?.hasConnection) continue;
-	  mutualSponsor = sponsor;
-	}
+	// for (const sponsor of contact._sponsors.values()) {
+	//   if (!sponsor.hasConnection || !sponsor.node.existingContact(contact.node.name)?.hasConnection) continue;
+	//   mutualSponsor = sponsor;
+	// }
 	if (!mutualSponsor) return null;
       }
       let target = contact.sname;
@@ -80,12 +80,14 @@ export class WebContact extends Contact {
   }
   async ensureRemoteContact(sname) {
     if (sname === this.host.contact.sname) return this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
-    let contact = this.host.findContact(contact => contact.sname === sname);
-    if (contact) return contact;
-    this.host.log(`ensureRemoteContact is creating contact for ${sname} in ${this.sname}.`);
     const name = this.getName(sname);
+
+    // Not the final answer. Just an optimization to avoid hashing name.
+    let contact = this.host.existingContact(name);
+    if (contact) return contact;
+
     const isServerNode = name !== sname;
-    contact = await this.constructor.create({name, isServerNode}, this.host);
+    contact = await this.constructor.create({name, isServerNode}, this.host); // checks for existence AFTER creating Node.
     return contact;
   }
   inFlight = new Map();

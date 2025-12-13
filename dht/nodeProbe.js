@@ -18,7 +18,7 @@ export class NodeProbe extends NodeMessages {
     // this.log('step got result from', contact.sname, !!results);
     if (!results) { // disconnected
       // this.log('removing unconnected contact', contact.sname);
-      await this.removeKey(contact.key);
+      await this.removeContact(contact);
       return [];
     }
     await this.addToRoutingTable(contact); // Live node, so update bucket.

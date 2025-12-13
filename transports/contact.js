@@ -10,13 +10,17 @@ export class Contact {
   // node is the far end of the contact, and could be Node (for in-process simulation) or a serialization of a key.
   static counter = 0;
   static fromNode(node, host = node) {
-    const contact = new this();
+    let contact = host.existingContact(node.name);
+    if (contact) Node.assert(contact.host === host, 'Existing contact host', contact.host.name, 'does not match specified host', host.name, 'for', node.name);
+    if (!contact) host.log('Creating contact', node.name);
+    contact ||= new this();
     // Every Contact is unique to a host Node, from which it sends messages to a specific "far" node.
     // Every Node caches a contact property for that Node as it's own host, and from which Contacts for other hosts may be cloned.
     node.contact ||= contact;
     contact.node = node;
     contact.host = host; // In whose buckets (or looseTransports) does this contact live?
     contact.counter = this.counter++;
+    host.addExistingContact(contact); // After contact.node (and thus contact.namem) is set.
     return contact;
   }
   static async create(properties, host = undefined) {
@@ -30,8 +34,8 @@ export class Contact {
     // Unless searchHost is null, any existing contact on hostNode will be returned.
     if (this.host === hostNode) return this; // All good.
 
-    // Reuse existing contact in hostNode -- if still connected.
-    let existing = searchHost && hostNode.findContactByKey(this.key);
+    // Reuse existing contact in hostNode -- if still running.
+    let existing = searchHost && hostNode.existingContact(this.name);
     if (existing?.isRunning) return existing;
 
     // Make one.
@@ -100,6 +104,7 @@ export class Contact {
   // Utilities
   get report() { // Answer string of name, followed by * if disconnected
     //return `${this.connection ? '_' : ''}${this.sname}${this.isRunning ? '' : '*'}@${this.host.contact.sname}v${this.counter}`; // verbose version
+    //return `${this.connection ? '_' : ''}${this.sname}v${this.counter}${this.isRunning ? '' : '*'}`;
     return `${this.connection ? '_' : ''}${this.sname}${this.isRunning ? '' : '*'}`; // simpler version
   }
   static pingTimeMS = 30; // ms
