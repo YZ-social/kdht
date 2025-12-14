@@ -92,13 +92,19 @@ export class Contact {
     return this.host.receiveRPC(method, sender, ...rest);
   }
   // Sponsorship
-  _sponsors = new Map();
+  _sponsors = new Map(); // maps key => contact
   noteSponsor(contact) {
     if (!contact) return;
     this._sponsors.set(contact.key, contact);
   }
   hasSponsor(key) {
     return this._sponsors.get(key);
+  }
+  findSponsor(predicate) { // Answer the sponsor contact for which predicate(contact) is true, else falsy.
+    for (const candidate of this._sponsors.values()) {
+      if (predicate(candidate)) return candidate;
+    }
+    return null;
   }
 
   // Utilities

@@ -7,7 +7,7 @@ export class NodeProbe extends NodeMessages {
   static isValueResult(rpcResult) {
     return rpcResult !== 'pong' && 'value' in rpcResult;
   }
-  static isArrayResult(rpcResult) {
+  static isContactsResult(rpcResult) {
     return Array.isArray(rpcResult);
   }
   async step(targetKey, finder, helper, keysSeen) {
@@ -23,7 +23,7 @@ export class NodeProbe extends NodeMessages {
     }
     await this.addToRoutingTable(contact); // Live node, so update bucket.
     // this.log('step added contact', contact.sname);
-    if (this.constructor.isArrayResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
+    if (this.constructor.isContactsResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key));
       // Results are (helpers around) contacts. Set them up for this host.
       results = results.map(h => new Helper(this.ensureContact(h.contact, contact), h.distance));

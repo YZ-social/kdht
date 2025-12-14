@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebRTC } from '@yz-social/webrtc';
 import { WebContact, Node } from '../index.js';
 
-const nBots = 20;
+const nBots = 1;
 
 // NodeJS cluster forks a group of process that each communicate with the primary via send/message.
 // Each fork is a stateful kdht node that can each handle multiple WebRTC connections. The parent runs

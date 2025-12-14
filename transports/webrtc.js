@@ -49,6 +49,7 @@ export class WebContact extends Contact {
     dataChannelPromise.then(dataChannel => {
       webrtc.reportConnection(true);
       dataChannel.addEventListener('close', () => {
+	console.log(webrtc.label, 'connection closed');
 	this.connection = this.webrtc = null;
 	resolve(null);
       });
@@ -67,18 +68,30 @@ export class WebContact extends Contact {
       const { host, node, isServerNode } = contact;
       // Anyone can connect to a server node using the server's connect endpoint.
       // Anyone in the DHT can connect to another DHT node through a sponsor.
-      if (!isServerNode) { // FIXME handle this.
-	console.log(`\n\n\n*** non-server node ${node.name} ***\n\n`);
-	let mutualSponsor = null;
-	// for (const sponsor of contact._sponsors.values()) {
-	//   if (!sponsor.hasConnection || !sponsor.node.existingContact(contact.node.name)?.hasConnection) continue;
-	//   mutualSponsor = sponsor;
-	// }
-	if (!mutualSponsor) return null;
-      }
       const dataChannelPromise = contact.ensureWebRTC(null);
       await this.webrtc.signalsReady;
-      await this.webrtc.connectVia(signals => this.fetchSignals(`http://localhost:3000/kdht/join/${this.host.contact.sname}/${this.sname}`, signals)); // fixme other channels
+      if (isServerNode) {
+	await contact.webrtc.connectVia(signals => this.fetchSignals(`http://localhost:3000/kdht/join/${this.host.contact.sname}/${this.sname}`, signals));
+      } else {
+	//console.log(host.contact.sname, 'connecting to non-server node', node.name);
+	let sponsor = contact.findSponsor(candidate => candidate.connection);
+	if (!sponsor) {
+	  sponsor = contact.findSponsor(candidate => candidate.isServerNode);
+	  if (sponsor) {
+	    //console.log(host.contact.sname, 'connecting to server sponsor', sponsor?.sname);
+	    await sponsor.connect(); // If it was connected, we would have found it above.
+	  }
+	}
+	if (!sponsor) {
+	  console.error(`Cannot reach unsponsored contact ${contact.sname}.`);
+	  await contact.host.removeContact(contact);
+	  return contact.connection = contact.webrtc = null;
+	}
+	//console.log(host.contact.sname, 'signaling through', sponsor.sname, 'to', contact.sname, contact.key);
+	// All RPCs start with methodName and targetKey.
+	// Ultimately, the receiving signals method will then need original senderSname, ...signals.
+	await contact.webrtc.connectVia(async signals => sponsor.sendRPC('forwardSignals', contact.key, host.contact.sname, ...signals));
+      }
       return await dataChannelPromise;
     });
   }
@@ -97,7 +110,7 @@ export class WebContact extends Contact {
     if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
     return sname;
   }
-  async ensureRemoteContact(sname) {
+  async ensureRemoteContact(sname, sponsor = null) {
     if (sname === this.host.contact.sname) return this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
     const name = this.getName(sname);
 
@@ -107,34 +120,67 @@ export class WebContact extends Contact {
 
     const isServerNode = name !== sname;
     contact = await this.constructor.create({name, isServerNode}, this.host); // checks for existence AFTER creating Node.
+    contact.noteSponsor(sponsor);
     return contact;
   }
+  receiveRPC(method, sender, key, ...rest) { // Receive an RPC from sender, dispatch, and return that value, which will be awaited and sent back to sender.
+    if (method === 'forwardSignals') { // Can't be handled by Node, because 'forwardSignals' is specific to WebContact.
+      const [sendingSname, ...signals] = rest;
+      //console.log(this.host.contact.sname, this.host.key, 'received forwardingSignals from', sender.sname, 'on contact', this.sname, this.key, 'concerning', key);
+      if (key === this.host.key) { // for us!
+	//console.log(this.host.contact.sname, 'processing signals from', sendingSname, signals.map(s => s[0]));
+	return this.signals(...rest);
+      } else { // Forard to the target.
+	const target = this.host.findContactByKey(key);
+	if (!target) {
+	  //console.log(this.host.contact.same, 'does not have contact to', sendingSname);
+	  return null;
+	}
+	//if (this.debugCounter++ > 3) process.exit(1);
+	//console.log(this.host.contact.sname, 'forwarding signals from', sendingSname, signals.map(s => s[0]), 'to target', target.sname, key);
+	return target.sendRPC('forwardSignals', key, ...rest);
+      }
+    }
+    return super.receiveRPC(method, sender, key, ...rest);
+  }
+  //debugCounter = 0;
   inFlight = new Map();
   async transmitRPC(method, key, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
-    await this.connect();
+    if (!await this.connect()) return null;
     const sender = this.host.contact.sname;
     // uuid so that the two sides don't send a request with the same id to each other.
     // Alternatively, we could concatenate a counter to our host.name.
     const messageTag = uuidv4();
     const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
     // this.host.log('sending to', this.sname);
-    Node.assert(this.connection, 'Connect failed to leave connection', this.connection, 'to', this.report, 'in', this.host.report(null));
+    //console.log(this.host.contact.sname, 'sending', method, key, rest.map(s => Array.isArray(s) ? s[0] : s), 'to', this.sname);
     this.send([messageTag, method, sender, key.toString(), ...rest]);
     const response = await Promise.race([responsePromise, this.closed]);
     // this.host.log('got response from', this.sname);
     return response;
   }
-  async receiveWebRTC(dataString) {
+  async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
+    // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.
+    // As we do the latter, we generate and note (in transmitRPC) a message tag included in the message.
+    // If we find that in our inFlight tags, then the message is a response.
     const [messageTag, ...data] = JSON.parse(dataString);
     const responder = this.inFlight.get(messageTag);
-    if (responder) { // A response to something we sent.
+    if (responder) { // A response to something we sent and are waiting for.
       let [result] = data;
       this.inFlight.delete(messageTag);
       //this.host.log('received response', result);
-      if (this.host.constructor.isArrayResult(result)) {
-	responder(await Promise.all(result.map(async ([sname, distance]) =>
-	  new Helper(await this.ensureRemoteContact(sname), BigInt(distance)))));
+      if (Array.isArray(result)) {
+	if (!result.length) responder(result);
+	const first = result[0];
+	const isSignal = Array.isArray(first) && ['offer', 'answer', 'icecandidate'].includes(first[0]);
+	//console.log(this.host.contact.sname, 'got rpc response on contact', this.sname, isSignal, result.map(s => Array.isArray(s) ? s[0] : s));
+	if (isSignal) {
+	  responder(result); // This could be the sponsor or the original sender. Either way, it will know what to do.
+	} else {
+	  responder(await Promise.all(result.map(async ([sname, distance]) =>
+	    new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance)))));
+	}
       } else {
 	responder(result);
       }
@@ -143,7 +189,10 @@ export class WebContact extends Contact {
       const sender = await this.ensureRemoteContact(senderLabel);
       //this.host.log('dispatched', method, 'from', sender.sname);
       let response = await this.receiveRPC(method, sender, BigInt(key), ...rest);
-      if (this.host.constructor.isArrayResult(response)) response = response.map(helper => [helper.contact.sname, helper.distance.toString()]);
+      //if (method === 'forwardSignals') console.log(this.host.contact.sname, 'incoming signals through', this.sname, 'originating from', rest[0]);
+      if ((method !== 'forwardSignals') && this.host.constructor.isContactsResult(response)) {
+	response = response.map(helper => [helper.contact.sname, helper.distance.toString()]);
+      }
       this.send([messageTag, response]);
     }
   }
