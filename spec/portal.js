@@ -124,7 +124,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     await Node.delay(1e3 * argv.nPortals);
     const args = ['spec/bots.js', '--nBots', argv.nBots, '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
     console.log('spawning node', args.join(' '));
-    const bots = spawn('node', args);
+    const bots = spawn('node', args, { shell: true });
     bots.stdout.on('data', data => console.log(data.slice(0, -1).toString()));
     bots.stderr.on('data', data => console.error(data.slice(0, -1).toString()));
   }    

@@ -39,7 +39,7 @@ if (cluster.isPrimary) {
     console.log(new Date(), 'Waiting a refresh interval while bots get randomly created before write/read test');
     setTimeout(() => {
       const args = ['jasmine', 'spec/dhtWriteRead.js', '--', '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
-      const bots = spawn('npx', args);
+      const bots = spawn('npx', args, { shell: true });
       console.log(new Date(), 'spawning npx', args.join(' '));
       bots.stdout.on('data', data => console.log(data.slice(0, -1).toString()));
       bots.stderr.on('data', data => console.error(data.slice(0, -1).toString()));
