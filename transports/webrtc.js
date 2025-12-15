@@ -71,13 +71,14 @@ export class WebContact extends Contact {
     contact.initiating = true;
     //console.log('setting client contact connection promise');
     return contact.connection = contact.constructor.serializer = contact.constructor.serializer.then(async () => { // TODO: do we need this serialization?
-      const { host, node, isServerNode } = contact;
+      const { host, node, isServerNode, bootstrapHost } = contact;
       // Anyone can connect to a server node using the server's connect endpoint.
       // Anyone in the DHT can connect to another DHT node through a sponsor.
       const dataChannelPromise = contact.ensureWebRTC(null);
       await this.webrtc.signalsReady;
-      if (isServerNode) {
-	await contact.webrtc.connectVia(signals => this.fetchSignals(`http://localhost:3000/kdht/join/${this.host.contact.sname}/${this.sname}`, signals))
+      if (bootstrapHost) {
+	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${this.sname}`;
+	await contact.webrtc.connectVia(signals => this.fetchSignals(url, signals))
 	  .catch(error => {
 	    console.error(contact.webrtc.label, 'failed to connect through server');
 	    console.error(error);
@@ -128,16 +129,21 @@ export class WebContact extends Contact {
     return sname;
   }
   async ensureRemoteContact(sname, sponsor = null) {
-    if (sname === this.host.contact.sname) return this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
+    let contact;
+    if (sname === this.host.contact.sname) {
+      contact = this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
+    }
     const name = this.getName(sname);
-
-    // Not the final answer. Just an optimization to avoid hashing name.
-    let contact = this.host.existingContact(name);
-    if (contact) return contact;
-
-    const isServerNode = name !== sname;
-    contact = await this.constructor.create({name, isServerNode}, this.host); // checks for existence AFTER creating Node.
-    contact.noteSponsor(sponsor);
+    if (!contact) {
+      // Not the final answer. Just an optimization to avoid hashing name.
+      contact = this.host.existingContact(name);
+    }
+    if (!contact) {
+      const isServerNode = name !== sname;
+      contact = await this.constructor.create({name, isServerNode}, this.host); // checks for existence AFTER creating Node.
+    }
+    if (sponsor instanceof Contact) contact.noteSponsor(sponsor);
+    else if (typeof(sponsor) === 'string') contact.bootstrapHost = sponsor;
     return contact;
   }
   receiveRPC(method, sender, key, ...rest) { // Receive an RPC from sender, dispatch, and return that value, which will be awaited and sent back to sender.

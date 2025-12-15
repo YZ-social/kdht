@@ -6,7 +6,11 @@
   "type": "module",
   "scripts": {
     "test": "npx jasmine",
-    "smoke": "node spec/portal.js --nPortals 5 --nBots 5 --nWrites 100"
+    "smoke": "node spec/portal.js --nPortals 5 --nBots 5 --nWrites 100",
+    "load50": "node spec/portal.js --nPortals 10 --nBots 40 --nWrites 100",
+    "load100": "node spec/portal.js --nPortals 10 --nBots 90 --nWrites 100",
+    "load150": "node spec/portal.js --nPortals 15 --nBots 135 --nWrites 100",
+    "load200": "node spec/portal.js --nPortals 20 --nBots 180 --nWrites 100"    
   },
   "dependencies": {
     "@yz-social/webrtc": "^0.0.5"

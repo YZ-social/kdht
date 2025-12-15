@@ -26,6 +26,6 @@ While a Node maintains several Contacts in its KBuckets, these are organized bas
 
 ## TODO
 
-- Faster startup.
+- Get rid of sname. Unnecessary.
 - Use a uniform RPC dispatcher everywhere, isntead of bespoke inFlight promises to await, and the like.
 - In WebRTC, We wrap each signal in an array with a leading type: [['offer', offerObject], ...['icecandidate', iceCandidateObject]]. We don't need to do that, as the objects are all either of the form {type: 'offer', ..}, or {candidate: ...} (with no 'type' property).

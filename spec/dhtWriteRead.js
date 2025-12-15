@@ -21,7 +21,7 @@ describe("DHT write/read", function () {
     const bootstrapName = await contact.fetchBootstrap();
     const bootstrapContact = await contact.ensureRemoteContact(bootstrapName);
     console.log(new Date(), 'Joining', bootstrapContact.sname);
-    await contact.join(bootstrapContact);
+    await contact.join(bootstrapContact, 'http://localhost:3000/kdht');
     for (let index = 0; index < nWrites; index++) {
       const wrote = await contact.store(index, index);
       console.log('Wrote', index);

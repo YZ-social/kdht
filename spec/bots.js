@@ -41,9 +41,10 @@ if (cluster.isPrimary) {
       const args = ['jasmine', 'spec/dhtWriteRead.js', '--', '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
       const bots = spawn('npx', args, { shell: true });
       console.log(new Date(), 'spawning npx', args.join(' '));
-      bots.stdout.on('data', data => console.log(data.slice(0, -1).toString()));
-      bots.stderr.on('data', data => console.error(data.slice(0, -1).toString()));
-    }, Node.refreshTimeIntervalMS);
+      function echo(data) { console.log(data.slice(0, -1).toString()); }
+      bots.stdout.on('data', echo);
+      bots.stderr.on('data', echo);
+    }, 2 * Node.refreshTimeIntervalMS);
   }
 }
 process.title = 'kdht-bot-' + host;
@@ -51,6 +52,6 @@ process.title = 'kdht-bot-' + host;
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
 const contact = await WebContact.create({name: host, debug: argv.v});
 const bootstrapName = await contact.fetchBootstrap();
-const c2 = await contact.ensureRemoteContact(bootstrapName);
+const c2 = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
 await contact.join(c2);
 

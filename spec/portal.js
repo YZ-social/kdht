@@ -97,7 +97,6 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     const {params, body} = req;
     // Find the specifed worker, or pick one at random.
     const worker = portals[params.to];
-    //console.log('post from:', params.from, 'to:', params.to, 'handled by', worker?.id, worker?.tag);
     if (!worker) return res.sendStatus(404);
     if (!worker.tag) return res.sendStatus(403);
 
@@ -125,8 +124,10 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     const args = ['spec/bots.js', '--nBots', argv.nBots, '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
     console.log('spawning node', args.join(' '));
     const bots = spawn('node', args, { shell: true });
-    bots.stdout.on('data', data => console.log(data.slice(0, -1).toString()));
-    bots.stderr.on('data', data => console.error(data.slice(0, -1).toString()));
+    // Slice off the trailing newline of data so that we don't have blank lines after our console adds one more.
+    function echo(data) { console.log(data.slice(0, -1).toString()); }
+    bots.stdout.on('data', echo);
+    bots.stderr.on('data', echo);
   }    
 
 } else { // A portal node through which client's can connect.
@@ -149,7 +150,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     // TODO: Maybe have server support faster startup by remembering posts that it is not yet ready for?
 
     const bootstrapName = await contact.fetchBootstrap(cluster.worker.id - 1);
-    const bootstrap = await contact.ensureRemoteContact(bootstrapName);
+    const bootstrap = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
     await contact.join(bootstrap);
   }
 }
