@@ -21,7 +21,7 @@ export class NodeRefresh extends NodeKeys {
     // least twice the signal being observed. In particular, allowing for some randomization,
     // as long as we're not completely overloaded, we should expect the target to hit at least
     // once for each thing it is trying to detect, and generally happen twice for each detectable event.
-    const adjustment = Math.floor(Math.random() * margin);
+    const adjustment = this.constructor.randomInteger(margin);
     return Math.floor(target + margin/2 - adjustment);
   }
   workQueue = Promise.resolve();

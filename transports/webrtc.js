@@ -13,16 +13,22 @@ export class WebContact extends Contact {
   get isServerNode() { return this.node.isServerNode; }
   get isRunning() { return this.node.isRunning; }
 
+  checkResponse(response) {
+    if (!response.ok) throw new Error(`${this.sname} fetch ${response.url} failed ${response.status}: ${response.statusText}.`);
+  }
   async fetchSignals(url, signalsToSend) {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(signalsToSend)
     });
+    this.checkResponse(response);
     return await response.json();
   }
   async fetchBootstrap(label = 'random') {
-    const response = await fetch(`http://localhost:3000/kdht/name/${label}`);
+    const url = `http://localhost:3000/kdht/name/${label}`;
+    const response = await fetch(url);
+    this.checkResponse(response);
     return await response.json();
   }
   get webrtcLabel() {
@@ -62,7 +68,7 @@ export class WebContact extends Contact {
     const contact = this.host.noteContactForTransport(this);
     //this.host.log('ensuring connection for', contact.sname, contact.connection ? 'exists' : 'must create');
     if (contact.connection) return contact.connection;
-
+    contact.initiating = true;
     //console.log('setting client contact connection promise');
     return contact.connection = contact.constructor.serializer = contact.constructor.serializer.then(async () => { // TODO: do we need this serialization?
       const { host, node, isServerNode } = contact;
@@ -71,7 +77,12 @@ export class WebContact extends Contact {
       const dataChannelPromise = contact.ensureWebRTC(null);
       await this.webrtc.signalsReady;
       if (isServerNode) {
-	await contact.webrtc.connectVia(signals => this.fetchSignals(`http://localhost:3000/kdht/join/${this.host.contact.sname}/${this.sname}`, signals));
+	await contact.webrtc.connectVia(signals => this.fetchSignals(`http://localhost:3000/kdht/join/${this.host.contact.sname}/${this.sname}`, signals))
+	  .catch(error => {
+	    console.error(contact.webrtc.label, 'failed to connect through server');
+	    console.error(error);
+	    return null;
+	  });
       } else {
 	//console.log(host.contact.sname, 'connecting to non-server node', node.name);
 	let sponsor = contact.findSponsor(candidate => candidate.connection);
@@ -90,7 +101,12 @@ export class WebContact extends Contact {
 	//console.log(host.contact.sname, 'signaling through', sponsor.sname, 'to', contact.sname, contact.key);
 	// All RPCs start with methodName and targetKey.
 	// Ultimately, the receiving signals method will then need original senderSname, ...signals.
-	await contact.webrtc.connectVia(async signals => sponsor.sendRPC('forwardSignals', contact.key, host.contact.sname, ...signals));
+	await contact.webrtc.connectVia(async signals => sponsor.sendRPC('forwardSignals', contact.key, host.contact.sname, ...signals))
+	  .catch(error => {
+	    console.error(contact.webrtc.label, 'failed to connect through peer', sponsor.sname);
+	    console.error(error);
+	    return null;
+	  });
       }
       return await dataChannelPromise;
     });
@@ -98,6 +114,7 @@ export class WebContact extends Contact {
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the new contact on
     // host to receive them, and promising a response.
     let contact = await this.ensureRemoteContact(senderSname);
+    if (contact.initiating) return []; // TODO: is this the right response?
     if (contact.webrtc) return await contact.webrtc.respond(signals); // TODO: move this and its counterpart on connect to ensureWebRTC?
     this.host.noteContactForTransport(contact);
     contact.connection = contact.ensureWebRTC(signals);

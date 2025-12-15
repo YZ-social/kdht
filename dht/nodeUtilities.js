@@ -4,10 +4,19 @@ export class NodeUtilities {
     Object.assign(this, properties);
   }
   isRunning = true;
+  static delay(ms) { // Promise to resolve (to nothing) after a given number of milliseconds
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+  static randomInteger(max) { // Return a random number between 0 (inclusive) and max (exclusive).
+    return Math.floor(Math.random() * max);
+  }
   
   debug = false;
-  log(...rest) { if (this.debug) console.log(this.name, ...rest); }
-  xlog(...rest) { console.log(this.name, ...rest); }  
+  get sname() { // The home contact sname, or just name if no contact
+    return this.contact?.sname || this.name;
+  }
+  log(...rest) { if (this.debug) console.log(this.sname, ...rest); }
+  xlog(...rest) { console.log(this.sname, ...rest); }  
   static assert(ok, ...rest) { // If !ok, log rests and exit.
     if (ok) return;
     console.error(...rest, new Error("Assert failure").stack); // Not throwing error, because we want to exit. But we are grabbing stack.

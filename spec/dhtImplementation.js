@@ -1,8 +1,8 @@
 // An example of the control functions needed for testing.
 
 // For running a server
-import express from 'express';
-import http from 'http';
+// import express from 'express';
+// import http from 'http';
 //import { router } from './routes/index.js';
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -122,12 +122,12 @@ async function shutdown(startIndex, stopIndex) { // Internal
 }
 
 
-const app = express();
-const port = 3000;
-app.set('port', port);
-app.use(express.json());
-//app.use('/test', router);
-app.listen(port);
+// const app = express();
+// const port = 3000;
+// app.set('port', port);
+// app.use(express.json());
+// //app.use('/test', router);
+// app.listen(port);
 
 let ping, transports;
 export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS, maxTransports) {
