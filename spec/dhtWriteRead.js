@@ -19,9 +19,10 @@ describe("DHT write/read", function () {
   beforeAll(async function () {
     contact = await WebContact.create({name: uuidv4(), debug: verbose});
     const bootstrapName = await contact.fetchBootstrap();
-    const bootstrapContact = await contact.ensureRemoteContact(bootstrapName);
-    console.log(new Date(), 'Joining', bootstrapContact.sname);
-    await contact.join(bootstrapContact, 'http://localhost:3000/kdht');
+    const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+    console.log(new Date(), contact.sname, 'joining', bootstrapContact.sname);
+    await contact.join(bootstrapContact);
+    console.log(new Date(), contact.sname, 'joined');    
     for (let index = 0; index < nWrites; index++) {
       const wrote = await contact.store(index, index);
       console.log('Wrote', index);
@@ -31,6 +32,7 @@ describe("DHT write/read", function () {
     console.log(new Date(), 'Reading');
   }, 5e3 * nWrites + 2 * Node.refreshTimeIntervalMS);
   afterAll(function () {
+    contact.disconnect();
     if (shutdown) {
       exec('pkill kdht-bot');
       Node.delay(2e3);

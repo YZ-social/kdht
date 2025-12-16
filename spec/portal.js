@@ -24,6 +24,11 @@ const argv = yargs(hideBin(process.argv))
 	default: 0,
 	description: "If non-zero, spawns bots.js with the given nBots."
       })
+      .option('thrash', {
+	type: 'boolean',
+	default: false,
+	description: "Do bots randomly disconnect and reconnect with no memory of previous data?"
+      })
       .option('nWrites', {
 	alias: 'w',
 	alias: "nwrites",
@@ -121,7 +126,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   if (argv.verbose) console.log(process.title, 'listening on', port);
   if (argv.nBots) {    
     await Node.delay(1e3 * argv.nPortals);
-    const args = ['spec/bots.js', '--nBots', argv.nBots, '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
+    const args = ['spec/bots.js', '--nBots', argv.nBots, '--thrash', argv.thrash || false, '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
     console.log('spawning node', args.join(' '));
     const bots = spawn('node', args, { shell: true });
     // Slice off the trailing newline of data so that we don't have blank lines after our console adds one more.

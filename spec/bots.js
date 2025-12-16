@@ -13,7 +13,12 @@ const argv = yargs(hideBin(process.argv))
 	alias: 'nbots',
 	type: 'number',
 	default: 20,
-	description: "The number of thrashbots, which can only be reached through the network."
+	description: "The number of bots, which can only be reached through the network."
+      })
+      .option('thrash', {
+	type: 'boolean',
+	default: false,
+	description: "Do bots randomly disconnect and reconnect with no memory of previous data?"
       })
       .option('nWrites', {
 	alias: 'w',
@@ -41,7 +46,7 @@ if (cluster.isPrimary) {
       const args = ['jasmine', 'spec/dhtWriteRead.js', '--', '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
       const bots = spawn('npx', args, { shell: true });
       console.log(new Date(), 'spawning npx', args.join(' '));
-      function echo(data) { console.log(data.slice(0, -1).toString()); }
+      function echo(data) { if (data[data.length - 1] === '\n') data = data.slice(0, -1); console.log(data.toString()); }
       bots.stdout.on('data', echo);
       bots.stderr.on('data', echo);
     }, 2 * Node.refreshTimeIntervalMS);
@@ -50,8 +55,22 @@ if (cluster.isPrimary) {
 process.title = 'kdht-bot-' + host;
 
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
-const contact = await WebContact.create({name: host, debug: argv.v});
-const bootstrapName = await contact.fetchBootstrap();
-const c2 = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
-await contact.join(c2);
+let contact = await WebContact.create({name: host, debug: argv.v});
+let bootstrapName = await contact.fetchBootstrap();
+let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+await contact.join(bootstrapContact);
+
+while (argv.thrash) {
+  await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
+  const next = uuidv4();
+  console.log('\n\n-- disconnecting', contact.host.report(null), 'and reconnecting as', next);
+  contact.disconnect();
+
+  contact = await WebContact.create({name: host, debug: argv.v});
+  bootstrapName = await contact.fetchBootstrap();
+  bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+  console.log('\n\n-- joining', contact.sname, 'via', bootstrapContact.sname);
+  await contact.join(bootstrapContact);
+  console.log('\n\n*** joined', contact.sname, 'via', bootstrapContact.sname, '***\n\n');
+}
 

@@ -76,38 +76,23 @@ export class WebContact extends Contact {
       // Anyone in the DHT can connect to another DHT node through a sponsor.
       const dataChannelPromise = contact.ensureWebRTC(null);
       await this.webrtc.signalsReady;
-      if (bootstrapHost) {
-	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${this.sname}`;
-	await contact.webrtc.connectVia(signals => this.fetchSignals(url, signals))
-	  .catch(error => {
-	    console.error(contact.webrtc.label, 'failed to connect through server');
-	    console.error(error);
-	    return null;
-	  });
-      } else {
-	//console.log(host.contact.sname, 'connecting to non-server node', node.name);
-	let sponsor = contact.findSponsor(candidate => candidate.connection);
-	if (!sponsor) {
-	  sponsor = contact.findSponsor(candidate => candidate.isServerNode);
-	  if (sponsor) {
-	    //console.log(host.contact.sname, 'connecting to server sponsor', sponsor?.sname);
-	    await sponsor.connect(); // If it was connected, we would have found it above.
-	  }
-	}
-	if (!sponsor) {
+      let sponsor = contact.findSponsor(candidate => candidate.connection) ||
+	  contact.findSponsor(candidate => candidate.isServerNode);
+      try {
+	if (sponsor) {
+	  await contact.webrtc.connectVia(async signals => sponsor.sendRPC('forwardSignals', contact.key, host.contact.sname, ...signals));
+	} else if (bootstrapHost || !contact.isServerNode) {
+	  const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${this.sname}`;
+	  await contact.webrtc.connectVia(signals => this.fetchSignals(url, signals));
+	} else {
 	  console.error(`Cannot reach unsponsored contact ${contact.sname}.`);
 	  await contact.host.removeContact(contact);
 	  return contact.connection = contact.webrtc = null;
 	}
-	//console.log(host.contact.sname, 'signaling through', sponsor.sname, 'to', contact.sname, contact.key);
-	// All RPCs start with methodName and targetKey.
-	// Ultimately, the receiving signals method will then need original senderSname, ...signals.
-	await contact.webrtc.connectVia(async signals => sponsor.sendRPC('forwardSignals', contact.key, host.contact.sname, ...signals))
-	  .catch(error => {
-	    console.error(contact.webrtc.label, 'failed to connect through peer', sponsor.sname);
-	    console.error(error);
-	    return null;
-	  });
+      } catch (error) {
+	console.error(`${contact.webrtc.label} failed to connect through ${sponsor ? `sponsor ${sponsor.sname}` : `bootstrap ${bootstrapHost || contact.sname}`}`);
+	console.error(error);
+	return null;
       }
       return await dataChannelPromise;
     });
@@ -122,7 +107,9 @@ export class WebContact extends Contact {
     return await contact.webrtc.respond([]);
   }
   async send(message) { // Promise to send through previously opened connection promise.
-    return this.connection.then(channel => channel?.send(JSON.stringify(message))); // Connection could be reset to null
+    return this.connection   // Connection could be reset to null
+      ?.then(channel => channel?.send(JSON.stringify(message)))
+      .catch(error => console.error(this.host.contact.sname, error, error.stack)); 
   }
   getName(sname) { // Answer name from sname.
     if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
@@ -220,6 +207,6 @@ export class WebContact extends Contact {
     }
   }
   disconnectTransport() {
-    this.connection?.close();
+    this.webrtc?.close();
   }
 }
