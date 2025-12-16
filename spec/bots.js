@@ -44,9 +44,9 @@ if (cluster.isPrimary) {
     console.log(new Date(), 'Waiting a refresh interval while bots get randomly created before write/read test');
     setTimeout(() => {
       const args = ['jasmine', 'spec/dhtWriteRead.js', '--', '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
-      const bots = spawn('npx', args, { shell: true });
+      const bots = spawn('npx', args, {shell: process.platform === 'win32'});
       console.log(new Date(), 'spawning npx', args.join(' '));
-      function echo(data) { if (data[data.length - 1] === '\n') data = data.slice(0, -1); console.log(data.toString()); }
+      function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
       bots.stdout.on('data', echo);
       bots.stderr.on('data', echo);
     }, 2 * Node.refreshTimeIntervalMS);
@@ -63,14 +63,12 @@ await contact.join(bootstrapContact);
 while (argv.thrash) {
   await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
   const next = uuidv4();
-  console.log('\n\n-- disconnecting', contact.host.report(null), 'and reconnecting as', next);
   contact.disconnect();
+  await Node.delay(1e3); // TODO: remove?
 
-  contact = await WebContact.create({name: host, debug: argv.v});
+  contact = await WebContact.create({name: next, debug: argv.v});
   bootstrapName = await contact.fetchBootstrap();
   bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
-  console.log('\n\n-- joining', contact.sname, 'via', bootstrapContact.sname);
   await contact.join(bootstrapContact);
-  console.log('\n\n*** joined', contact.sname, 'via', bootstrapContact.sname, '***\n\n');
 }
 

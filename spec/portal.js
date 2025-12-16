@@ -59,6 +59,11 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   // Our job is to launch some kdht nodes to which clients can connect by signaling through
   // a little web server operated here.
   process.title = 'kdht-portal-server';
+  function log(...rest) {
+    if (!argv.verbose) return;
+    console.log(process.title, ...rest);
+  }
+
   const portals = {}; // Maps worker sname => worker, for the full lifetime of the program. NOTE: MAY get filed in out of order from workers.
   for (let i = 0; i < argv.nPortals; i++) cluster.fork();
   const workers = Object.values(cluster.workers);
@@ -68,7 +73,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
 	portals[message] = worker;
 	worker.tag = message;
 	worker.requestResolvers = {}; // Maps sender sname => resolve function of a waiting promise in flight.
-	console.log(worker.id - 1, message);
+	log(worker.id - 1, message);
       } else {
 	// Each worker can have several simultaneous conversations going. We need to get the message to the correct
 	// conversation promise, which we do by calling the resolver that the POST handler is waiting on.
@@ -102,8 +107,14 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     const {params, body} = req;
     // Find the specifed worker, or pick one at random.
     const worker = portals[params.to];
-    if (!worker) return res.sendStatus(404);
-    if (!worker.tag) return res.sendStatus(403);
+    if (!worker) {
+      log('no worker', params.to);
+      return res.sendStatus(404);
+    }
+    if (!worker.tag) {
+      log('worker', params.to, 'not signed in yet');
+      return res.sendStatus(403);
+    }
 
     // Each kdht worker node can handle connections from multiple clients. Specify which one.
     body.unshift(params.from); // Adds sender sname at front of body.
@@ -123,14 +134,14 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   app.use(express.json());
   app.use('/kdht', router);
   app.listen(port);
-  if (argv.verbose) console.log(process.title, 'listening on', port);
+  log(process.title, 'listening on', port);
   if (argv.nBots) {    
     await Node.delay(1e3 * argv.nPortals);
     const args = ['spec/bots.js', '--nBots', argv.nBots, '--thrash', argv.thrash || false, '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
-    console.log('spawning node', args.join(' '));
-    const bots = spawn('node', args, { shell: true });
+    log('spawning node', args.join(' '));
+    const bots = spawn('node', args, {shell: process.platform === 'win32'});
     // Slice off the trailing newline of data so that we don't have blank lines after our console adds one more.
-    function echo(data) { console.log(data.slice(0, -1).toString()); }
+    function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
     bots.stdout.on('data', echo);
     bots.stderr.on('data', echo);
   }    
@@ -139,7 +150,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
 
   const hostName = uuidv4();
   process.title = 'kdht-portal-' + hostName;
-  const contact = await WebContact.create({name: hostName, isServerNode: true, debug: argv.v});
+  const contact = await WebContact.create({name: hostName, isServerNode: true, debug: argv.verbose});
   // Handle signaling that comes as a message from the server.
   process.on('message', async ([senderSname, ...incomingSignals]) => { // Signals from a sender through the server.
     const response = await contact.signals(senderSname, ...incomingSignals);
