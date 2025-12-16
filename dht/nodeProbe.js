@@ -5,7 +5,7 @@ import { NodeMessages } from './nodeMessages.js';
 export class NodeProbe extends NodeMessages {
   // There are only three kinds of rpc results: 'pong', [...helper], {value: something}
   static isValueResult(rpcResult) {
-    return rpcResult !== 'pong' && 'value' in rpcResult;
+    return rpcResult && rpcResult !== 'pong' && 'value' in rpcResult;
   }
   static isContactsResult(rpcResult) {
     return Array.isArray(rpcResult);
@@ -15,9 +15,8 @@ export class NodeProbe extends NodeMessages {
     const contact = helper.contact;
     // this.log('step with', contact.sname);
     let results = await contact.sendRPC(finder, targetKey);
-    // this.log('step got result from', contact.sname, !!results);
     if (!results) { // disconnected
-      // this.log('removing unconnected contact', contact.sname);
+      this.log('removing unconnected contact', contact.sname);
       await this.removeContact(contact);
       return [];
     }
@@ -82,6 +81,7 @@ export class NodeProbe extends NodeMessages {
 	pool = pool.slice(alpha);
       }
     }
+    if (trace) this.log('probe result', best.map(helper => helper.name));
     return best;
   }
 }
