@@ -53,10 +53,12 @@ export class WebContact extends Contact {
     this.closed = promise;
     const dataChannelPromise = webrtc.ensureDataChannel(this.channelName, {}, initialSignals);
     dataChannelPromise.then(dataChannel => {
+      this.initiating = null;
       webrtc.reportConnection(true);
       dataChannel.addEventListener('close', () => {
 	console.log(webrtc.label, 'connection closed');
-	this.connection = this.webrtc = null;
+	this.connection = this.webrtc = this.initiating = null;
+	// this.host.removeContact(this); //FIXME: it could have been closed on the other side because of maxTransports!
 	resolve(null);
       });
       dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
@@ -85,16 +87,15 @@ export class WebContact extends Contact {
 	  const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${this.sname}`;
 	  await contact.webrtc.connectVia(signals => this.fetchSignals(url, signals));
 	} else {
-	  console.error(`Cannot reach unsponsored contact ${contact.sname}.`);
-	  await contact.host.removeContact(contact);
-	  return contact.connection = contact.webrtc = null;
+	  throw new Error(`Cannot reach unsponsored contact ${contact.sname}.`);
 	}
+	return await dataChannelPromise;
       } catch (error) {
 	console.error(`${contact.webrtc.label} failed to connect through ${sponsor ? `sponsor ${sponsor.sname}` : `bootstrap ${bootstrapHost || contact.sname}`}`);
 	console.error(error);
-	return null;
+	await contact.host.removeContact(contact);
+	return contact.connection = contact.webrtc = null;
       }
-      return await dataChannelPromise;
     });
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the new contact on
@@ -208,5 +209,6 @@ export class WebContact extends Contact {
   }
   disconnectTransport() {
     this.webrtc?.close();
+    this.connection = this.webrtc = this.initiating = null;
   }
 }
