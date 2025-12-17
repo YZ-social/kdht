@@ -35,7 +35,6 @@ describe("DHT write/read", function () {
     contact.disconnect();
     if (shutdown) {
       exec('pkill kdht-bot');
-      Node.delay(2e3);
       exec('pkill kdht-portal-server');
     }
   });
@@ -44,6 +43,6 @@ describe("DHT write/read", function () {
       const read = await contact.node.locateValue(index);
       console.log('read', read);
       expect(read).toBe(index);
-    });
+    }, 10e3); // Can take longer to re-establish multiple connections.
   }
 });

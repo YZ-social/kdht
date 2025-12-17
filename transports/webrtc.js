@@ -39,7 +39,7 @@ export class WebContact extends Contact {
   static serializer = Promise.resolve();
   channelName = 'kdht';
 
-  ensureWebRTC(initialSignals, timeoutMS = 2.5e3) { // If not already configured, sets up contact to have properties:
+  ensureWebRTC(initialSignals, timeoutMS = 0/*fixme 2.5e3*/) { // If not already configured, sets up contacbt to have properties:
     // - connection - a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
     //   incomming messages are dispatched to receiveWebRTC(string)
@@ -54,7 +54,7 @@ export class WebContact extends Contact {
     this.closed = promise;
     const webrtc = this.webrtc = new WebRTC({label: this.webrtcLabel});
     const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
-      console.log(new Date(), webrtc.label, 'connection closed');
+      this.host.log('connection closed');
       resolve(null); // closed promise
       this.connection = this.webrtc = this.initiating = null;
     };
@@ -64,7 +64,8 @@ export class WebContact extends Contact {
 	  .then(dataChannel => {
 	    clearTimeout(timeout);
 	    this.initiating = null;
-	    webrtc.reportConnection(true);
+	    webrtc.reportConnection(this.host.debug).then(() => webrtc.statsElapsed > 500 &&
+							  console.log(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`));
 	    dataChannel.addEventListener('close', onclose);
 	    dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
 	    return dataChannel;
@@ -73,7 +74,7 @@ export class WebContact extends Contact {
     return Promise.race([channelPromise,
 			 new Promise(expired => {
 			   timeout = setTimeout(async () => {
-			     console.error(new Date(), this.host.contact.sname, 'connection timeout', this.sname);
+			     this.host.log('connection timeout', this.sname);
 			     onclose();
 			     //await this.host.removeContact(this); // fixme?
 			     expired(null);
@@ -83,10 +84,8 @@ export class WebContact extends Contact {
   connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Creates a WebRTC instance and uses it's connectVia to to signal.
     const contact = this.host.noteContactForTransport(this);
-    //this.host.log('ensuring connection for', contact.sname, contact.connection ? 'exists' : 'must create');
     if (contact.connection) return contact.connection;
     contact.initiating = true;
-    //console.log('setting client contact connection promise');
     return contact.connection = contact.constructor.serializer = contact.constructor.serializer.then(async () => { // TODO: do we need this serialization?
       const { host, node, isServerNode, bootstrapHost } = contact;
       // Anyone can connect to a server node using the server's connect endpoint.
@@ -109,15 +108,14 @@ export class WebContact extends Contact {
 	      response = await sponsor.sendRPC('forwardSignals', contact.key, host.contact.sname, ...signals);
 	      if (!response) {
 		sponsor = connected.pop();
-		if (sponsor) this.host.xlog('\n\n*** trying new sponsor', sponsor?.sname, 'for', contact.sname);
+		if (sponsor) this.host.log('trying new sponsor', sponsor?.sname, 'for', contact.sname);
 	      }
 	    }
 	    if (response) return response;
-	    this.host.xlog('giving up on', contact.sname);
 	    throw 'gone';
 	  });
 	} catch (thrown) {
-	  console.log('\n\n*** caught', thrown);
+	  this.host.xlog('giving up on', contact.sname, thrown);
 	  if (thrown === 'gone') return null;
 	  throw thrown;
 	}
@@ -138,7 +136,9 @@ export class WebContact extends Contact {
     return await contact.webrtc.respond([]);
   }
   async send(message) { // Promise to send through previously opened connection promise.
-    return this.connection?.then(channel => channel?.send(JSON.stringify(message)));
+    const channel = await this.connection;
+    if (!['open', 'connecting'].includes(channel?.readyState)) return;
+    channel.send(JSON.stringify(message));
   }
   getName(sname) { // Answer name from sname.
     if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
@@ -170,7 +170,7 @@ export class WebContact extends Contact {
       } else { // Forward to the target.
 	const target = this.host.findContactByKey(key);
 	if (!target) {
-	  //console.log(this.host.contact.same, 'does not have contact to', sendingSname);
+	  console.log(this.host.contact.sname, 'does not have contact to', sendingSname);
 	  return null;
 	}
 	return target.sendRPC('forwardSignals', key, ...rest);
@@ -197,6 +197,11 @@ export class WebContact extends Contact {
     // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.
     // As we do the latter, we generate and note (in transmitRPC) a message tag included in the message.
     // If we find that in our inFlight tags, then the message is a response.
+    if (dataString === '"bye"') { // Special messsage that the other side is disconnecting, so we can clean up early.
+      this.webrtc.close();
+      await this.host.removeContact(this);  // TODO: Make sure we're not invoking this in maxTransports cases.
+      return;
+    }
     const [messageTag, ...data] = JSON.parse(dataString);
     const responder = this.inFlight.get(messageTag);
     if (responder) { // A response to something we sent and are waiting for.
@@ -226,7 +231,9 @@ export class WebContact extends Contact {
       this.send([messageTag, response]);
     }
   }
-  disconnectTransport() {
+  async disconnectTransport() {
+    await this.send('bye'); await Node.delay(50); // FIXME: Hack: We'll need to be able to pass tests without this, too.
+
     this.webrtc?.close();
     this.connection = this.webrtc = this.initiating = null;
   }

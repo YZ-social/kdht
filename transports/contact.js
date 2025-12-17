@@ -100,9 +100,9 @@ export class Contact {
   hasSponsor(key) {
     return this._sponsors.get(key);
   }
-  findSponsor(predicate) { // Answer the sponsor contact for which predicate(contact) is true, else falsy.
+  async findSponsor(predicate) { // Answer the sponsor contact for which await predicate(contact) is true, else falsy.
     for (const candidate of this._sponsors.values()) {
-      if (predicate(candidate)) return candidate;
+      if (await predicate(candidate)) return candidate;
     }
     return null;
   }
