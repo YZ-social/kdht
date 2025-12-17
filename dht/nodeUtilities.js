@@ -4,8 +4,8 @@ export class NodeUtilities {
     Object.assign(this, properties);
   }
   isRunning = true;
-  static delay(ms) { // Promise to resolve (to nothing) after a given number of milliseconds
-    return new Promise(resolve => setTimeout(resolve, ms));
+  static delay(ms, value) { // Promise to resolve (to nothing) after a given number of milliseconds
+    return new Promise(resolve => setTimeout(resolve, ms, value));
   }
   static randomInteger(max) { // Return a random number between 0 (inclusive) and max (exclusive).
     return Math.floor(Math.random() * max);
