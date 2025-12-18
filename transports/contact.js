@@ -12,7 +12,7 @@ export class Contact {
   static fromNode(node, host = node) {
     let contact = host.existingContact(node.name);
     if (contact) Node.assert(contact.host === host, 'Existing contact host', contact.host.name, 'does not match specified host', host.name, 'for', node.name);
-    if (!contact) host.log('Creating contact', node.name);
+    //if (!contact) host.log('Creating contact', node.name);
     contact ||= new this();
     // Every Contact is unique to a host Node, from which it sends messages to a specific "far" node.
     // Every Node caches a contact property for that Node as it's own host, and from which Contacts for other hosts may be cloned.
@@ -72,16 +72,17 @@ export class Contact {
   sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
     //this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
-    if (!sender.isRunning) return null; // sender closed before call.
+    if (!sender.isRunning) {this.host.xlog('not running'); return null;  }// sender closed before call.
     if (sender.key === this.key) {
       const result = this.receiveRPC(method, sender, ...rest);
+      if (!result) this.host.xlog('no local result');
       return result;
     }
 
     const start = Date.now();
     return this.transmitRPC(method, ...rest) // The main event.
       .then(result => {
-	if (!sender.isRunning) return null; // Sender closed after call.
+	if (!sender.isRunning) {this.host.xlog('sender closed'); return null; } // Sender closed after call.
 	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));

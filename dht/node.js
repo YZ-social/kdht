@@ -1,3 +1,5 @@
+const { BigInt } = globalThis; // For linters.
+import { v4 as uuidv4 } from 'uuid';
 import { NodeProbe } from './nodeProbe.js';
 
 /*
@@ -65,5 +67,70 @@ export class Node extends NodeProbe {
     // }
 
     return this.contact; // Answering this node's home contact is handy for chaining or keeping track of contacts being made and joined.
+  }
+
+
+  // TODO: separate all this out: neither transport nor dht.
+  // TODO: fragment/reassemble big messages.
+  messageTags = new Map(); // maps message messageTags => responders, separately from inFlight, above
+  pingTags = new Map();
+  async message(targetKey, excluded, messageTag, ...rest) { // Send message to targetKey, using our existing routingTable contacts.
+    let responsePromise = null;
+    if (!messageTag) { // If this is an outgoing request from us, message() promises the response.
+      messageTag = uuidv4();
+      responsePromise = new Promise(resolve => this.messageTags.set(messageTag, resolve));
+      rest.unshift(this.key.toString()); // Add return address.
+    }
+    excluded.push(this.key.toString());
+    const body = JSON.stringify([targetKey.toString(), excluded, messageTag, ...rest]);
+    const contacts = this.findClosestHelpers(targetKey).map(helper => helper.contact);
+    //this.xlog('message to:', targetKey, 'contacts:', contacts.map(c => c.sname + '/' + c.key), 'excluding:', excluded);
+    let selected = null;
+    for (const contact of contacts) {
+      if (excluded.includes(contact.key.toString())) continue; 
+      //this.xlog('trying message through', contact.sname);
+      if (!contact.connection) continue;
+      if (!(await contact.sendRPC('ping', contact.key))) {
+	this.xlog('failed to get ping', contact.sname);
+	this.removeContact(contact);
+	continue;
+      }
+      const overlay = await contact.overlay;
+      overlay.send(body);
+      selected = contact;
+      break;
+    }
+    if (selected) {
+      //this.xlog('hop to:', selected?.sname, 'excluding:', excluded, contacts.map(c => c.sname), rest.map(s => Array.isArray(s) ? s[0] : s));
+      return await Promise.race([responsePromise, Node.delay(2e3, null)]);
+    }
+    this.xlog('No connected contacts to send message among', contacts.map(c => c.sname));
+    return responsePromise; // Original promise, if any.
+  }
+  async messageHandler(dataString) {
+    //this.log('got overlay', dataString);
+    const data = JSON.parse(dataString);
+
+    // If intended for another node, pass it on.
+    const [to, excluded, ...rest] = data;
+    const targetKey = BigInt(to);
+    if (targetKey !== this.key) return await this.message(targetKey, excluded, ...rest); // rest includes messageTag.
+
+    // If it is a response to something we sent, resolve the waiting promise with the rest of the data.
+    const [messageTag, ...requestOrResponse] = rest;
+    const responder = this.messageTags.get(messageTag);
+    this.messageTags.delete(messageTag);
+    if (responder) return responder(requestOrResponse);
+
+    // Finally, answer a request to us by messaging the sender with the same-tagged response.
+    const [from, method, ...args] = requestOrResponse;
+    if (!(method in this)) return this.log('ignoring unrecognized request', {messageTag, from, method, args}); // Could be a double response.
+    const response = await this[method](...args);
+    if (!Array.isArray(response)) response = [response]; // HACK!
+    //this.xlog('response', response, 'to', method, ...args);
+    return await this.message(BigInt(from), [], messageTag, ...response);
+  }
+  signal(...rest) {
+    return this.contact.signals(...rest);
   }
 }

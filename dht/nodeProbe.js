@@ -16,7 +16,7 @@ export class NodeProbe extends NodeMessages {
     // this.log('step with', contact.sname);
     let results = await contact.sendRPC(finder, targetKey);
     if (!results) { // disconnected
-      this.xlog('removing unconnected contact', contact.sname, this.isRunning, this.contact.host.isRunning, this.contact.node.isRunning, this.connection, this.webrtc);
+      this.log('removing unconnected contact', contact.sname);
       await this.removeContact(contact);
       return [];
     }

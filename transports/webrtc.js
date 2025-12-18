@@ -1,9 +1,9 @@
+const { BigInt } = globalThis; // For linters.
 import { v4 as uuidv4 } from 'uuid';
 import { Node } from '../dht/node.js';
 import { Helper } from '../dht/helper.js';
 import { Contact } from './contact.js';
 import { WebRTC } from '@yz-social/webrtc';
-const { BigInt } = globalThis; // For linters.
 
 
 export class WebContact extends Contact {
@@ -34,12 +34,7 @@ export class WebContact extends Contact {
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;
   }
-  // Within a process, there is only one WebContact.serializer, so each process can only complete one  connection at a time.
-  // (It can maintain Node.maxTransports open connections. The serialization is a limit on the connection/signal process.)
-  static serializer = Promise.resolve();
-  channelName = 'kdht';
-
-  ensureWebRTC(initialSignals, timeoutMS = 0/*fixme 2.5e3*/) { // If not already configured, sets up contacbt to have properties:
+  ensureWebRTC(initialSignals, timeoutMS = 2500) { // If not already configured, sets up contacbt to have properties:
     // - connection - a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
     //   incomming messages are dispatched to receiveWebRTC(string)
@@ -47,92 +42,97 @@ export class WebContact extends Contact {
     // - webrtc - an instance of WebRTC (which may be used for webrtc.respond()
     //
     // initialSignals should be a list, or null for the creator of the offer.
-    // If timeoutMS is non-zero and a connection is not established within that time, connection and closed resolved to null.
+    // If timeoutMS is non-zero and a connection is not established within that time, connection and closed resolve to null.
+    //
+    // This can be called in 'offer' mode (with null initialSignals), or 'answer' mode (with signals from the other side).
+    // If already in answer mode, there will have been established this.webrtc and this.connection immediately with the first signals:
+    // - If more signals received, just continue giving new signals to this.webrtc.respond().
+    // - If we subsequently try to connect(), just answer existing this.connection and wait for that.
+    // However, if in offer mode:
+    // - A new attempt to connect() should just answer existing this.connection.
+    // - The initial connection will be engaged in a specific call-response pattern, such that new signals for this exchange will
+    //   come as responses to POST or overlay requests managed by this.webrtc.connectVia, and thus NOT appear through this.signals().
+    // - A new signals() method represents the other side attempting offer to us even as we are offering to them.
+    //   FIXME How to resolve? Do promises get reset on either side?
 
-    if (this.webrtc) return this.webrtc;
+    // All side-effects (assignments to this) happen synchronously/immediately.
+    const mode = initialSignals ? 'receive' : 'connect';
+    this.host.log('starting connection', this.sname, mode, this.connection ? 'exists!!!' : 'fresh', this.counter); const start = Date.now();
     let {promise, resolve} = Promise.withResolvers();
     this.closed = promise;
-    const webrtc = this.webrtc = new WebRTC({label: this.webrtcLabel});
+    const webrtc = this.webrtc = new WebRTC({label: this.webrtcLabel, multiplex: true});
     const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
       resolve(null); // closed promise
-      this.connection = this.webrtc = this.initiating = null;
+      this.connection = this.webrtc = this.overlay = null;
     };
 
     let timeout;
-    const channelPromise = webrtc.ensureDataChannel(this.channelName, {}, initialSignals)
-	  .then(dataChannel => {
+    const channelPromise = webrtc.ensureDataChannel('kdht', {}, initialSignals)
+	  .then(async dataChannel => {
+	    this.host.log('data channel open', this.sname, mode, Date.now() - start, this.counter);
 	    clearTimeout(timeout);
-	    this.initiating = null;
-	    webrtc.reportConnection(this.host.debug).then(() => webrtc.statsElapsed > 500 &&
-							  console.log(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`));
 	    dataChannel.addEventListener('close', onclose);
 	    dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
+	    await webrtc.reportConnection(this.host.debug); // TODO: make this asymchronous?
+	    if (webrtc.statsElapsed > 500) console.log(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
 	    return dataChannel;
 	  });
-    if (!timeoutMS) return channelPromise;
-    return Promise.race([channelPromise,
-			 new Promise(expired => {
-			   timeout = setTimeout(async () => {
-			     this.host.log('connection timeout', this.sname);
-			     onclose();
-			     //await this.host.removeContact(this); // fixme?
-			     expired(null);
-			   }, timeoutMS);
-			 })]);
+    const overlayPromise = webrtc.ensureDataChannel('overlay').then(async overlay => {
+      overlay.addEventListener('message', event => this.host.messageHandler(event.data));
+      return overlay;
+    });
+    if (!timeoutMS) {
+      this.connection = channelPromise;
+      this.overlay = overlayPromise;
+      return;
+    }
+    const timerPromise = new Promise(expired => {
+      timeout = setTimeout(async () => {
+	this.host.log('**** connection timeout', this.sname, Date.now() - start, '****');
+	onclose();
+	await this.host.removeContact(this); // fixme?
+	expired(null);
+      }, timeoutMS);
+    });
+    this.connection = Promise.race([channelPromise, timerPromise]);
+    this.overlay = Promise.race([overlayPromise, timerPromise]);
   }
-  connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
+  async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Creates a WebRTC instance and uses it's connectVia to to signal.
     const contact = this.host.noteContactForTransport(this);
+    if (contact.webrtc?.peer.connectionState === 'connecting') contact.host.xlog('**** connect', contact.sname, 'while in', contact.webrtc.peer.signalingState, '****');
+    ///if (contact.connection) contact.host.xlog('connect existing', contact.sname, contact.counter);
     if (contact.connection) return contact.connection;
-    contact.initiating = true;
-    return contact.connection = contact.constructor.serializer = contact.constructor.serializer.then(async () => { // TODO: do we need this serialization?
-      const { host, node, isServerNode, bootstrapHost } = contact;
-      // Anyone can connect to a server node using the server's connect endpoint.
-      // Anyone in the DHT can connect to another DHT node through a sponsor.
-      const dataChannelPromise = contact.ensureWebRTC(null);
-      const ready = this.webrtc?.signalsReady; // Immediately after ensureWebRTC, without yielding.
-      if (!ready) return null; // It has already come and gone.
-      await ready;
-      if (bootstrapHost || isServerNode) {
-	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${this.sname}`;
-	await contact.webrtc.connectVia(signals => this.fetchSignals(url, signals));
-      } else {
-	let pool = Array.from(contact._sponsors.values());
-	let connected = pool.filter(candidate => candidate.connection);
-	let sponsor = connected.pop();
-	try {
-	  await contact.webrtc.connectVia(async signals => {
-	    let response;
-	    while (!response && sponsor) {
-	      response = await sponsor.sendRPC('forwardSignals', contact.key, host.contact.sname, ...signals);
-	      if (!response) {
-		sponsor = connected.pop();
-		if (sponsor) this.host.log('trying new sponsor', sponsor?.sname, 'for', contact.sname);
-	      }
-	    }
-	    if (response) return response;
-	    throw 'gone';
-	  });
-	} catch (thrown) {
-	  this.host.xlog('giving up on', contact.sname, thrown);
-	  if (thrown === 'gone') return null;
-	  throw thrown;
-	}
-      }
-      // console.error(`Cannot reach unsponsored contact ${contact.sname}.`);
-      // await contact.host.removeContact(contact);
-      // return contact.connection = contact.webrtc = null;
-      return await dataChannelPromise;
-    });
+    const { host, node, isServerNode, bootstrapHost } = contact;
+    // Anyone can connect to a server node using the server's connect endpoint.
+    // Anyone in the DHT can connect to another DHT node through a sponsor.
+    contact.ensureWebRTC(null);
+    const ready = this.webrtc?.signalsReady; // Immediately after ensureWebRTC, without yielding.
+    if (!ready) return null; // It has already come and gone.
+    await ready;
+    if (bootstrapHost || isServerNode) {
+      const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${contact.sname}`;
+      await contact.webrtc.connectVia(signals => contact.fetchSignals(url, signals));
+    } else {
+      await contact.webrtc.connectVia(async signals => {
+	const response = await host.message(contact.key, [], null, 'signal', host.contact.sname, ...signals);
+	host.xlog('message returned', contact.sname, response?.map(s => Array.isArray(s) ? s[0] : s));
+	return response;
+      });
+    }
+    return await this.connection;
   }
-  async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the new contact on
-    // host to receive them, and promising a response.
-    let contact = await this.ensureRemoteContact(senderSname, 1.5e3); // If someone is initiating contact with us, they ought to be quick.
-    if (contact.initiating) return []; // TODO: is this the right response?
-    if (contact.webrtc) return await contact.webrtc.respond(signals); // TODO: move this and its counterpart on connect to ensureWebRTC?
+  async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
+    // new contact on host to receive them, and promising a response.
+    let contact = await this.ensureRemoteContact(senderSname);
+    if (signals[0][0] === 'offer' && contact.webrtc) contact.host.xlog('**** offer from', contact.sname, 'while in', contact.webrtc.peer.signalingState, '****');
+    else contact.host.xlog('signal from', contact.sname, contact.webrtc ? 'exists' : 'creating');
+    //if (contact.webrtc) contact.host.xlog('receive existing', contact.sname);
+    if (contact.webrtc) return await contact.webrtc.respond(signals); 
+
     this.host.noteContactForTransport(contact);
-    contact.connection = contact.ensureWebRTC(signals);
+    contact.ensureWebRTC(signals, 1.5e3);  // If someone is initiating contact with us, they ought to be quick.
     return await contact.webrtc.respond([]);
   }
   async send(message) { // Promise to send through previously opened connection promise.
@@ -187,9 +187,10 @@ export class WebContact extends Contact {
     // Alternatively, we could concatenate a counter to our host.name.
     const messageTag = uuidv4();
     const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
-    this.send([messageTag, method, sender, key.toString(), ...rest]);
+    const message = [messageTag, method, sender, key.toString(), ...rest];
+    this.send(message);
     const response = await Promise.race([responsePromise,
-					 Node.delay(1.5e3, null), // Faster than waiting for webrtc to observe a close
+					 //Node.delay(1.5e3, null), // Faster than waiting for webrtc to observe a close
 					 this.closed]);
     return response;
   }
@@ -207,7 +208,6 @@ export class WebContact extends Contact {
     if (responder) { // A response to something we sent and are waiting for.
       let [result] = data;
       this.inFlight.delete(messageTag);
-      //this.host.log('received response', result);
       if (Array.isArray(result)) {
 	if (!result.length) responder(result);
 	const first = result[0];

@@ -31,12 +31,17 @@ describe("DHT write/read", function () {
     await Node.delay(Node.refreshTimeIntervalMS);
     console.log(new Date(), 'Reading');
   }, 5e3 * nWrites + 2 * Node.refreshTimeIntervalMS);
-  afterAll(function () {
-    contact.disconnect();
+  afterAll(async function () {
     if (shutdown) {
-      exec('pkill kdht-bot');
+      contact.disconnect();
       exec('pkill kdht-portal-server');
+    } else {
+      contact.disconnect();
     }
+    // if (shutdown) {
+    //   exec('pkill kdht-bot');
+    //   exec('pkill kdht-portal-server');
+    // }
   });
   for (let index = 0; index < nWrites; index++) {
     it(`reads ${index}.`, async function () {
