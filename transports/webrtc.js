@@ -34,7 +34,7 @@ export class WebContact extends Contact {
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;
   }
-  ensureWebRTC(initialSignals, timeoutMS = 2500) { // If not already configured, sets up contacbt to have properties:
+  ensureWebRTC(initialSignals, timeoutMS = 5e3) { // If not already configured, sets up contacbt to have properties:
     // - connection - a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
     //   incomming messages are dispatched to receiveWebRTC(string)
@@ -66,8 +66,12 @@ export class WebContact extends Contact {
       resolve(null); // closed promise
       this.connection = this.webrtc = this.overlay = null;
     };
-
     let timeout;
+    webrtc.abandonConnection = () => {
+      clearTimeout(timeout);
+      webrtc.close();
+      this.webrtc = this.connection = this.overlay = null;
+    };
     const channelPromise = webrtc.ensureDataChannel('kdht', {}, initialSignals)
 	  .then(async dataChannel => {
 	    this.host.log('data channel open', this.sname, mode, Date.now() - start, this.counter);
@@ -114,6 +118,8 @@ export class WebContact extends Contact {
     if (!ready) return null; // It has already come and gone.
     await ready;
     const checking = response => {
+      if (!response) contact.host.xlog('Falsy response from connect', contact.sname, response);
+      else if (!response.length) contact.host.xlog('Empty response from connect', contact.sname);
       //if (!response || !response.some(item => item === 'abandon')) return response;
       // if (!response?.length) {
       // 	contact.host.xlog('abandoning conflicting connection', contact.sname);
@@ -127,26 +133,29 @@ export class WebContact extends Contact {
       await contact.webrtc.connectVia(async signals => checking(await contact.fetchSignals(url, signals)));
     } else {
       if (!contact.webrtc) return null; // Conflict while waiting for signalsReady.
-      await contact.webrtc.connectVia(async signals => checking(await host.message(contact.key, [], null, 'signal', host.contact.sname, ...signals)));
+      //contact.host.xlog('messaging connection signals to', contact.sname, contact.key);
+      await contact.webrtc.connectVia(async signals => checking(await host.message({targetKey: contact.key, targetSname: contact.sname, payload: ['signal', host.contact.sname, ...signals]})));
     }
-    return await this.connection;
+    await Promise.all([this.connection, this.overlay]);
+    return this.connection;
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
     // new contact on host to receive them, and promising a response.
     let contact = await this.ensureRemoteContact(senderSname);
     //if (contact.webrtc?.peer.signalingState === 'have-local-offer' && signals[0]?.[0] === 'offer') return [];
-    if (contact.webrtc && signals[0]?.[0] === 'offer' && contact.webrtc.peer.signalingState === 'have-local-offer') {
-      contact.host.xlog('Declinging offer from', contact.sname, 'while in', contact.webrtc.peer.signalingState, contact.winsSimultaneousOffer);
-      // contact.webrtc.close();
-      // contact.webrtc = contact.connection = contact.overlay = null;
-      return [];
+    if (contact.webrtc && signals?.length && signals[0][0] === 'offer' && contact.webrtc.peer.signalingState === 'have-local-offer') {
+      if (contact.winsSimultaneousOffer) {
+	contact.host.xlog('**** Ignoring offer from', contact.sname, 'while in', contact.webrtc.peer.signalingState);
+	return []; // Our connect will continue with it's thing.
+      } else { // Shut down our connection, and treat the given signals like a cold offer.
+	contact.host.xlog('**** Abandoning connection to accept offer from', contact.sname, 'while in', contact.webrtc.peer.signalingState);
+	contact.webrtc.abandonConnection();
+      }
     }
-    // else contact.host.xlog('signal from', contact.sname, contact.webrtc ? 'exists' : 'creating');
-    //if (contact.webrtc) contact.host.xlog('receive existing', contact.sname);
     if (contact.webrtc) return await contact.webrtc.respond(signals); 
 
     this.host.noteContactForTransport(contact);
-    contact.ensureWebRTC(signals, 1.5e3);  // If someone is initiating contact with us, they ought to be quick.
+    contact.ensureWebRTC(signals);
     return await contact.webrtc.respond([]);
   }
   async send(message) { // Promise to send through previously opened connection promise.
@@ -204,7 +213,7 @@ export class WebContact extends Contact {
     const message = [messageTag, method, sender, key.toString(), ...rest];
     this.send(message);
     const response = await Promise.race([responsePromise,
-					 //Node.delay(1.5e3, null), // Faster than waiting for webrtc to observe a close
+					 Node.delay(1.5e3, null), // Faster than waiting for webrtc to observe a close
 					 this.closed]);
     return response;
   }

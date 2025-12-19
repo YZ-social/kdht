@@ -74,21 +74,23 @@ export class Node extends NodeProbe {
 
   // TODO: separate all this out: neither transport nor dht.
   // TODO: fragment/reassemble big messages.
-  messageTags = new Map(); // maps message messageTags => responders, separately from inFlight, above
-  pingTags = new Map();
-  async message(targetKey, excluded, messageTag, ...rest) { // Send message to targetKey, using our existing routingTable contacts.
+  messagePromises = new Map(); // maps message messageTags => responders, separately from inFlight, above
+  async message({targetKey, targetSname, excluded = [], requestTag, senderKey, senderSname = this.contact.sname, payload}) { // Send message to targetKey, using our existing routingTable contacts.
     const MAX_PING_MS = 100;
-    const MAX_MESSAGE_MS = 10 * MAX_PING_MS;
+    const MAX_MESSAGE_MS = 40 * MAX_PING_MS;
     let responsePromise = null;
-    if (!messageTag) { // If this is an outgoing request from us, message() promises the response.
-      messageTag = uuidv4();
-      responsePromise = new Promise(resolve => this.messageTags.set(messageTag, resolve));
-      rest.unshift(this.key.toString()); // Add return address.
+    if (!requestTag) { // If this is an outgoing request from us, promises the response.
+      requestTag = uuidv4();
+      senderKey = this.key;
+      senderSname = this.contact.sname;
+      responsePromise = new Promise(resolve => this.messagePromises.set(requestTag, resolve));
     }
+    targetKey = targetKey.toString();
+    senderKey = senderKey?.toString();
     // The excluded list of keys prevents cycles.
     excluded.push(this.key.toString()); // TODO: Find a way to not have an excluded list, or at least add junk for privacy.
-    const body = JSON.stringify([targetKey.toString(), excluded, messageTag, ...rest]);
-    const contacts = this.findClosestHelpers(targetKey).map(helper => helper.contact);
+    const body = JSON.stringify({targetKey, excluded, requestTag, senderKey, targetSname, senderSname, payload});
+    const contacts = this.findClosestHelpers(BigInt(targetKey)).map(helper => helper.contact);
     //this.xlog('message to:', targetKey, 'contacts:', contacts.map(c => c.sname + '/' + c.key), 'excluding:', excluded);
     let selected = null;
     for (const contact of contacts) {
@@ -100,42 +102,53 @@ export class Node extends NodeProbe {
 	this.removeContact(contact);
 	continue;
       }
-      const overlay = await contact.overlay;
+      const overlay = await contact.overlay;      
       overlay.send(body);
       selected = contact;
       break;
     }
-    if (selected) {
-      //this.xlog('hop to:', selected?.sname, 'excluding:', excluded, contacts.map(c => c.sname), rest.map(s => Array.isArray(s) ? s[0] : s));
-      return await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, null)]);
+    if (!selected) this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${c.name}/${c.key}${c.connection ? '' : '/UNCONNECTED'}`)}.`);
+
+    this.log(`hop ${senderSname} to ${targetSname} request: ${requestTag}`);
+    const result =  await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, 'fixme')]);
+    if (result === 'fixme') {
+      this.xlog(`\n\n\n **** message timeout via ${selected.sname}: ${body} ***\n\n`);
+      return null;
     }
-    this.xlog('No connected contacts to send message among', contacts.map(c => c.sname));
-    return responsePromise; // Original promise, if any.
+    return result;
   }
   async messageHandler(dataString) {
     //this.log('got overlay', dataString);
     const data = JSON.parse(dataString);
+    const {targetKey, excluded, requestTag, senderKey, targetSname, senderSname, payload} = data;
+    Node.assert(targetKey, 'No targetKey to handle', dataString);
+    Node.assert(payload, 'No payload to handle', dataString);    
+    Node.assert(requestTag, 'No request tag by which to answer', dataString);
+    this.log('handling message', requestTag, 'from', senderSname, 'to', targetSname);
 
-    // If intended for another node, pass it on.
-    const [to, excluded, ...rest] = data;
-    const targetKey = BigInt(to);
-    if (targetKey !== this.key) return await this.message(targetKey, excluded, ...rest); // rest includes messageTag.
+    // If intended for another node, pass it on.    
+    if (BigInt(targetKey) !== this.key) return await this.message(data);
 
-    // If it is a response to something we sent, resolve the waiting promise with the rest of the data.
-    const [messageTag, ...requestOrResponse] = rest;
-    const responder = this.messageTags.get(messageTag);
-    this.messageTags.delete(messageTag);
-    if (responder) return responder(requestOrResponse);
+    // If it is a response to something we sent, resolve the waiting promise with the payload.
+    const responder = this.messagePromises.get(requestTag);
+    this.messagePromises.delete(requestTag);
+    if (responder) return responder(payload);
 
     // Finally, answer a request to us by messaging the sender with the same-tagged response.
-    const [from, method, ...args] = requestOrResponse;
-    if (!(method in this)) return this.log('ignoring unrecognized request', {messageTag, from, method, args}); // Could be a double response.
+    const [method, ...args] = payload;
+    if (!(method in this)) return this.xlog('ignoring unrecognized request', {requestTag, method, args}); // Could be a double response.
+
+    Node.assert(args[0] === senderSname, 'FIXME sender does not match signals payload sender', dataString);
+    this.log('executing', method, 'from', senderSname, 'request:', requestTag);
     let response = await this[method](...args);
-    if (!Array.isArray(response)) response = [response]; // HACK!
-    //this.xlog('response', response, 'to', method, ...args);
-    return await this.message(BigInt(from), [], messageTag, ...response);
+    Node.assert(senderKey, 'No sender key by which to answer', dataString);    
+    this.log('responding to', method, 'from', senderSname, 'request:', requestTag);
+    return await this.message({targetKey: BigInt(senderKey), targetSname: senderSname, requestTag, payload: response});
   }
-  signal(...rest) {
-    return this.contact.signals(...rest);
+  async signal(...rest) {
+    //this.xlog(`handling signals @ ${this.key} ${rest}`);
+    const fixme = await this.contact.signals(...rest);
+    //this.xlog(`returning signals @ ${this.key} ${fixme}`);
+    return fixme;
   }
 }
