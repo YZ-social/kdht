@@ -89,7 +89,7 @@ export class WebContact extends Contact {
     }
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
-	this.host.log('**** connection timeout', this.sname, Date.now() - start, '****');
+	this.host.xlog('**** connection timeout', this.sname, mode, Date.now() - start, '****');
 	onclose();
 	await this.host.removeContact(this); // fixme?
 	expired(null);
@@ -98,10 +98,12 @@ export class WebContact extends Contact {
     this.connection = Promise.race([channelPromise, timerPromise]);
     this.overlay = Promise.race([overlayPromise, timerPromise]);
   }
+  get winsSimultaneousOffer() { // Do we win if host and node both make offers at the same time?
+    return this.host.key > this.node.key;
+  }
   async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Creates a WebRTC instance and uses it's connectVia to to signal.
     const contact = this.host.noteContactForTransport(this);
-    if (contact.webrtc?.peer.connectionState === 'connecting') contact.host.xlog('**** connect', contact.sname, 'while in', contact.webrtc.peer.signalingState, '****');
     ///if (contact.connection) contact.host.xlog('connect existing', contact.sname, contact.counter);
     if (contact.connection) return contact.connection;
     const { host, node, isServerNode, bootstrapHost } = contact;
@@ -111,23 +113,35 @@ export class WebContact extends Contact {
     const ready = this.webrtc?.signalsReady; // Immediately after ensureWebRTC, without yielding.
     if (!ready) return null; // It has already come and gone.
     await ready;
+    const checking = response => {
+      //if (!response || !response.some(item => item === 'abandon')) return response;
+      // if (!response?.length) {
+      // 	contact.host.xlog('abandoning conflicting connection', contact.sname);
+      // 	contact.webrtc?.close();
+      // 	contact.webrtc = contact.connection = contact.overlay = null;
+      // }
+      return response;
+    };
     if (bootstrapHost || isServerNode) {
       const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${contact.sname}`;
-      await contact.webrtc.connectVia(signals => contact.fetchSignals(url, signals));
+      await contact.webrtc.connectVia(async signals => checking(await contact.fetchSignals(url, signals)));
     } else {
-      await contact.webrtc.connectVia(async signals => {
-	const response = await host.message(contact.key, [], null, 'signal', host.contact.sname, ...signals);
-	host.xlog('message returned', contact.sname, response?.map(s => Array.isArray(s) ? s[0] : s));
-	return response;
-      });
+      if (!contact.webrtc) return null; // Conflict while waiting for signalsReady.
+      await contact.webrtc.connectVia(async signals => checking(await host.message(contact.key, [], null, 'signal', host.contact.sname, ...signals)));
     }
     return await this.connection;
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
     // new contact on host to receive them, and promising a response.
     let contact = await this.ensureRemoteContact(senderSname);
-    if (signals[0][0] === 'offer' && contact.webrtc) contact.host.xlog('**** offer from', contact.sname, 'while in', contact.webrtc.peer.signalingState, '****');
-    else contact.host.xlog('signal from', contact.sname, contact.webrtc ? 'exists' : 'creating');
+    //if (contact.webrtc?.peer.signalingState === 'have-local-offer' && signals[0]?.[0] === 'offer') return [];
+    if (contact.webrtc && signals[0]?.[0] === 'offer' && contact.webrtc.peer.signalingState === 'have-local-offer') {
+      contact.host.xlog('Declinging offer from', contact.sname, 'while in', contact.webrtc.peer.signalingState, contact.winsSimultaneousOffer);
+      // contact.webrtc.close();
+      // contact.webrtc = contact.connection = contact.overlay = null;
+      return [];
+    }
+    // else contact.host.xlog('signal from', contact.sname, contact.webrtc ? 'exists' : 'creating');
     //if (contact.webrtc) contact.host.xlog('receive existing', contact.sname);
     if (contact.webrtc) return await contact.webrtc.respond(signals); 
 

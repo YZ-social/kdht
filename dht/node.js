@@ -54,7 +54,9 @@ export class Node extends NodeProbe {
 
     // Refresh every bucket farther out than our closest neighbor.
     // I think(?) that this can be done by refreshing "just" the farthest bucket:
-    this.ensureBucket(this.constructor.keySize - 1).resetRefresh();
+    //this.ensureBucket(this.constructor.keySize - 1).resetRefresh();
+    await Node.delay(Node.randomInteger(3e3));
+    this.ensureBucket(this.constructor.keySize - 1).refresh();
     // But if it turns out to be necessary to explicitly refresh each next bucket in turn, this is how:
     // let started = false;
     // for (let index = 0; index < this.constructor.keySize; index++) {
@@ -75,13 +77,16 @@ export class Node extends NodeProbe {
   messageTags = new Map(); // maps message messageTags => responders, separately from inFlight, above
   pingTags = new Map();
   async message(targetKey, excluded, messageTag, ...rest) { // Send message to targetKey, using our existing routingTable contacts.
+    const MAX_PING_MS = 100;
+    const MAX_MESSAGE_MS = 10 * MAX_PING_MS;
     let responsePromise = null;
     if (!messageTag) { // If this is an outgoing request from us, message() promises the response.
       messageTag = uuidv4();
       responsePromise = new Promise(resolve => this.messageTags.set(messageTag, resolve));
       rest.unshift(this.key.toString()); // Add return address.
     }
-    excluded.push(this.key.toString());
+    // The excluded list of keys prevents cycles.
+    excluded.push(this.key.toString()); // TODO: Find a way to not have an excluded list, or at least add junk for privacy.
     const body = JSON.stringify([targetKey.toString(), excluded, messageTag, ...rest]);
     const contacts = this.findClosestHelpers(targetKey).map(helper => helper.contact);
     //this.xlog('message to:', targetKey, 'contacts:', contacts.map(c => c.sname + '/' + c.key), 'excluding:', excluded);
@@ -90,7 +95,7 @@ export class Node extends NodeProbe {
       if (excluded.includes(contact.key.toString())) continue; 
       //this.xlog('trying message through', contact.sname);
       if (!contact.connection) continue;
-      if (!(await contact.sendRPC('ping', contact.key))) {
+      if (!(await Promise.race([Node.delay(MAX_PING_MS, false), contact.sendRPC('ping', contact.key)]))) {
 	this.xlog('failed to get ping', contact.sname);
 	this.removeContact(contact);
 	continue;
@@ -102,7 +107,7 @@ export class Node extends NodeProbe {
     }
     if (selected) {
       //this.xlog('hop to:', selected?.sname, 'excluding:', excluded, contacts.map(c => c.sname), rest.map(s => Array.isArray(s) ? s[0] : s));
-      return await Promise.race([responsePromise, Node.delay(2e3, null)]);
+      return await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, null)]);
     }
     this.xlog('No connected contacts to send message among', contacts.map(c => c.sname));
     return responsePromise; // Original promise, if any.
@@ -125,7 +130,7 @@ export class Node extends NodeProbe {
     // Finally, answer a request to us by messaging the sender with the same-tagged response.
     const [from, method, ...args] = requestOrResponse;
     if (!(method in this)) return this.log('ignoring unrecognized request', {messageTag, from, method, args}); // Could be a double response.
-    const response = await this[method](...args);
+    let response = await this[method](...args);
     if (!Array.isArray(response)) response = [response]; // HACK!
     //this.xlog('response', response, 'to', method, ...args);
     return await this.message(BigInt(from), [], messageTag, ...response);
