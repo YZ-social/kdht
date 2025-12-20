@@ -80,7 +80,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
 	// Note that requestResolvers are per worker: there can only be one requestResolver pending per worker
 	// for each sender.
 	const [senderSname, ...signals] = message;
-	worker.requestResolvers[senderSname](signals);
+	worker.requestResolvers[senderSname]?.(signals);
       }
     });
   }

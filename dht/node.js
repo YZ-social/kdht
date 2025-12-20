@@ -92,7 +92,6 @@ export class Node extends NodeProbe {
     const body = JSON.stringify({targetKey, excluded, requestTag, senderKey, targetSname, senderSname, payload});
     const contacts = this.findClosestHelpers(BigInt(targetKey)).map(helper => helper.contact);
     //this.xlog('message to:', targetKey, 'contacts:', contacts.map(c => c.sname + '/' + c.key), 'excluding:', excluded);
-    let selected = null;
     for (const contact of contacts) {
       if (excluded.includes(contact.key.toString())) continue;
       // if (!contact.overlayOpen) {
@@ -109,23 +108,19 @@ export class Node extends NodeProbe {
       }
       let overlay = await contact.overlay;
       overlay ||= await contact.overlay; // If there was a conflict, grab resolution.
+      this.log(`hop ${senderSname} to ${targetSname} request: ${requestTag}`);
       overlay.send(body);
-      selected = contact;
+      // FIXME: how do we know if a response was ultimately delivered? Don't we need a confirmation for that so that we can try a different route?
+      const result =  await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, 'fixme')]);
+      if (result === 'fixme') {
+	this.xlog(`**** message timeout to ${targetSname} via ${contact.sname}: ${body}`);
+	continue;  // If we timeout, responsePromise is still valid.
+      }
+      return result;
       break;
     }
-    if (!selected) {
-      this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.name}`).join(', ')}: ${body}`);
-      return null;
-    }
-
-    // FIXME: move this inside the loop, so that if one of our contacts is a dud, something else can be tried.
-    this.log(`hop ${senderSname} to ${targetSname} request: ${requestTag}`);
-    const result =  await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, 'fixme')]);
-    if (result === 'fixme') {
-      this.xlog(`**** message timeout to ${targetSname} via ${selected.sname}: ${body}`);
-      return null;
-    }
-    return result;
+    this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.name}`).join(', ')}: ${body}`);
+    return null;
   }
   async messageHandler(dataString) {
     //this.log('got overlay', dataString);
