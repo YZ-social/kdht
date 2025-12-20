@@ -55,8 +55,8 @@ export class Node extends NodeProbe {
     // Refresh every bucket farther out than our closest neighbor.
     // I think(?) that this can be done by refreshing "just" the farthest bucket:
     //this.ensureBucket(this.constructor.keySize - 1).resetRefresh();
-    await Node.delay(Node.randomInteger(3e3));
-    this.ensureBucket(this.constructor.keySize - 1).refresh();
+    await Node.delay(Node.randomInteger(5e3));
+    await this.ensureBucket(this.constructor.keySize - 1).refresh();
     // But if it turns out to be necessary to explicitly refresh each next bucket in turn, this is how:
     // let started = false;
     // for (let index = 0; index < this.constructor.keySize; index++) {
@@ -76,8 +76,8 @@ export class Node extends NodeProbe {
   // TODO: fragment/reassemble big messages.
   messagePromises = new Map(); // maps message messageTags => responders, separately from inFlight, above
   async message({targetKey, targetSname, excluded = [], requestTag, senderKey, senderSname = this.contact.sname, payload}) { // Send message to targetKey, using our existing routingTable contacts.
-    const MAX_PING_MS = 100;
-    const MAX_MESSAGE_MS = 40 * MAX_PING_MS;
+    //const MAX_PING_MS = 400;
+    const MAX_MESSAGE_MS = 5e3;
     let responsePromise = null;
     if (!requestTag) { // If this is an outgoing request from us, promises the response.
       requestTag = uuidv4();
@@ -94,25 +94,35 @@ export class Node extends NodeProbe {
     //this.xlog('message to:', targetKey, 'contacts:', contacts.map(c => c.sname + '/' + c.key), 'excluding:', excluded);
     let selected = null;
     for (const contact of contacts) {
-      if (excluded.includes(contact.key.toString())) continue; 
+      if (excluded.includes(contact.key.toString())) continue;
+      // if (!contact.overlayOpen) {
+      // 	this.xlog('overlay to', contact.sname, 'is not yet open in connecting to', targetSname, contact.webrtc.dataChannels.get('overlay')?.readyState, !!contact.webrtc.waitingChannels.overlay, !!contact.overlay, contact.connectionOpen);
+      // 	contact.overlay.then(async overlay => this.xlog('overlay to', contact.sname, 'now', overlay?.readyState, (await contact.overlay)?.readyState, 'for', targetSname));
+      // }
       //this.xlog('trying message through', contact.sname);
       if (!contact.connection) continue;
-      if (!(await Promise.race([Node.delay(MAX_PING_MS, false), contact.sendRPC('ping', contact.key)]))) {
+      //if (!(await Promise.race([Node.delay(MAX_PING_MS, false), contact.sendRPC('ping', contact.key)]))) {
+      if (!(await contact.sendRPC('ping', contact.key))) {
 	this.xlog('failed to get ping', contact.sname);
 	this.removeContact(contact);
 	continue;
       }
-      const overlay = await contact.overlay;      
+      let overlay = await contact.overlay;
+      overlay ||= await contact.overlay; // If there was a conflict, grab resolution.
       overlay.send(body);
       selected = contact;
       break;
     }
-    if (!selected) this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${c.name}/${c.key}${c.connection ? '' : '/UNCONNECTED'}`)}.`);
+    if (!selected) {
+      this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.name}`).join(', ')}: ${body}`);
+      return null;
+    }
 
+    // FIXME: move this inside the loop, so that if one of our contacts is a dud, something else can be tried.
     this.log(`hop ${senderSname} to ${targetSname} request: ${requestTag}`);
     const result =  await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, 'fixme')]);
     if (result === 'fixme') {
-      this.xlog(`\n\n\n **** message timeout via ${selected.sname}: ${body} ***\n\n`);
+      this.xlog(`**** message timeout to ${targetSname} via ${selected.sname}: ${body}`);
       return null;
     }
     return result;

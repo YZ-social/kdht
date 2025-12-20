@@ -84,6 +84,9 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
       }
     });
   }
+  cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers.
+    console.log(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
+  });
   
   // Router (two endpoints)
   const app = express();
@@ -121,7 +124,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
 
     // Pass the POST body to the worker and await the response.
     const promise = new Promise(resolve => worker.requestResolvers[params.from] = resolve);
-    worker.send(body);
+    worker.send(body, undefined, undefined, error => error && console.log(`Error communicating with portal worker ${worker.id}:${worker.tag} ${worker.isConnected() ? 'connected' : 'disconnected'} ${worker.isDead() ? 'dead' : 'running'}:`, error));
     let response = await promise;
     delete worker.requestResolvers[params.from]; // Now that we have the response.
 
