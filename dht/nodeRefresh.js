@@ -15,13 +15,16 @@ export class NodeRefresh extends NodeKeys {
   isStopped(interval) {
     return !this.isRunning || 0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval;
   }
-  fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/2) {
+  fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/2) { // Like static fuzzyInterval with target defaulting to refreshTimeIntervalMS/2.
+    return this.constructor.fuzzyInterval(target, margin);
+  }
+  static fuzzyInterval(target, margin = target/2) {
     // Answer a random integer uniformly distributed around target, +/- margin.
     // The default target slightly exceeds the Nyquist condition of sampling at a frequency at
     // least twice the signal being observed. In particular, allowing for some randomization,
     // as long as we're not completely overloaded, we should expect the target to hit at least
     // once for each thing it is trying to detect, and generally happen twice for each detectable event.
-    const adjustment = this.constructor.randomInteger(margin);
+    const adjustment = this.randomInteger(margin);
     return Math.floor(target + margin/2 - adjustment);
   }
   workQueue = Promise.resolve();

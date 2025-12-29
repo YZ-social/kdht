@@ -73,7 +73,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
 	portals[message] = worker;
 	worker.tag = message;
 	worker.requestResolvers = {}; // Maps sender sname => resolve function of a waiting promise in flight.
-	log(worker.id - 1, message);
+	console.log(worker.id - 1, message);
       } else {
 	// Each worker can have several simultaneous conversations going. We need to get the message to the correct
 	// conversation promise, which we do by calling the resolver that the POST handler is waiting on.
@@ -159,17 +159,20 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     const response = await contact.signals(senderSname, ...incomingSignals);
     process.send([senderSname, ...response]);
   });
+  const STEP_MS = 5e3;
+  await Node.delay(STEP_MS * cluster.worker.id - 1);
+  // await Node.delay(STEP_MS * cluster.worker.id - 1);
+  // await Node.delay(Node.fuzzyInterval(STEP_MS));
 
-  await Node.delay(1e3 * cluster.worker.id); // A worker joins each second.
-
-  process.send(contact.sname); // Report in to server as available for bootstrapping.
   if (cluster.worker.id === 1) {
     // TODO: connect to global network
+    process.send(contact.sname); // Report in to server as available for bootstrapping.
   } else {
     // TODO: Maybe have server support faster startup by remembering posts that it is not yet ready for?
 
-    const bootstrapName = await contact.fetchBootstrap(cluster.worker.id - 1);
+    const bootstrapName = await contact.fetchBootstrap();
     const bootstrap = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+    process.send(contact.sname); // Must be before join, because as we join, others may be notified of us and want to connect.
     await contact.join(bootstrap);
   }
 }

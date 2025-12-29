@@ -57,7 +57,8 @@ export class WebContact extends Contact {
 
     // All side-effects (assignments to this) happen synchronously/immediately.
     const mode = initialSignals ? 'receive' : 'connect';
-    this.host.log('starting connection', this.sname, mode, this.connection ? 'exists!!!' : 'fresh', this.counter); const start = Date.now();
+    const start = Date.now();
+    this.host.log('starting connection', this.sname, mode, this.connection ? 'exists!!!' : 'fresh', this.counter);
     let {promise, resolve} = Promise.withResolvers();
     this.closed = promise;
     const webrtc = this.webrtc = new WebRTC({label: this.webrtcLabel, multiplex: true});
@@ -109,6 +110,8 @@ export class WebContact extends Contact {
   }
   isConflictingOffer(signals, label) {
     if (!signals?.length) return false;
+    if (signals === 'abandon') throw new Error('should have caught naked abandon');
+    if (signals[0] === 'abandon') throw new Error('should have caught abandon singleton');    
     const signalType = signals[0][0];
     const signalingState = this.webrtc?.peer.signalingState;
     if (signalType === 'answer' && !signalingState && label === 'connect') return 'skip'; // Answer after we've given up.
@@ -120,86 +123,77 @@ export class WebContact extends Contact {
     // FIXE: This one occurs after a 'Failed to parse the connection data. The address type is mismatching.' in answer().
     if (signalType === 'icecandidate' && signalingState === 'have-local-offer' && label === 'connect') return 'skip';
     
-    console.log('unhandled conflict pairing', label, signalType, signalingState);
-    // if (signalType === 'offer' && signalingState === 'have-local-offer') return signalingState;
+    if (signalType === 'offer' && signalingState === 'have-local-offer') return signalingState;
     // if (signalType === 'answer' && signalingState === 'have-remote-offer') return signalingState;
+    if (signalType === 'offer' & signalingState === 'stable' && label === 'receive') return signalingState;
+    this.host.xlog('unhandled conflict pairing', label, signalType, signalingState, 'from', this.sname);
     return false;
   }
-  connectionSerializer = Promise.resolve();
-  serialize(thunk) { // Return a promise resolving to thunk() that executes after all the previous calls to serialize() on this contact.
-    return this.connectionSerializer = this.connectionSerializer.then(thunk);
-  }
-  connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
+  async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Creates a WebRTC instance and uses it's connectVia to to signal.
     const contact = this.host.noteContactForTransport(this);
     ///if (contact.connection) contact.host.xlog('connect existing', contact.sname, contact.counter);
-    return  contact.serialize(async () => {
-      const { host, node, isServerNode, bootstrapHost } = contact;
-      // Anyone can connect to a server node using the server's connect endpoint.
-      // Anyone in the DHT can connect to another DHT node through a sponsor.
-      if (contact.connection) return contact.connection;
-      contact.ensureWebRTC(null);
-      const ready = this.webrtc?.signalsReady; // Immediately after ensureWebRTC, without yielding.
-      if (!ready) return null; // It has already come and gone.
-      await ready;
-      const checking = response => {
-	if (!response) contact.host.xlog('Falsy response from connect', contact.sname, response);
-	const conflict = contact.isConflictingOffer(response, 'connect');
-	if (conflict === 'skip') return [];
-	if (conflict) {
-	  contact.host.xlog(`*** connect received conflict ${conflict} while in ${contact.webrtc?.peer.signalingState}.`);
-	  return [];
-	}
-	if (response === 'abandon') {
-	  contact.host.xlog('got abandon from', contact.sname);
-	  contact.webrtc.abandonConnection();
-	  return null;
-	}	  
-	//else if (!response.length) contact.host.xlog('Empty response from connect', contact.sname);
-	//if (!response || !response.some(item => item === 'abandon')) return response;
-	// if (!response?.length) {
-	// 	contact.host.xlog('abandoning conflicting connection', contact.sname);
-	// 	contact.webrtc?.close();
-	// 	contact.webrtc = contact.connection = contact.overlay = null;
-	// }
-	return response;
-      };
-      if (bootstrapHost || isServerNode) {
-	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${contact.sname}`;
-	await contact.webrtc.connectVia(async signals => checking(await contact.fetchSignals(url, signals)));
-      } else {
-	if (!contact.webrtc) return null; // Conflict while waiting for signalsReady.
-	//contact.host.xlog('messaging connection signals to', contact.sname, contact.key);
-	await contact.webrtc.connectVia(async signals => checking(await host.message({targetKey: contact.key, targetSname: contact.sname, payload: ['signal', host.contact.sname, ...signals]})));
+
+    const { host, node, isServerNode, bootstrapHost } = contact;
+    // Anyone can connect to a server node using the server's connect endpoint.
+    // Anyone in the DHT can connect to another DHT node through a sponsor.
+    if (contact.connection) return contact.connection;
+    contact.ensureWebRTC(null);
+    const ready = this.webrtc?.signalsReady; // Immediately after ensureWebRTC, without yielding.
+    if (!ready) return null; // It has already come and gone.
+    await ready;
+    const checking = response => {
+      if (!response) contact.host.xlog('Falsy response from connect', contact.sname, response);
+      if (!response.length) return response;
+      if (response[0] === 'abandon') {
+	contact.host.xlog('got abandon from', contact.sname);
+	contact.webrtc.abandonConnection();
+	return null;
       }
-      await Promise.all([this.connection, this.overlay]);
-      return this.connection;
-    });
+      const conflict = contact.isConflictingOffer(response, 'connect');
+      if (conflict === 'skip') return [];
+      if (conflict) {
+	contact.host.xlog(`*** connect received conflict ${conflict} while in ${contact.webrtc?.peer.signalingState}.`);
+	return [];
+      }
+      return response;
+    };
+    if (bootstrapHost || isServerNode) {
+      const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${this.host.contact.sname}/${contact.sname}`;
+      await contact.webrtc.connectVia(async signals => checking(await contact.fetchSignals(url, signals)));
+    } else {
+      if (!contact.webrtc) return null; // Conflict while waiting for signalsReady.
+      //contact.host.xlog('messaging connection signals to', contact.sname, contact.key);
+      await contact.webrtc.connectVia(async signals => checking(await host.message({targetKey: contact.key, targetSname: contact.sname, payload: ['signal', host.contact.sname, ...signals]})));
+    }
+    await Promise.all([this.connection, this.overlay]);
+    return this.connection;
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
     // new contact on host to receive them, and promising a response.
     let contact = await this.ensureRemoteContact(senderSname);
-    return contact.serialize(async () => {
-      const conflict = contact.isConflictingOffer(signals, 'receive');
-      if (conflict === 'skip') {
-	//
+    const conflict = contact.isConflictingOffer(signals, 'receive');
+    if (conflict === 'skip') {
+      //
+      return [];
+    }
+    if (conflict) {
+      contact.host.xlog('*** signals got conflict', conflict, 'with', contact.sname);
+      if (contact.winsSimultaneousOffer) {
+	contact.host.xlog('Resolving signals conflict with', contact.sname, 'while', conflict, 'by preferring our own offer.');
+	//fixme return ['abandon']; // Our connect will continue with it's thing. Note: portal expects this to be a list.
 	return [];
+      } else { // Shut down our connection, and treat the given signals like a cold offer.
+	contact.host.xlog('Resolving signals conflict with', contact.sname, 'while', conflict, 'by accepting their offer and abandoning ours.');
+	contact.webrtc.abandonConnection();
       }
-      if (conflict) contact.host.xlog('*** signals got conflict', conflict, 'with', contact.sname);
-	// if (contact.winsSimultaneousOffer) {
-	//   contact.host.xlog('Resolving offer conflict with', contact.sname, 'while', conflict, 'by preferring our own offer.');
-	//   return 'abandon'; // Our connect will continue with it's thing.
-	// } else { // Shut down our connection, and treat the given signals like a cold offer.
-	//   contact.host.xlog('Resolving offer conflict with', contact.sname, 'while', conflict, 'by accepting their offer and abandoning ours.');
-	//   contact.webrtc.abandonConnection();
-	// }
-      if (contact.webrtc) return await contact.webrtc.respond(signals); 
+    }
+    if (contact.webrtc) return await contact.webrtc.respond(signals); 
 
-      this.host.noteContactForTransport(contact);
-      contact.ensureWebRTC(signals);
-      const results = await contact.webrtc.respond([]);
-      return results;
-    });
+    this.host.noteContactForTransport(contact);
+    contact.ensureWebRTC(signals);
+    const results = await contact.webrtc.respond([]);
+    return results;
   }
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
@@ -246,6 +240,7 @@ export class WebContact extends Contact {
   }
   inFlight = new Map();
   async transmitRPC(method, key, ...rest) { // Must return a promise.
+    const MAX_PING_MS = 250; // No including connect time. These are single-hop WebRTC data channels.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     if (!await this.connect()) return null;
     const sender = this.host.contact.sname;
@@ -255,10 +250,8 @@ export class WebContact extends Contact {
     const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
     const message = [messageTag, method, sender, key.toString(), ...rest];
     this.send(message);
-    const response = await Promise.race([responsePromise,
-					 Node.delay(1e3, null), // Faster than waiting for webrtc to observe a close
-					 this.closed]);
-    return response;
+    const timeout = Node.delay(MAX_PING_MS, null); // Faster than waiting for webrtc to observe a close
+    return await Promise.race([responsePromise, timeout, this.closed]);
   }
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
     // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.

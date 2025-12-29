@@ -47,6 +47,7 @@ export class Node extends NodeProbe {
     return k - remaining;
   }
   async join(contact) {
+    this.xlog('joining', contact.sname);
     contact = this.ensureContact(contact);
     await contact.connect();
     await this.addToRoutingTable(contact);
@@ -55,7 +56,6 @@ export class Node extends NodeProbe {
     // Refresh every bucket farther out than our closest neighbor.
     // I think(?) that this can be done by refreshing "just" the farthest bucket:
     //this.ensureBucket(this.constructor.keySize - 1).resetRefresh();
-    await Node.delay(Node.randomInteger(5e3));
     await this.ensureBucket(this.constructor.keySize - 1).refresh();
     // But if it turns out to be necessary to explicitly refresh each next bucket in turn, this is how:
     // let started = false;
@@ -67,7 +67,7 @@ export class Node extends NodeProbe {
     //   if (!started) started = true;
     //   else if (!bucket?.contacts.length) await this.ensureBucket(index).refresh();
     // }
-
+    this.xlog('joined', contact.sname);
     return this.contact; // Answering this node's home contact is handy for chaining or keeping track of contacts being made and joined.
   }
 
@@ -77,7 +77,7 @@ export class Node extends NodeProbe {
   messagePromises = new Map(); // maps message messageTags => responders, separately from inFlight, above
   async message({targetKey, targetSname, excluded = [], requestTag, senderKey, senderSname = this.contact.sname, payload}) { // Send message to targetKey, using our existing routingTable contacts.
     //const MAX_PING_MS = 400;
-    const MAX_MESSAGE_MS = 5e3;
+    const MAX_MESSAGE_MS = 2e3;
     let responsePromise = null;
     if (!requestTag) { // If this is an outgoing request from us, promises the response.
       requestTag = uuidv4();
@@ -111,11 +111,12 @@ export class Node extends NodeProbe {
       this.log(`hop ${senderSname} to ${targetSname} request: ${requestTag}`);
       overlay.send(body);
       // FIXME: how do we know if a response was ultimately delivered? Don't we need a confirmation for that so that we can try a different route?
-      const result =  await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, 'fixme')]);
-      if (result === 'fixme') {
-	this.xlog(`**** message timeout to ${targetSname} via ${contact.sname}: ${body}`);
-	continue;  // If we timeout, responsePromise is still valid.
-      }
+      const result =  await responsePromise;
+      //const result =  await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, 'fixme')]);
+      // if (result === 'fixme') {
+      // 	this.xlog(`message timeout to ${targetSname} via ${contact.sname}.`);
+      // 	continue;  // If we timeout, responsePromise is still valid.
+      // }
       return result;
       break;
     }
