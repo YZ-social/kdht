@@ -47,7 +47,7 @@ export class Node extends NodeProbe {
     return k - remaining;
   }
   async join(contact) {
-    this.xlog('joining', contact.sname);
+    this.log('joining', contact.sname);
     contact = this.ensureContact(contact);
     await contact.connect();
     await this.addToRoutingTable(contact);
@@ -67,7 +67,7 @@ export class Node extends NodeProbe {
     //   if (!started) started = true;
     //   else if (!bucket?.contacts.length) await this.ensureBucket(index).refresh();
     // }
-    this.xlog('joined', contact.sname);
+    this.log('joined', contact.sname);
     return this.contact; // Answering this node's home contact is handy for chaining or keeping track of contacts being made and joined.
   }
 
@@ -120,7 +120,7 @@ export class Node extends NodeProbe {
       return result;
       break;
     }
-    this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.name}`).join(', ')}: ${body}`);
+    this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.name}`).join(', ')}`);
     return null;
   }
   async messageHandler(dataString) {

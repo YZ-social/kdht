@@ -7,7 +7,9 @@ import { WebContact, Node } from '../index.js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
+// Todo: Allow a remote portal to be specified (passing a host to WebContact.create/ensureRemoteContact).
 const argv = yargs(hideBin(process.argv))
+      .usage("Launch nBots that connect to the network through the local portal. A bot is just an ordinary node that can only be contacted through another node. They provide either continuity or churn-testing, depend on whether or not they are told to 'thrash'.")
       .option('nBots', {
 	alias: 'n',
 	alias: 'nbots',
@@ -37,7 +39,7 @@ const argv = yargs(hideBin(process.argv))
 const host = uuidv4();
 
 if (cluster.isPrimary) {
-  for (let i = 1; i < argv.nBots; i++) {
+  for (let i = 1; i < argv.nBots; i++) { // The cluster primary becomes bot 0.
     cluster.fork();
   }
   if (argv.nWrites) {
@@ -55,6 +57,7 @@ if (cluster.isPrimary) {
 process.title = 'kdht-bot-' + host;
 
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
+console.log(cluster.worker?.id || 0, host);
 let contact = await WebContact.create({name: host, debug: argv.v});
 let bootstrapName = await contact.fetchBootstrap();
 let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');

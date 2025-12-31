@@ -72,7 +72,7 @@ export class Contact {
   sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
     const sender = this.host.contact;
     //this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
-    if (!sender.isRunning) {this.host.xlog('not running'); return null;  }// sender closed before call.
+    if (!sender.isRunning) {this.host.log('not running'); return null;  }// sender closed before call.
     if (sender.key === this.key) {
       const result = this.receiveRPC(method, sender, ...rest);
       if (!result) this.host.xlog('no local result');
@@ -82,7 +82,7 @@ export class Contact {
     const start = Date.now();
     return this.transmitRPC(method, ...rest) // The main event.
       .then(result => {
-	if (!sender.isRunning) {this.host.xlog('sender closed'); return null; } // Sender closed after call.
+	if (!sender.isRunning) {this.host.log('sender closed'); return null; } // Sender closed after call.
 	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));

@@ -3,13 +3,16 @@ import cluster from 'node:cluster';
 import process from 'node:process';
 import { spawn } from 'node:child_process'; // For optionally spawning bots.js
 import express from 'express';
+import logger from 'morgan';
 import { v4 as uuidv4 } from 'uuid';
 import { WebRTC } from '@yz-social/webrtc';
 import { WebContact, Node } from '../index.js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
+// TODO: Allow a remote portal to be specified that this portal will hook with, forming one big network.
 const argv = yargs(hideBin(process.argv))
+      .usage("Start an http post server through which nodes can connect to set of nPortals stable nodes.")
       .option('nPortals', {
 	alias: 'nportals',	
 	alias: 'p',
@@ -27,14 +30,14 @@ const argv = yargs(hideBin(process.argv))
       .option('thrash', {
 	type: 'boolean',
 	default: false,
-	description: "Do bots randomly disconnect and reconnect with no memory of previous data?"
+	description: "Do the nBots randomly disconnect and reconnect with no memory of previous data?"
       })
       .option('nWrites', {
 	alias: 'w',
 	alias: "nwrites",
 	type: 'number',
 	default: 0,
-	description: "The number of test writes to check."
+	description: "The number of test writes to pass to bots.js."
       })
       .option('port', {
 	type: 'number',
@@ -45,6 +48,16 @@ const argv = yargs(hideBin(process.argv))
 	alias: 'v',
 	type: 'boolean',
 	description: "Run with verbose logging."
+      })
+      .option('fixedSpacing', {
+	type: 'number',
+	default: 2,
+	description: "Minimum seconds to add between each portal."
+      })
+      .options('variableSpacing', {
+	type: 'number',
+	default: 5,
+	description: "Additional variable seconds (+/- variableSpacing/2) to add to fixedSpacing between each portal."
       })
       .parse();
 
@@ -63,6 +76,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     if (!argv.verbose) return;
     console.log(process.title, ...rest);
   }
+  console.log(new Date(), process.title, 'startup on port', argv.port);
 
   const portals = {}; // Maps worker sname => worker, for the full lifetime of the program. NOTE: MAY get filed in out of order from workers.
   for (let i = 0; i < argv.nPortals; i++) cluster.fork();
@@ -91,7 +105,8 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   // Router (two endpoints)
   const app = express();
   const router = express.Router();
-
+  app.use(logger(':date[iso] :status :method :url :res[content-length] - :response-time ms'));
+  
   router.get('/name/:label', (req, res, next) => { // Answer the actual sname corresponding to label.
     const label = req.params.label;
     // label can be a worker id, which alas starts from 1.
@@ -103,12 +118,12 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     return res.json(worker.tag);
   });
 
-  router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON POST requests.
+  router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON POST requests that provide an array of signals and get signals back.
     // Our WebRTC send [['offer', ...], ['icecandidate', ...], ...]
     // and accept responses of [['answer', ...], ['icecandidate', ...], ...]
     // through multiple POSTS.
     const {params, body} = req;
-    // Find the specifed worker, or pick one at random.
+    // Find the specifed worker, or pick one at random. TODO CLEANUP: Remove. We now use as separate /name/:label to pick one.
     const worker = portals[params.to];
     if (!worker) {
       log('no worker', params.to);
@@ -132,14 +147,14 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   });
 
   // Portal server
-  const port = argv.port;
-  app.set('port', port);
+  app.set('port', argv.port);
   app.use(express.json());
   app.use('/kdht', router);
-  app.listen(port);
-  log(process.title, 'listening on', port);
-  if (argv.nBots) {    
-    await Node.delay(1e3 * argv.nPortals);
+  app.listen(argv.port);
+  if (argv.nBots) {
+    const startupSeconds = argv.fixedSpacing * (argv.nPortals - 1) + 1.5 * argv.variableSpacing;
+    console.log(`Starting portals while waiting ${startupSeconds} seconds to start bots.`);
+    await Node.delay(startupSeconds * 1e3);
     const args = ['spec/bots.js', '--nBots', argv.nBots, '--thrash', argv.thrash || false, '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
     log('spawning node', args.join(' '));
     const bots = spawn('node', args, {shell: process.platform === 'win32'});
@@ -151,25 +166,25 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
 
 } else { // A portal node through which client's can connect.
 
+  
   const hostName = uuidv4();
   process.title = 'kdht-portal-' + hostName;
+  // For debugging:
+  // process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
+  // process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
+
   const contact = await WebContact.create({name: hostName, isServerNode: true, debug: argv.verbose});
   // Handle signaling that comes as a message from the server.
   process.on('message', async ([senderSname, ...incomingSignals]) => { // Signals from a sender through the server.
     const response = await contact.signals(senderSname, ...incomingSignals);
     process.send([senderSname, ...response]);
   });
-  const STEP_MS = 5e3;
-  await Node.delay(STEP_MS * cluster.worker.id - 1);
-  // await Node.delay(STEP_MS * cluster.worker.id - 1);
-  // await Node.delay(Node.fuzzyInterval(STEP_MS));
-
+  await Node.delay(argv.fixedSpacing * 1e3 * cluster.worker.id - 1);
   if (cluster.worker.id === 1) {
     // TODO: connect to global network
     process.send(contact.sname); // Report in to server as available for bootstrapping.
   } else {
-    // TODO: Maybe have server support faster startup by remembering posts that it is not yet ready for?
-
+    await Node.delay(Node.fuzzyInterval(argv.variableSpacing * 1e3));
     const bootstrapName = await contact.fetchBootstrap();
     const bootstrap = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
     process.send(contact.sname); // Must be before join, because as we join, others may be notified of us and want to connect.

@@ -6,20 +6,17 @@
   "type": "module",
   "scripts": {
     "smoke": "node spec/portal.js --nPortals 5 --nBots 5 --nWrites 100",
-
     "load30": "node spec/portal.js --nPortals 10 --nBots 20 --nWrites 100",
     "load50": "node spec/portal.js --nPortals 10 --nBots 65 --nWrites 100",
-    "load75": "node spec/portal.js --nPortals 10 --nBots 40 --nWrites 100",    
+    "load75": "node spec/portal.js --nPortals 10 --nBots 40 --nWrites 100",
     "load100": "node spec/portal.js --nPortals 10 --nBots 90 --nWrites 100",
     "load150": "node spec/portal.js --nPortals 15 --nBots 135 --nWrites 100",
     "load200": "node spec/portal.js --nPortals 20 --nBots 180 --nWrites 100",
-
     "thrash30": "node spec/portal.js --nPortals 10 --nBots 20 --thrash true --nWrites 100",
     "thrash50": "node spec/portal.js --nPortals 10 --nBots 40 --thrash true --nWrites 100",
     "thrash100": "node spec/portal.js --nPortals 10 --nBots 90 --thrash true --nWrites 100",
     "thrash150": "node spec/portal.js --nPortals 15 --nBots 135 --thrash true --nWrites 100",
     "thrash200": "node spec/portal.js --nPortals 20 --nBots 180 --thrash true --nWrites 100",
-
     "test": "npx jasmine"
   },
   "dependencies": {
@@ -28,6 +25,7 @@
   "devDependencies": {
     "express": "^5.2.1",
     "jasmine": "^5.12.0",
+    "morgan": "^1.10.1",
     "uuid": "^13.0.0",
     "yargs": "^18.0.0"
   },
