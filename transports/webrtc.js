@@ -16,6 +16,20 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (!response.ok) throw new Error(`fetch ${response.url} failed ${response.status}: ${response.statusText}.`);
   }
+  async fetchBootstrap(label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
+    // worker index or the string 'random' to an available sname to which we can connect().
+    const url = `http://localhost:3000/kdht/name/${label}`;
+    const response = await fetch(url);
+    this.checkResponse(response);
+    return await response.json();
+  }
+  async checkSignals(signals) {
+    if (!signals) {
+      await this.host.removeContact(this);
+      return [];
+    }
+    return signals;
+  }
   async fetchSignals(url, signalsToSend) { 
     const response = await fetch(url, {
       method: 'POST',
@@ -23,14 +37,11 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       body: JSON.stringify(signalsToSend)
     });
     this.checkResponse(response);
-    return await response.json();
+    return this.checkSignals(await response.json());
   }
-  async fetchBootstrap(label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
-    // worker index or the string 'random' to an available sname to which we can connect().
-    const url = `http://localhost:3000/kdht/name/${label}`;
-    const response = await fetch(url);
-    this.checkResponse(response);
-    return await response.json();
+  messsageSignals(signals) {
+    return this.checkSignals(this.host.message({targetKey: this.key, targetSname: this.sname,
+						payload: ['signal', this.host.contact.sname, ...signals]}));
   }
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;
@@ -64,8 +75,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${host.contact.sname}/${this.sname}`;
 	this.webrtc.transferSignals = signals => this.fetchSignals(url, signals);
       } else {
-	this.webrtc.transferSignals = signals => host.message({targetKey: this.key, targetSname: this.sname,
-							       payload: ['signal', host.contact.sname, ...signals]});
+	this.webrtc.transferSignals = signals => this.messsageSignals(signals);
       }
     } // Otherwise, we just hang on to signals until we're asked to respond().
 

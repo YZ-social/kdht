@@ -2,6 +2,7 @@
 import cluster from 'node:cluster';
 import process from 'node:process';
 import { spawn } from 'node:child_process'; // For optionally spawning bots.js
+import { launchWriteRead } from './writes.js';
 import express from 'express';
 import logger from 'morgan';
 import { v4 as uuidv4 } from 'uuid';
@@ -150,18 +151,23 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   app.use(express.json());
   app.use('/kdht', router);
   app.listen(argv.port);
+  const startupSeconds = argv.fixedSpacing * argv.nPortals + 1.5 * argv.variableSpacing;
+  console.log(`Starting ${argv.nPortals} portals over ${startupSeconds} seconds.`);
+  if (argv.nBots || argv.nWrites) await Node.delay(startupSeconds * 1e3);
   if (argv.nBots) {
-    const startupSeconds = argv.fixedSpacing * (argv.nPortals - 1) + 1.5 * argv.variableSpacing;
-    console.log(`Starting portals while waiting ${startupSeconds} seconds to start bots.`);
-    await Node.delay(startupSeconds * 1e3);
-    const args = ['spec/bots.js', '--nBots', argv.nBots, '--thrash', argv.thrash || false, '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
+    const args = ['spec/bots.js', '--nBots', argv.nBots, '--thrash', argv.thrash || false, '--verbose', argv.verbose || false];
     log('spawning node', args.join(' '));
     const bots = spawn('node', args, {shell: process.platform === 'win32'});
     // Slice off the trailing newline of data so that we don't have blank lines after our console adds one more.
     function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
     bots.stdout.on('data', echo);
     bots.stderr.on('data', echo);
-  }    
+    if (argv.nWrites) {
+      console.log(new Date(), 'Waiting a refresh interval while', argv.nBots, 'bots get randomly created before write/read test.');
+      await Node.delay(2 * Node.refreshTimeIntervalMS);
+    }
+  }
+  if (argv.nWrites) launchWriteRead(argv.nWrites, argv.nBots ? 2 * Node.refreshTimeIntervalMS : 0, argv.verbose);
 
 } else { // A portal node through which client's can connect.
 

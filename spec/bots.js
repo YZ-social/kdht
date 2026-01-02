@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import cluster from 'node:cluster';
 import process from 'node:process';
-import { spawn } from 'node:child_process'; // For optionally spawning bots.js
+import { launchWriteRead } from './writes.js';
 import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 import yargs from 'yargs';
@@ -44,35 +44,31 @@ if (cluster.isPrimary) {
   }
   if (argv.nWrites) {
     console.log(new Date(), 'Waiting a refresh interval while bots get randomly created before write/read test');
-    setTimeout(() => {
-      const args = ['jasmine', 'spec/dhtWriteRead.js', '--', '--nWrites', argv.nWrites, '--verbose', argv.verbose || false];
-      const bots = spawn('npx', args, {shell: process.platform === 'win32'});
-      console.log(new Date(), 'spawning npx', args.join(' '));
-      function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
-      bots.stdout.on('data', echo);
-      bots.stderr.on('data', echo);
-    }, 2 * Node.refreshTimeIntervalMS);
+    await Node.delay(2 * Node.refreshTimeIntervalMS);
+    launchWriteRead(argv.nWrites, Node.refreshTimeIntervalMS, argv.verbose);
   }
 }
 process.title = 'kdht-bot-' + host;
 
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
 console.log(cluster.worker?.id || 0, host);
-let contact = await WebContact.create({name: host, debug: argv.v});
+let contact = await WebContact.create({name: host, debug: argv.verbose});
 let bootstrapName = await contact.fetchBootstrap();
 let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
 await contact.join(bootstrapContact);
 
 while (argv.thrash) {
   await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
+  const old = contact;
   const next = uuidv4();
-  console.log('\n\n*** killing', contact.sname);
+  contact.host.xlog('disconnecting');
   contact.disconnect();
   await Node.delay(1e3); // TODO: remove?
 
-  contact = await WebContact.create({name: next, debug: argv.v});
+  contact = await WebContact.create({name: next, debug: argv.verbose});
   bootstrapName = await contact.fetchBootstrap();
   bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
   await contact.join(bootstrapContact);
+  old.host.xlog('rejoined as', next);  
 }
 

@@ -8,9 +8,11 @@ import { WebContact, Node } from '../index.js';
 // I cannot get yargs to work properly within jasmine. Get args by hand.
 // Note: jasmine will treat --options as arguments to itself. To pass them to the script, you need to separate with '--'.
 const nWritesIndex = process.argv.indexOf('--nWrites');
+const waitBeforeReadIndex = process.argv.indexOf('--waitBeforeRead');
 const verboseIndex = process.argv.indexOf('--verbose');
 const shutdownIndex = process.argv.indexOf('--shutdown');
 const nWrites = nWritesIndex >= 0 ? JSON.parse(process.argv[nWritesIndex + 1]) : 10;
+const waitBeforeRead = waitBeforeReadIndex >= 0 ? JSON.parse(process.argv[waitBeforeReadIndex + 1]) : 10;
 const verbose = verboseIndex >= 0 ? JSON.parse( process.argv[verboseIndex + 1] || 'true' ) : false;
 const shutdown = shutdownIndex >= 0 ? JSON.parse( process.argv[shutdownIndex + 1] || 'true' ) : true;
 
@@ -24,11 +26,13 @@ describe("DHT write/read", function () {
     await contact.join(bootstrapContact);
     console.log(new Date(), contact.sname, 'joined');    
     for (let index = 0; index < nWrites; index++) {
-      const wrote = await contact.store(index, index);
+      const wrote = await contact.storeValue(index, index);
       console.log('Wrote', index);
     }
-    console.log(new Date(), 'Written. Waiting one refresh period before reading.');
-    await Node.delay(Node.refreshTimeIntervalMS);
+    if (waitBeforeRead) {
+      console.log(new Date(), `Written. Waiting ${waitBeforeRead.toLocaleString()} ms before reading.`);
+      await Node.delay(waitBeforeRead);
+    }
     console.log(new Date(), 'Reading');
   }, 5e3 * nWrites + 2 * Node.refreshTimeIntervalMS);
   afterAll(async function () {

@@ -53,6 +53,7 @@ export class Contact {
 
   // Operations
   join(other) { return this.host.join(other); }
+  storeValue(key, value) { return this.host.storeValue(key, value); }
   store(key, value) {
     return this.sendRPC('store', key, value);
   }
