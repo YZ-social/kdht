@@ -90,28 +90,23 @@ export class Node extends NodeProbe {
     // The excluded list of keys prevents cycles.
     excluded.push(this.key.toString()); // TODO: Find a way to not have an excluded list, or at least add junk for privacy.
     const body = JSON.stringify({targetKey, excluded, requestTag, senderKey, targetSname, senderSname, payload});
-    const contacts = this.findClosestHelpers(BigInt(targetKey)).map(helper => helper.contact);
-    //this.xlog('message to:', targetKey, 'contacts:', contacts.map(c => c.sname + '/' + c.key), 'excluding:', excluded);
+    const contacts = this.findClosestHelpers(BigInt(targetKey)).map(helper => helper.contact).filter(contact => contact.key !== this.key);
+    this.log('=>', targetSname, 'message', requestTag, 'contacts:', contacts.map(c => c.sname));
     for (const contact of contacts) {
-      if (excluded.includes(contact.key.toString())) continue;
-      // if (!contact.overlayOpen) {
-      // 	this.xlog('overlay to', contact.sname, 'is not yet open in connecting to', targetSname, contact.webrtc.dataChannels.get('overlay')?.readyState, !!contact.webrtc.waitingChannels.overlay, !!contact.overlay, contact.connectionOpen);
-      // 	contact.overlay.then(async overlay => this.xlog('overlay to', contact.sname, 'now', overlay?.readyState, (await contact.overlay)?.readyState, 'for', targetSname));
-      // }
+      if (excluded.includes(contact.key.toString())) { this.log('skiping excluded', contact.sname, 'for message', requestTag); continue; }
       //this.xlog('trying message through', contact.sname);
-      if (!contact.connection) continue;
-      //if (!(await Promise.race([Node.delay(MAX_PING_MS, false), contact.sendRPC('ping', contact.key)]))) {
+      if (!contact.connection) { this.log('skipping unconnected', contact.sname, 'for message', requestTag); continue; }
       if (!(await contact.sendRPC('ping', contact.key))) {
-	this.xlog('failed to get ping', contact.sname);
+	this.xlog('failed to get ping', contact.sname, 'for message', requestTag);
 	this.removeContact(contact);
 	continue;
       }
       let overlay = await contact.overlay;
-      overlay ||= await contact.overlay; // If there was a conflict, grab resolution.
-      this.log(`hop ${senderSname} to ${targetSname} request: ${requestTag}`);
+      //this.xlog('hopping through', contact.sname, 'for message', requestTag, 'from',  senderSname, 'to', targetSname);
       overlay.send(body);
       // FIXME: how do we know if a response was ultimately delivered? Don't we need a confirmation for that so that we can try a different route?
       const result =  await responsePromise;
+      //this.xlog('got result for message', requestTag, 'through', contact.sname);
       //const result =  await Promise.race([responsePromise, Node.delay(MAX_MESSAGE_MS, 'fixme')]);
       // if (result === 'fixme') {
       // 	this.xlog(`message timeout to ${targetSname} via ${contact.sname}.`);
@@ -120,7 +115,7 @@ export class Node extends NodeProbe {
       return result;
       break;
     }
-    this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.name}`).join(', ')}`);
+    this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.sname}`).join(', ')}`);
     return null;
   }
   async messageHandler(dataString) {

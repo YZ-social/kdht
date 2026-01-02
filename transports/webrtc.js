@@ -78,8 +78,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       clearTimeout(timeout);
       dataChannel.addEventListener('close', onclose);
       dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
-      //if  (this.host.debug)
-	await webrtc.reportConnection(true); // TODO: make this asymchronous?
+      if  (this.host.debug) await webrtc.reportConnection(true); // TODO: make this asymchronous?
       if (webrtc.statsElapsed > 500) this.host.xlog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
       return dataChannel;
     });
@@ -138,7 +137,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
-    if (channel) channel.send(JSON.stringify(message));
+    if (channel?.readyState === 'open') channel.send(JSON.stringify(message));
     else this.host.xlog('Unable to open channel');
   }
   getName(sname) { // Answer name from sname.

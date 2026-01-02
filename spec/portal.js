@@ -34,7 +34,6 @@ const argv = yargs(hideBin(process.argv))
       })
       .option('nWrites', {
 	alias: 'w',
-	alias: "nwrites",
 	type: 'number',
 	default: 0,
 	description: "The number of test writes to pass to bots.js."
@@ -105,7 +104,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   // Router (two endpoints)
   const app = express();
   const router = express.Router();
-  app.use(logger(':date[iso] :status :method :url :res[content-length] - :response-time ms'));
+  if (argv.verbose) app.use(logger(':date[iso] :status :method :url :res[content-length] - :response-time ms'));
   
   router.get('/name/:label', (req, res, next) => { // Answer the actual sname corresponding to label.
     const label = req.params.label;
