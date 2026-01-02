@@ -23,7 +23,7 @@ export class NodeMessages extends NodeContacts {
   }
   receiveRPC(method, sender, ...rest) {
     // The sender exists, so add it to the routing table, but give it a while to finish joining.
-    setTimeout(() => this.addToRoutingTable(sender), this.fuzzyInterval());
+    this.addToRoutingTable(sender);
     return this[method](...rest);
   }
 }
