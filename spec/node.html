@@ -1,0 +1,45 @@
+<html>
+  <head>
+    <script type="importmap">
+      {
+	"imports": {
+	  "uuid": "./uuid/index.js",
+	  "@yz-social/webrtc": "./webrtc/index.js"
+	}
+      }
+    </script>
+  </head>
+  <body>
+    <button id="update">update node display</button><pre id="display"></pre><br/>
+    <input type="text" id="key" placeholder="key to read or write under"></input><br/>
+    <input type="text" id="writeValue" placeholder="value to write"></input> <button id="write">write</button><br/>
+    <input type="text" id="readValue" placeholder="read value" readonly></input> <button id="read">read</button><br/>    
+    <script type="module">
+      import { v4 as uuidv4 } from 'uuid';
+      import { WebContact } from '../index.js';
+      Object.assign(globalThis, {uuidv4, WebContact });
+
+      let name = localStorage.getItem('name');
+      if (!name) {
+	name = uuidv4();
+	localStorage.setItem('name', name);
+      }
+      const contact = globalThis.contact = await WebContact.create({name});
+      const bootstrapName = await contact.fetchBootstrap();
+      console.log('connecting to', bootstrapName);
+      const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+      await contact.join(bootstrapContact);
+      console.log('connected');
+
+      update.onclick = () => {
+        const report = contact.node.report(null);
+        console.log({report, display});
+        display.textContent = report;
+      };
+      update.onclick();
+
+      write.onclick = () => contact.storeValue(key.value, writeValue.value);
+      read.onclick = () => contact.node.locateValue(key.value).then(value => readValue.value = value);
+    </script>
+  </body>    
+</html>  

@@ -8,6 +8,7 @@
     "serverTest": "node spec/portal.js --nPortals 20 --nWrites 40",
     "serverTestLight": "node spec/portal.js --nPortals 10 --nWrites 40",    
     "smoke": "node spec/portal.js --nPortals 5 --nBots 5 --thrash --nWrites 10",
+    "smoke20": "node spec/portal.js --nPortals 10 --nBots 10 --thrash --nWrites 10",
     "load30": "node spec/portal.js --nPortals 10 --nBots 20 --nWrites 100",
     "load50": "node spec/portal.js --nPortals 10 --nBots 65 --nWrites 100",
     "load75": "node spec/portal.js --nPortals 10 --nBots 40 --nWrites 100",

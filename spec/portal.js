@@ -5,6 +5,8 @@ import { spawn } from 'node:child_process'; // For optionally spawning bots.js
 import { launchWriteRead } from './writes.js';
 import express from 'express';
 import logger from 'morgan';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { WebRTC } from '@yz-social/webrtc';
 import { WebContact, Node } from '../index.js';
@@ -150,6 +152,9 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   app.set('port', argv.port);
   app.use(express.json());
   app.use('/kdht', router);
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  app.use(express.static(path.resolve(__dirname, '..')));
   app.listen(argv.port);
   const startupSeconds = argv.fixedSpacing * argv.nPortals + 1.5 * argv.variableSpacing;
   console.log(`Starting ${argv.nPortals} portals over ${startupSeconds} seconds.`);

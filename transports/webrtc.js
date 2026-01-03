@@ -71,7 +71,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       this.webrtc = this.connection = this.overlay = null;
     };
     if (initiate) {
-      if (bootstrapHost || isServerNode) {
+      if (bootstrapHost/* || isServerNode*/) {
 	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${host.contact.sname}/${this.sname}`;
 	this.webrtc.transferSignals = signals => this.fetchSignals(url, signals);
       } else {
