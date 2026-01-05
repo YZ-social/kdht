@@ -115,5 +115,5 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
 } else { // A portal node through which client's can connect.
   const portalNode = await import('../portals/node.js');
   const {baseURL, externalBaseURL, fixedSpacing, variableSpacing, verbose} = argv;
-  portalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, verbose});
+  await portalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, verbose});
 }
