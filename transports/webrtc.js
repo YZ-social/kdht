@@ -209,6 +209,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // If we find that in our inFlight tags, then the message is a response.
     if (dataString === '"bye"') { // Special messsage that the other side is disconnecting, so we can clean up early.
       this.webrtc.close();
+      this.host.xlog('removing disconnected contact');
       await this.host.removeContact(this);  // TODO: Make sure we're not invoking this in maxTransports cases.
       return;
     }
