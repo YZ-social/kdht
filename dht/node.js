@@ -98,7 +98,7 @@ export class Node extends NodeProbe {
       if (!contact.connection) { this.log('skipping unconnected', contact.sname, 'for message', requestTag); continue; }
       if (!(await contact.sendRPC('ping', contact.key))) {
 	this.xlog('failed to get ping', contact.sname, 'for message', requestTag);
-	this.removeContact(contact);
+	await this.removeContact(contact);
 	continue;
       }
       let overlay = await contact.overlay;
@@ -115,7 +115,7 @@ export class Node extends NodeProbe {
       return result;
       break;
     }
-    this.xlog(`No connected contacts to send message ${requestTag} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.sname}`).join(', ')}`);
+    this.xlog(`No connected contacts to send message ${requestTag} to ${targetSname} among ${contacts.map(c => `${excluded.includes(c.key.toString()) ? 'excluded/' : (c.connection ? '' : 'unconnected/')}${c.sname}`).join(', ')}`);
     return null;
   }
   async messageHandler(dataString) {

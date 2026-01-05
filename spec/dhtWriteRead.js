@@ -8,10 +8,13 @@ import { WebContact, Node } from '../index.js';
 // I cannot get yargs to work properly within jasmine. Get args by hand.
 // Note: jasmine will treat --options as arguments to itself. To pass them to the script, you need to separate with '--'.
 const nWritesIndex = process.argv.indexOf('--nWrites');
+const baseURLIndex = process.argv.indexOf('--baseURL');
 const waitBeforeReadIndex = process.argv.indexOf('--waitBeforeRead');
 const verboseIndex = process.argv.indexOf('--verbose');
 const shutdownIndex = process.argv.indexOf('--shutdown');
+
 const nWrites = nWritesIndex >= 0 ? JSON.parse(process.argv[nWritesIndex + 1]) : 10;
+const baseURL = baseURLIndex >= 0 ? process.argv[baseURLIndex + 1] : 'http://localhost:3000/kdht';
 const waitBeforeRead = waitBeforeReadIndex >= 0 ? JSON.parse(process.argv[waitBeforeReadIndex + 1]) : 10;
 const verbose = verboseIndex >= 0 ? JSON.parse( process.argv[verboseIndex + 1] || 'true' ) : false;
 const shutdown = shutdownIndex >= 0 ? JSON.parse( process.argv[shutdownIndex + 1] || 'true' ) : true;
@@ -20,8 +23,8 @@ describe("DHT write/read", function () {
   let contact;
   beforeAll(async function () {
     contact = await WebContact.create({name: uuidv4(), debug: verbose});
-    const bootstrapName = await contact.fetchBootstrap();
-    const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+    const bootstrapName = await contact.fetchBootstrap(baseURL);
+    const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, baseURL);
     console.log(new Date(), contact.sname, 'joining', bootstrapContact.sname);
     await contact.join(bootstrapContact);
     console.log(new Date(), contact.sname, 'joined');    
@@ -42,10 +45,6 @@ describe("DHT write/read", function () {
     } else {
       contact.disconnect();
     }
-    // if (shutdown) {
-    //   exec('pkill kdht-bot');
-    //   exec('pkill kdht-portal-server');
-    // }
   });
   for (let index = 0; index < nWrites; index++) {
     it(`reads ${index}.`, async function () {

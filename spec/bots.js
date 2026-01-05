@@ -17,6 +17,11 @@ const argv = yargs(hideBin(process.argv))
 	default: 20,
 	description: "The number of bots, which can only be reached through the network."
       })
+      .option('baseURL', {
+	type: 'string',
+	default: 'http://localhost:3000/kdht',
+	description: "The base URL of the portal server through which to bootstrap."
+      })
       .option('thrash', {
 	type: 'boolean',
 	default: false,
@@ -45,7 +50,7 @@ if (cluster.isPrimary) {
   if (argv.nWrites) {
     console.log(new Date(), 'Waiting a refresh interval while bots get randomly created before write/read test');
     await Node.delay(2 * Node.refreshTimeIntervalMS);
-    launchWriteRead(argv.nWrites, Node.refreshTimeIntervalMS, argv.verbose);
+    launchWriteRead(argv.nWrites, argv.baseURL, Node.refreshTimeIntervalMS, argv.verbose);
   }
 }
 process.title = 'kdht-bot-' + host;
@@ -53,8 +58,8 @@ process.title = 'kdht-bot-' + host;
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
 console.log(cluster.worker?.id || 0, host);
 let contact = await WebContact.create({name: host, debug: argv.verbose});
-let bootstrapName = await contact.fetchBootstrap();
-let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
+let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
 await contact.join(bootstrapContact);
 
 while (argv.thrash) {
@@ -66,8 +71,8 @@ while (argv.thrash) {
   await Node.delay(1e3); // TODO: remove?
 
   contact = await WebContact.create({name: next, debug: argv.verbose});
-  bootstrapName = await contact.fetchBootstrap();
-  bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+  bootstrapName = await contact.fetchBootstrap(argv.baseURL);
+  bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
   await contact.join(bootstrapContact);
   old.host.xlog('rejoined as', next);  
 }

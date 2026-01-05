@@ -4,6 +4,7 @@
       {
 	"imports": {
 	  "uuid": "./uuid/index.js",
+	  "@yz-social/kdht": "./kdht/index.js",
 	  "@yz-social/webrtc": "./webrtc/index.js"
 	}
       }
@@ -16,7 +17,7 @@
     <input type="text" id="readValue" placeholder="read value" readonly></input> <button id="read">read</button><br/>    
     <script type="module">
       import { v4 as uuidv4 } from 'uuid';
-      import { WebContact } from '../index.js';
+      import { WebContact } from '@yz-social/kdht';
       Object.assign(globalThis, {uuidv4, WebContact });
 
       let name = localStorage.getItem('name');
@@ -25,9 +26,10 @@
 	localStorage.setItem('name', name);
       }
       const contact = globalThis.contact = await WebContact.create({name});
-      const bootstrapName = await contact.fetchBootstrap();
+      const bootstrapBase = new URL('/kdht', origin).href; // Must be a string
+      const bootstrapName = await contact.fetchBootstrap(bootstrapBase);
       console.log('connecting to', bootstrapName);
-      const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
+      const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
       await contact.join(bootstrapContact);
       console.log('connected');
 

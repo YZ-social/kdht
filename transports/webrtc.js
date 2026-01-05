@@ -16,9 +16,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (!response.ok) throw new Error(`fetch ${response.url} failed ${response.status}: ${response.statusText}.`);
   }
-  async fetchBootstrap(label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
+  async fetchBootstrap(baseURL, label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
     // worker index or the string 'random' to an available sname to which we can connect().
-    const url = `http://localhost:3000/kdht/name/${label}`;
+    const url = `${baseURL}/name/${label}`;
     const response = await fetch(url);
     this.checkResponse(response);
     return await response.json();
@@ -39,9 +39,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     this.checkResponse(response);
     return this.checkSignals(await response.json());
   }
-  messsageSignals(signals) {
-    return this.checkSignals(this.host.message({targetKey: this.key, targetSname: this.sname,
-						payload: ['signal', this.host.contact.sname, ...signals]}));
+  async messsageSignals(signals) {
+    return this.checkSignals(await this.host.message({targetKey: this.key, targetSname: this.sname,
+						      payload: ['signal', this.host.contact.sname, ...signals]}));
   }
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;

@@ -1,17 +1,15 @@
 #!/usr/bin/env node
-import cluster from 'node:cluster';
 import process from 'node:process';
+import cluster from 'node:cluster';
 import { spawn } from 'node:child_process'; // For optionally spawning bots.js
 import { launchWriteRead } from './writes.js';
 import express from 'express';
 import logger from 'morgan';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { v4 as uuidv4 } from 'uuid';
-import { WebRTC } from '@yz-social/webrtc';
-import { WebContact, Node } from '../index.js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import { Node } from '../index.js';
 
 // TODO: Allow a remote portal to be specified that this portal will hook with, forming one big network.
 const argv = yargs(hideBin(process.argv))
@@ -41,10 +39,15 @@ const argv = yargs(hideBin(process.argv))
 	default: 0,
 	description: "The number of test writes to pass to bots.js."
       })
-      .option('port', {
-	type: 'number',
-	default: 3000,
-	description: "Port on which to run the local bootstrap server."
+      .option('baseURL', {
+	type: 'string',
+	default: 'http://localhost:3000/kdht',
+	description: "The base URL of the portal server through which to bootstrap."
+      })
+      .option('externalBaseURL', {
+	type: 'string',
+	default: '',
+	description: "The base URL of the some other portal server to which we should connect ours, if any."
       })
       .option('verbose', {
 	alias: 'v',
@@ -74,94 +77,29 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   // Our job is to launch some kdht nodes to which clients can connect by signaling through
   // a little web server operated here.
   process.title = 'kdht-portal-server';
-  function log(...rest) {
-    if (!argv.verbose) return;
-    console.log(process.title, ...rest);
-  }
-  console.log(new Date(), process.title, 'startup on port', argv.port);
-
-  const portals = {}; // Maps worker sname => worker, for the full lifetime of the program. NOTE: MAY get filed in out of order from workers.
-  for (let i = 0; i < argv.nPortals; i++) cluster.fork();
-  const workers = Object.values(cluster.workers);
-  for (const worker of workers) {
-    worker.on('message', message => { // Message from a worker, in response to a POST.
-      if (!worker.tag) {  // The very first message from a worker (during setup) will identify its tag.
-	portals[message] = worker;
-	worker.tag = message;
-	worker.requestResolvers = {}; // Maps sender sname => resolve function of a waiting promise in flight.
-	console.log(worker.id - 1, message);
-      } else {
-	// Each worker can have several simultaneous conversations going. We need to get the message to the correct
-	// conversation promise, which we do by calling the resolver that the POST handler is waiting on.
-	// Note that requestResolvers are per worker: there can only be one requestResolver pending per worker
-	// for each sender.
-	const [senderSname, ...signals] = message;
-	worker.requestResolvers[senderSname]?.(signals);
-      }
-    });
-  }
-  cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers.
-    console.log(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
-  });
-  
-  // Router (two endpoints)
-  const app = express();
-  const router = express.Router();
-  if (argv.verbose) app.use(logger(':date[iso] :status :method :url :res[content-length] - :response-time ms'));
-  
-  router.get('/name/:label', (req, res, next) => { // Answer the actual sname corresponding to label.
-    const label = req.params.label;
-    // label can be a worker id, which alas starts from 1.
-    const isRandom = label === 'random';
-    let list = isRandom ? Object.values(portals) : workers;
-    const index = isRandom ? Node.randomInteger(list.length) : label - 1;
-    const worker =  list[index];
-    if (!worker) return res.sendStatus(isRandom ? 403 : 404);
-    return res.json(worker.tag);
-  });
-
-  router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON POST requests that provide an array of signals and get signals back.
-    // Our WebRTC send [['offer', ...], ['icecandidate', ...], ...]
-    // and accept responses of [['answer', ...], ['icecandidate', ...], ...]
-    // through multiple POSTS.
-    const {params, body} = req;
-    // Find the specifed worker, or pick one at random. TODO CLEANUP: Remove. We now use as separate /name/:label to pick one.
-    const worker = portals[params.to];
-    if (!worker) {
-      log('no worker', params.to);
-      return res.sendStatus(404);
-    }
-    if (!worker.tag) {
-      log('worker', params.to, 'not signed in yet');
-      return res.sendStatus(403);
-    }
-
-    // Each kdht worker node can handle connections from multiple clients. Specify which one.
-    body.unshift(params.from); // Adds sender sname at front of body.
-
-    // Pass the POST body to the worker and await the response.
-    const promise = new Promise(resolve => worker.requestResolvers[params.from] = resolve);
-    worker.send(body, undefined, undefined, error => error && console.log(`Error communicating with portal worker ${worker.id}:${worker.tag} ${worker.isConnected() ? 'connected' : 'disconnected'} ${worker.isDead() ? 'dead' : 'running'}:`, error));
-    let response = await promise;
-    delete worker.requestResolvers[params.from]; // Now that we have the response.
-
-    return res.send(response);
-  });
-
-  // Portal server
-  app.set('port', argv.port);
-  app.use(express.json());
-  app.use('/kdht', router);
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
+  const app = express();
+  //fixme if (argv.verbose)
+    app.use(logger(':date[iso] :status :method :url :res[content-length] - :response-time ms'));
+
+  for (let i = 0; i < argv.nPortals; i++) cluster.fork();
+  const portalServer = await import('../portals/router.js');
+  
+  // Portal server
+  app.set('port', parseInt((new URL(argv.baseURL)).port || '80'));
+  console.log(new Date(), process.title, 'startup on port', app.get('port'), 'in', __dirname);
+  app.use(express.json());
+
+  app.use('/kdht', portalServer.router);
   app.use(express.static(path.resolve(__dirname, '..')));
-  app.listen(argv.port);
+  app.listen(app.get('port'));
   const startupSeconds = argv.fixedSpacing * argv.nPortals + 1.5 * argv.variableSpacing;
   console.log(`Starting ${argv.nPortals} portals over ${startupSeconds} seconds.`);
   if (argv.nBots || argv.nWrites) await Node.delay(startupSeconds * 1e3);
   if (argv.nBots) {
-    const args = ['spec/bots.js', '--nBots', argv.nBots, '--thrash', argv.thrash || false, '--verbose', argv.verbose || false];
-    log('spawning node', args.join(' '));
+    const args = ['spec/bots.js', '--nBots', argv.nBots, '--baseURL', argv.baseURL, '--thrash', argv.thrash || false, '--verbose', argv.verbose || false];
+    if (argv.verbose) console.log('spawning node', args.join(' '));
     const bots = spawn('node', args, {shell: process.platform === 'win32'});
     // Slice off the trailing newline of data so that we don't have blank lines after our console adds one more.
     function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
@@ -172,32 +110,10 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
       await Node.delay(2 * Node.refreshTimeIntervalMS);
     }
   }
-  if (argv.nWrites) launchWriteRead(argv.nWrites, argv.nBots ? 2 * Node.refreshTimeIntervalMS : 0, argv.verbose);
+  if (argv.nWrites) launchWriteRead(argv.nWrites, argv.baseURL, argv.nBots ? 2 * Node.refreshTimeIntervalMS : 0, argv.verbose);
 
 } else { // A portal node through which client's can connect.
-
-  
-  const hostName = uuidv4();
-  process.title = 'kdht-portal-' + hostName;
-  // For debugging:
-  // process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
-  // process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
-
-  const contact = await WebContact.create({name: hostName, isServerNode: true, debug: argv.verbose});
-  // Handle signaling that comes as a message from the server.
-  process.on('message', async ([senderSname, ...incomingSignals]) => { // Signals from a sender through the server.
-    const response = await contact.signals(senderSname, ...incomingSignals);
-    process.send([senderSname, ...response]);
-  });
-  await Node.delay(argv.fixedSpacing * 1e3 * cluster.worker.id - 1);
-  if (cluster.worker.id === 1) {
-    // TODO: connect to global network
-    process.send(contact.sname); // Report in to server as available for bootstrapping.
-  } else {
-    await Node.delay(Node.fuzzyInterval(argv.variableSpacing * 1e3));
-    const bootstrapName = await contact.fetchBootstrap();
-    const bootstrap = await contact.ensureRemoteContact(bootstrapName, 'http://localhost:3000/kdht');
-    process.send(contact.sname); // Must be before join, because as we join, others may be notified of us and want to connect.
-    await contact.join(bootstrap);
-  }
+  const portalNode = await import('../portals/node.js');
+  const {baseURL, externalBaseURL, fixedSpacing, variableSpacing, verbose} = argv;
+  portalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, verbose});
 }
