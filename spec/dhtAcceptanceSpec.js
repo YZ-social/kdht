@@ -10,7 +10,7 @@ const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach} = glob
 import { setupServerNodes, shutdownServerNodes,
 	 start1, setupClientsByTime, shutdownClientNodes,
 	 getContacts, getRandomLiveContact,
-	 startThrashing, write1, read1, Node } from './dhtImplementation.js';
+	 startThrashing, write1, read1, Node, Contact } from './dhtImplementation.js';
 
 // Some definitions:
 //
@@ -136,8 +136,8 @@ describe("DHT", function () {
   function test(parameters = {}) {
     // Define a suite of tests with the given parameters.
     const {nServerNodes = 10,
-	   pingTimeMS = 40, // Round-trip network time. Implementation should pad network calls to achieve what is specified here.
-	   maxTransports = 152, // How many direct connections are allowed per node?
+	   pingTimeMS = Contact.pingTimeMS, // Round-trip network time. Implementation should pad network calls to achieve what is specified here.
+	   maxTransports = Node.maxTransports, // How many direct connections are allowed per node?
 	   maxClientNodes = Infinity, // If zero, will try to make as many as it can in refreshTimeIntervalMS.
 	   refreshTimeIntervalMS = 15e3, // How long on average does a client stay up?
 	   setupTimeMS = Math.max(2e3, refreshTimeIntervalMS), // How long to create the test nodes.
@@ -148,7 +148,7 @@ describe("DHT", function () {
 	  } = parameters;
     const suiteLabel = `Server nodes: ${nServerNodes}, setup time: ${setupTimeMS}, max client nodes: ${maxClientNodes ?? Infinity}, ping: ${pingTimeMS}ms, max connections: ${maxTransports}, refresh: ${refreshTimeIntervalMS.toFixed(3)}ms, pause before write: ${runtimeBeforeWriteMS.toFixed(3)}ms, pause before read: ${runtimeBeforeReadMS.toFixed(3)}ms, thrash before: ${startThrashingBefore}`;
     
-    describe(suiteLabel, function () {
+    describe(notes || suiteLabel, function () {
       beforeAll(async function () {
 	console.log('\n' + suiteLabel);
 	if (notes) console.log(notes);
@@ -206,11 +206,20 @@ describe("DHT", function () {
 
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
   // For example:
+  test({maxClientNodes: 10, startThrashingBefore: 'never', runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0, notes: "Smoke"});
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probing and disconnects turned off."});
   test({setupTimeMS: 1e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
-  test({maxClientNodes: 30, pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster smoke-testing."});
-  test({maxTransports: 85, maxClientNodes: 90, pingTimeMS: 10, setupTimeMS: 20e3, notes: "Limit number of transports enough to exercise the reconnect logic."});
-  test({maxClientNodes: 140, setupTimeMS: 60e3, pingTimeMS: 10, notes: "Relatively larger network size."});
+  test({pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster smoke-testing."});
+  test({setupTimeMS: 60e3, notes: "Normal ops"});
+
+  
+  // test({maxClientNodes: 55, setupTimeMS: 240e3, pingTimeMS: 40, maxTransports: 62,
+  // 	//startThrashingBefore: 'never', runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0,
+  // 	notes: "Moderate transport-dropping for currently over-constricted contact limits."});
+
+
+  //test({maxTransports: 85, maxClientNodes: 90, pingTimeMS: 10, setupTimeMS: 20e3, notes: "Limit number of transports enough to exercise the reconnect logic."});
+  //test({maxClientNodes: 140, setupTimeMS: 60e3, pingTimeMS: 10, notes: "Relatively larger network size."});
 
   //test({maxTransports: 95, maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
   //test({maxTransports: 95, maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});

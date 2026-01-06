@@ -14,7 +14,7 @@
 //import { InProcessWebContact as Contact, Node } from '../index.js';
 //import { SimulatedContact as Contact, Node } from '../index.js';
 import { SimulatedConnectionContact as Contact, Node } from '../index.js';
-export { Node };
+export { Node, Contact };
 
 
 export async function start1(name, bootstrapContact, refreshTimeIntervalMS, isServerNode = false) {

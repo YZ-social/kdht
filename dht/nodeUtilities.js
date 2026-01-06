@@ -5,7 +5,7 @@ export class NodeUtilities {
   }
   isRunning = true;
   static delay(ms, value) { // Promise to resolve (to nothing) after a given number of milliseconds
-    return new Promise(resolve => setTimeout(resolve, ms, value));
+    return new Promise(resolve => setTimeout(resolve, Math.max(0, ms), value));
   }
   static randomInteger(max) { // Return a random number between 0 (inclusive) and max (exclusive).
     return Math.floor(Math.random() * max);

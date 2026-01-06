@@ -70,7 +70,8 @@ export class Contact {
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
   // RPC
-  sendRPC(method, ...rest) { // Promise the result of a nework call to node. Rejects if we get disconnected along the way.
+  static maxPingMs = 250; // No including connect time. These are single-hop WebRTC data channels.
+  sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
     //this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
     if (!sender.isRunning) {this.host.log('not running'); return null;  }// sender closed before call.
@@ -115,13 +116,12 @@ export class Contact {
     //return `${this.connection ? '_' : ''}${this.sname}v${this.counter}${this.isRunning ? '' : '*'}`;
     return `${this.connection ? '_' : ''}${this.sname}${this.isRunning ? '' : '*'}`; // simpler version
   }
-  static pingTimeMS = 30; // ms
+  static pingTimeMS = 40; // ms
   static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.
     const start = Date.now();
     const result = await thunk();
     const elapsed = Date.now() - start;
-    if (elapsed > ms) return result;
-    await new Promise(resolve => setTimeout(resolve, ms - elapsed));
+    await Node.delay(ms - elapsed);
     return result;
   }
 }

@@ -190,7 +190,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   inFlight = new Map();
   async transmitRPC(method, key, ...rest) { // Must return a promise.
-    const MAX_PING_MS = 250; // No including connect time. These are single-hop WebRTC data channels.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     if (!await this.connect()) return null;
     const sender = this.host.contact.sname;
@@ -200,7 +199,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
     const message = [messageTag, method, sender, key.toString(), ...rest];
     this.send(message);
-    const timeout = Node.delay(MAX_PING_MS, null); // Faster than waiting for webrtc to observe a close
+    const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
     return await Promise.race([responsePromise, timeout, this.closed]);
   }
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.

@@ -16,7 +16,7 @@ export class NodeTransports extends NodeStorage {
     }
     return false;
   }
-  static maxTransports = 32;
+  static maxTransports = 62; // FIXME: try 124
   noteContactForTransport(contact) { // We're about to use this contact for a message, so keep track of it.
     // Requires: if we later addToRoutingTable successfully, it should be removed from looseTransports.
     // Requires: if we later remove contact because of a failed send, it should be removed from looseTransports.
@@ -36,7 +36,7 @@ export class NodeTransports extends NodeStorage {
       }
       let dropped = removeLast(this.looseTransports);
       if (dropped) {
-	console.log('dropping loose transport', dropped.name, 'in', this.name);
+	//console.log(this.name, 'dropping loose transport', dropped.name);
       } else { // Find the bucket with the most connections.
 	let bestBucket = null, bestCount = 0;
 	this.forEachBucket(bucket => {
@@ -48,7 +48,7 @@ export class NodeTransports extends NodeStorage {
 	});
 	dropped = removeLast(bestBucket.contacts);
 	if (!dropped) console.log('Unable to find something to drop in', this.report(null));
-	else console.log('dropping transport', dropped.name, 'in', this.name, bestBucket.index, 'among', bestCount);
+	//else console.log(this.name, 'dropping transport', dropped.name, 'in', bestBucket.index, 'among', bestCount);
       }
       dropped.disconnectTransport();
     }

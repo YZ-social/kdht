@@ -12,7 +12,7 @@ export class SimulatedContact extends Contact {
   connection = null;
   async connect() { return this; }
   disconnectTransport() { }
-  async transmitRPC(method, ...rest) { // Transmit the call to the receiving node's contact.
+  async transmitRPC(method, ...rest) { // Transmit the call (with sending contact added) to the receiving node's contact.
     return await this.constructor.ensureTime(async () => {
       if (!this.isRunning) return null; // Receiver closed.
       return await this.node.contact.receiveRPC(method, this.node.ensureContact(this.host.contact), ...rest);
@@ -38,13 +38,40 @@ export class SimulatedConnectionContact extends SimulatedContact {
 
     // Anyone can connect to a server node using the server's connect endpoint.
     // Anyone in the DHT can connect to another DHT node through a sponsor.
-    if (!isServerNode) {
+    if (isServerNode) {
+      // No point in slowing the tests down to actually wait for this. It doesn't change the outcome.
+      //await Node.delay(250); // Connect through portal.
+    } else {
       let mutualSponsor = null;
-      for (const sponsor of this._sponsors.values()) {
-	if (!sponsor.connection || !sponsor.node.existingContact(this.node.name)?.connection) continue;
+      const isConnected = (contact) => { // Is contact already connected to us?
+	return contact.connection && contact.node.existingContact(this.node.name)?.connection;
+      };
+      await Node.delay(100);
+      const sponsors = Array.from(this._sponsors.values());
+      const target = this.node, targetKey = target.key;
+      for (const sponsor of sponsors) {
+	if (!isConnected(sponsor)) continue;
 	mutualSponsor = sponsor;
+	break;
       }
-      if (!mutualSponsor) return null;
+      if (!mutualSponsor) {
+	function findPath(contact, excluded) {
+	  if (contact.key === targetKey) return true;
+	  if (!isConnected(contact)) return false;
+	  const closest = contact.node.findClosestHelpers(targetKey)
+		.map(helper => helper.contact)
+		.filter(contact => !excluded.includes(contact.key));
+	  for (const sub of closest) {
+	    if (findPath(sub, [sub.node.key, ...excluded])) return true;
+	  }
+	  return false;
+	}
+	mutualSponsor = findPath(this.host.contact, [this.host.key]);
+      }
+      if (!mutualSponsor) {
+	//console.log('No connection path from', this.host.contact.report, 'to', this.report, 'sponsors:', sponsors.map(c => c.report), 'contacts:', this.node.findClosestHelpers(targetKey).map(helper => helper.contact.report));
+	return null;
+      }
     }
     
     const farContactForUs = node.ensureContact(host.contact, contact.sponsor);
@@ -57,10 +84,10 @@ export class SimulatedConnectionContact extends SimulatedContact {
     
     return contact;
   }
-  async transmitRPC(method, ...rest) { // A message from this.host to this.node. Forward to this.node through overlay connection for bucket.
+  async transmitRPC(method, ...rest) { // "transmit" the call (with sending contact added).
     if (!this.isRunning) return null; // Receiver closed.
     const farContactForUs = this.connection || (await this.connect(method))?.connection;
-    if (!farContactForUs) return null; // receiver no longer reachable.
+    if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
     return await this.constructor.ensureTime(() => farContactForUs.receiveRPC(method, farContactForUs, ...rest));
   }
 }
