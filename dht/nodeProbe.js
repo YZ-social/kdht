@@ -57,28 +57,28 @@ export class NodeProbe extends NodeMessages {
       
       let found = results.find(isValueResult); // Did we get back a 'findValue' result.
       if (found) {
-	// Store at closest result that didn't have it (if any). This can cause more than k copies in the network.
-	for (let i = 0; i < toQuery.length; i++) {
-	  if (!isValueResult(results[i])) {
-	    toQuery[i].contact.store(targetKey, found.value);
-	    break;
-	  }
-	}
-	return found;
-     }
+        // Store at closest result that didn't have it (if any). This can cause more than k copies in the network.
+        for (let i = 0; i < toQuery.length; i++) {
+          if (!isValueResult(results[i])) {
+            toQuery[i].contact.store(targetKey, found.value);
+            break;
+          }
+        }
+        return found;
+      }
 
       let closer = [].concat(...results); // Flatten results.
       // closer might not be in order, and one or more toQuery might belong among them.
       best = [...closer, ...toQuery, ...best].sort(Helper.compare).slice(0, k);
       if (!closer.length) {
-	if (toQuery.length === alpha && pool.length) {
-	  toQuery = pool.slice(0, 2*k);  // Try again with k more. (Interestingly, not k - alpha.)
-	  pool = pool.slice(2*k);
-	} else break; // We've tried everything and there's nothing better.
+        if (toQuery.length === alpha && pool.length) {
+          toQuery = pool.slice(0, 2*k);  // Try again with k more. (Interestingly, not k - alpha.)
+          pool = pool.slice(2*k);
+        } else break; // We've tried everything and there's nothing better.
       } else {
-	pool = [...closer, ...pool].slice(0, 2*k); // k best-first nodes that we have not queried.
-	toQuery = pool.slice(0, alpha);
-	pool = pool.slice(alpha);
+        pool = [...closer, ...pool].slice(0, 2*k); // k best-first nodes that we have not queried.
+        toQuery = pool.slice(0, alpha);
+        pool = pool.slice(alpha);
       }
     }
     if (trace) this.log('probe result', best.map(helper => helper.name));
