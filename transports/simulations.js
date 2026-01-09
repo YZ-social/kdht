@@ -73,8 +73,9 @@ export class SimulatedConnectionContact extends SimulatedContact {
 	return null;
       }
     }
-    
-    const farContactForUs = node.ensureContact(host.contact, contact.sponsor);
+
+    // our sponsors are not transferred to the other side.
+    const farContactForUs = node.ensureContact(host.contact);
 
     contact.connection = farContactForUs;
     host.noteContactForTransport(contact);

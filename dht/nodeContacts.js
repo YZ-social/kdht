@@ -72,11 +72,12 @@ export class NodeContacts extends NodeTransports {
   findContactByKey(key) { // findContact matching the specified key. To be found, contact must be in routingTable or looseTransports (which is different from existingContact()).
     return this.findContact(contact => contact.key === key);
   }
-  ensureContact(contact, sponsor = null) { // Return existing contact, if any (including looseTransports), else clone a new one for this host. Set sponsor.
+  ensureContact(contact, sponsor) { // Return existing contact, if any (including looseTransports), else clone a new one for this host. Set sponsor.
+    // I.e., a Contact with node: contact.node and host: this.
     // Subtle: Contact clone uses existingContact (above) to reuse an existing contact on the host, if possible.
     // This is vital for bookkeeping through connections and sponsorship.
     contact = contact.clone(this);
-    contact.noteSponsor(sponsor);
+    if (sponsor) contact.noteSponsor(sponsor);
     return contact;
   }
   routingTableSerializer = Promise.resolve();
