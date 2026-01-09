@@ -1,15 +1,16 @@
 import { NodeContacts } from './nodeContacts.js';
+import { Contact } from '../transports/contact.js';
 
 // The four methods we recevieve through RPCs.
 // These are not directly invoked by a Node on itself, but rather on other nodes
 // through Contact sendRPC.
 export class NodeMessages extends NodeContacts {
   ping(key) { // Respond with 'pong'. (RPC mechanism doesn't call unless connected.)
-    return 'pong';
+    return 'pong'; // Answer something truthy. See isValueResult.
   }
   store(key, value) { // Tell the node to store key => value, returning truthy.
     this.storeLocally(key, value);
-    return 'pong';
+    return 'pong'; // Answer something truthy. See isValueResult.
   }
   findNodes(key) { // Return k closest Contacts from routingTable.
     // TODO: Currently, this answers a list of Helpers. For security, it should be changed to a list of serialized Contacts.
@@ -21,8 +22,12 @@ export class NodeMessages extends NodeContacts {
     if (value !== undefined) return {value};
     return this.findClosestHelpers(key);
   }
-  receiveRPC(method, sender, ...rest) {
-    // The sender exists, so add it to the routing table, but give it a while to finish joining.
+
+  receiveRPC(method, sender, ...rest) { // Process a deserialized RPC request, dispatching it to one of the above.
+    this.constructor.assert(typeof(method)==='string', 'no method', method);
+    this.constructor.assert(sender instanceof Contact, 'no sender', sender);
+    this.constructor.assert(sender.host === this, 'sender', sender, 'not on receiver', this);
+    // The sender exists, so add it to the routing table, but asynchronously so as to allow it to finish joining.
     this.addToRoutingTable(sender);
     return this[method](...rest);
   }

@@ -1,4 +1,4 @@
-import { Node, KBucket, Contact, SimulatedContact, Helper } from '../index.js';
+import { Node, KBucket, SimulatedContact, Helper } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
 describe("DHT internals", function () {
@@ -198,8 +198,9 @@ describe("DHT internals", function () {
 	  node = host.node;
 	  // These others are all constructed to have distances that increase by one from node.
 	  for (let i = 1; i <= nOthers; i++) {
-	    let other = SimulatedContact.fromKey(BigInt(i), host.host);
-	    await node.addToRoutingTable(other);
+	    let other = SimulatedContact.fromKey(BigInt(i));
+	    let ourViewOfIt = node.ensureContact(other);
+	    await node.addToRoutingTable(ourViewOfIt);
 	  }
 	  //node.report();
 	}, 20e3);
