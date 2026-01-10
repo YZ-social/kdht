@@ -7,7 +7,7 @@ export class NodeRefresh extends NodeKeys {
     super({refreshTimeIntervalMS, ...properties});
   }
   static stopRefresh() { // Stop all repeat timers in all instances the next time they come around.
-    this.constructor.refreshTimeIntervalMS = 0;
+    this.refreshTimeIntervalMS = 0;
   }
   stopRefresh() { // Stop repeat timeers in this instance.
     this.refreshTimeIntervalMS = 0;

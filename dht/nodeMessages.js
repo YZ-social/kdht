@@ -26,7 +26,7 @@ export class NodeMessages extends NodeContacts {
   receiveRPC(method, sender, ...rest) { // Process a deserialized RPC request, dispatching it to one of the above.
     this.constructor.assert(typeof(method)==='string', 'no method', method);
     this.constructor.assert(sender instanceof Contact, 'no sender', sender);
-    this.constructor.assert(sender.host === this, 'sender', sender, 'not on receiver', this);
+    this.constructor.assert(sender.host.key === this.key, 'sender', sender.host.name, 'not on receiver', this.name);
     // The sender exists, so add it to the routing table, but asynchronously so as to allow it to finish joining.
     this.addToRoutingTable(sender);
     return this[method](...rest);
