@@ -1,14 +1,14 @@
 #!/usr/bin/env npx jasmine
 const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } = globalThis; // For linters.
 import process from 'node:process';
-import { spawn } from 'node:child_process';
+import { spawn, exec } from 'node:child_process';
 import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
 describe("DHT write/read", function () {
-  let contact, portalProcess;
+  let contact, portalProcess, botProcess;
   const verbose = false;
   const baseURL = 'http://localhost:3000/kdht';
   const nPortals = 10;
@@ -26,13 +26,21 @@ describe("DHT write/read", function () {
   const botsMilliseconds = 2 * Node.refreshTimeIntervalMS;
   
   beforeAll(async function () {
-    portalProcess = spawn('node', [path.resolve(__dirname, 'portal.js'), '--nPortals', nPortals, '--nBots', nBots, '--thrash', thrash.toString(), '--verbose', verbose.toString()]);
-    contact = await WebContact.create({name: uuidv4(), debug: verbose});
-    console.log('starting portals over', portalSeconds, 'seconds');
+    function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
+
+    console.log(new Date(), 'starting portals over', portalSeconds, 'seconds');
+    portalProcess = spawn('node', [path.resolve(__dirname, 'portal.js'), '--nPortals', nPortals, '--verbose', verbose.toString()]);
+    // portalProcess.stdout.on('data', echo);
+    // portalProcess.stderr.on('data', echo);
     await Node.delay(portalSeconds * 1e3);
-    console.log('starting bots over', botsMilliseconds/1e3, 'seconds');    
+
+    console.log(new Date(), 'starting bots over', botsMilliseconds/1e3, 'seconds');
+    botProcess = spawn('node', [path.resolve(__dirname, 'bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--verbose', verbose.toString()]);
+    // botProcess.stdout.on('data', echo);
+    // botProcess.stderr.on('data', echo);
     await Node.delay(botsMilliseconds);
 
+    contact = await WebContact.create({name: uuidv4(), debug: verbose});
     const bootstrapName = await contact.fetchBootstrap(baseURL);
     const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, baseURL);
     console.log(new Date(), contact.sname, 'joining', bootstrapContact.sname);
@@ -50,7 +58,8 @@ describe("DHT write/read", function () {
   }, 5e3 * nWrites + 2 * Node.refreshTimeIntervalMS);
   afterAll(async function () {
     contact.disconnect();
-    portalProcess.kill();
+    console.log(new Date(), 'killing portals and bots');
+    exec('pkill kdht-');
   });
   for (let index = 0; index < nWrites; index++) {
     it(`reads ${index}.`, async function () {

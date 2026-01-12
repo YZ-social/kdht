@@ -62,11 +62,11 @@ let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
 let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
 await contact.join(bootstrapContact);
 
-process.on('SIGINT', async () => {
-  console.log(process.title, 'Shutdown for Ctrl+C');
-  await contact.disconnect();
-  process.exit(0);
-});
+// process.on('SIGINT', async () => {
+//   console.log(process.title, 'Shutdown for Ctrl+C');
+//   await contact.disconnect();
+//   process.exit(0);
+// });
 
 while (argv.thrash) {
   await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
