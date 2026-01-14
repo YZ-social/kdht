@@ -67,7 +67,7 @@ export class Contact {
       const far = contact.connection;
       if (!far) return;
       await contact.disconnectTransport();
-    };
+    }
   }
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
@@ -92,26 +92,20 @@ export class Contact {
       if (!result) this.host.xlog('no local result');
       return result;
     }
-    if (!await this.connect()) return null;
     // uuid so that the two sides don't send a request with the same id to each other.
     // Alternatively, we could concatenate a counter to our host.name.
     const messageTag = uuidv4();
     const message = this.serializeRequest(messageTag, method, sender, ...rest);
-    const responsePromise = new Promise(resolve => this.host.messagePromises.set(messageTag, resolve));
-    this.transmitRPC(...message);
-    
+
     const start = Date.now();
-    return responsePromise
+    return this.transmitRPC(...message)
       .then(result => {
 	if (!sender.isRunning) {this.host.log('sender closed'); return null; } // Sender closed after call.
 	return result;
       })
-      .finally(() => {
-	Node.noteStatistic(start, 'rpc');
-	this.host.messagePromises.delete(messageTag);
-      });
+      .finally(() => Node.noteStatistic(start, 'rpc'));
   }
-  async receiveRPC(method, sender, ...rest/*data*/) { // Respond to the request.
+  async receiveRPC(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
     //const [method, sender, ...rest] = this.deserializeRequest(data);
     return this.host.receiveRPC(method, sender, ...rest);
   }

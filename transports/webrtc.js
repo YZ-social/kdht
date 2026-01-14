@@ -14,7 +14,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get isRunning() { return this.node.isRunning; } // Have we marked at is no longer running.
 
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
-    if (!response?.ok) throw new Error(`fetch ${response.url} failed ${response.status}: ${response.statusText}.`);
+    if (!response.ok) throw new Error(`fetch ${response.url} failed ${response.status}: ${response.statusText}.`);
   }
   async fetchBootstrap(baseURL, label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
     // worker index or the string 'random' to an available sname to which we can connect().
@@ -36,7 +36,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(signalsToSend)
     });
-    if (!response) return [];
     this.checkResponse(response);
     return this.checkSignals(await response.json());
   }
@@ -174,28 +173,30 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     return contact;
   }
   receiveRPC(method, sender, key, ...rest) { // Receive an RPC from sender, dispatch, and return that value, which will be awaited and sent back to sender.
-    // if (method === 'forwardSignals') { // Can't be handled by Node, because 'forwardSignals' is specific to WebContact.
-    //   const [sendingSname, ...signals] = rest;
-    //   if (key === this.host.key) { // for us!
-    // 	return this.signals(...rest);
-    //   } else { // Forward to the target.
-    // 	const target = this.host.findContactByKey(key);
-    // 	if (!target) {
-    // 	  console.log(this.host.contact.sname, 'does not have contact to', sendingSname);
-    // 	  return null;
-    // 	}
-    // 	return target.sendRPC('forwardSignals', key, ...rest);
-    //   }
-    // }
+    if (method === 'forwardSignals') { // Can't be handled by Node, because 'forwardSignals' is specific to WebContact.
+      const [sendingSname, ...signals] = rest;
+      if (key === this.host.key) { // for us!
+	return this.signals(...rest);
+      } else { // Forward to the target.
+	const target = this.host.findContactByKey(key);
+	if (!target) {
+	  console.log(this.host.contact.sname, 'does not have contact to', sendingSname);
+	  return null;
+	}
+	return target.sendRPC('forwardSignals', key, ...rest);
+      }
+    }
     return super.receiveRPC(method, sender, key, ...rest);
   }
   inFlight = new Map();
   async transmitRPC(messageTag, method, sender, key, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
+    if (!await this.connect()) return null;
+    const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
     const message = [messageTag, method, sender.sname, key.toString(), ...rest];
     this.send(message);
-    // const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
-    // return await Promise.race([responsePromise, timeout, this.closed]);
+    const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
+    return await Promise.race([responsePromise, timeout, this.closed]);
   }
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
     // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.
@@ -208,9 +209,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       return;
     }
     const [messageTag, ...data] = JSON.parse(dataString);
-    const responder = this.host.messagePromise.get(messageTag);
+    const responder = this.inFlight.get(messageTag);
     if (responder) { // A response to something we sent and are waiting for.
       let [result] = data;
+      this.inFlight.delete(messageTag);
       if (Array.isArray(result)) {
 	if (!result.length) responder(result);
 	const first = result[0];
@@ -228,7 +230,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       const [method, senderLabel, key, ...rest] = data;
       const sender = await this.ensureRemoteContact(senderLabel);
       let response = await this.receiveRPC(method, sender, BigInt(key), ...rest);
-      if (/*(method !== 'forwardSignals') && */this.host.constructor.isContactsResult(response)) {
+      if ((method !== 'forwardSignals') && this.host.constructor.isContactsResult(response)) {
 	response = response.map(helper => [helper.contact.sname, helper.distance.toString()]);
       }
       this.send([messageTag, response]);

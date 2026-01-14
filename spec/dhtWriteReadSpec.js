@@ -57,12 +57,10 @@ describe("DHT write/read", function () {
     console.log(new Date(), 'Reading');
   }, 5e3 * nWrites + 2 * Node.refreshTimeIntervalMS);
   afterAll(async function () {
-    console.log(new Date(), 'disconnecting');    
-    await contact.disconnect();
+    contact.disconnect();
     console.log(new Date(), 'killing portals and bots');
     exec('pkill kdht-');
-    await Node.delay(2e3);    
-  }, 20e3);
+  });
   for (let index = 0; index < nWrites; index++) {
     it(`reads ${index}.`, async function () {
       const read = await contact.node.locateValue(index);
