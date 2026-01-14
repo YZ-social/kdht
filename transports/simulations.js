@@ -13,10 +13,12 @@ export class SimulatedContact extends Contact {
   async connect() { return this; }
   disconnectTransport() { }
   async transmitRPC(method, ...rest) { // Transmit the call (with sending contact added) to the receiving node's contact.
+    // Use delay from the destination node if set, representing a laggy VM/connection
+    const delayMs = this.node.delayMs;
     return await this.constructor.ensureTime(async () => {
       if (!this.isRunning) return null; // Receiver closed.
       return await this.node.contact.receiveRPC(method, this.node.ensureContact(this.host.contact), ...rest);
-    });
+    }, delayMs);
   }
 }
 
@@ -88,6 +90,8 @@ export class SimulatedConnectionContact extends SimulatedContact {
     if (!this.isRunning) return null; // Receiver closed.
     const farContactForUs = this.connection || (await this.connect(method))?.connection;
     if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
-    return await this.constructor.ensureTime(() => farContactForUs.receiveRPC(method, farContactForUs, ...rest));
+    // Use delay from the destination node if set, representing a laggy VM/connection
+    const delayMs = this.node.delayMs;
+    return await this.constructor.ensureTime(() => farContactForUs.receiveRPC(method, farContactForUs, ...rest), delayMs);
   }
 }
