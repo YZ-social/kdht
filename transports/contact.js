@@ -74,7 +74,7 @@ export class Contact {
   sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
     //this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
-    if (!sender.isRunning) {this.host.log('not running'); return null;  }// sender closed before call.
+    if (!sender.isRunning) return null; // sender closed before call.
     if (sender.key === this.key) {
       const result = this.receiveRPC(method, sender, ...rest);
       if (!result) this.host.xlog('no local result');
@@ -84,7 +84,7 @@ export class Contact {
     const start = Date.now();
     return this.transmitRPC(method, ...rest) // The main event.
       .then(result => {
-	if (!sender.isRunning) {this.host.log('sender closed'); return null; } // Sender closed after call.
+	if (!sender.isRunning) return null; // Sender closed after call.
 	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
