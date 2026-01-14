@@ -74,7 +74,7 @@ export class Node extends NodeProbe {
 
   // TODO: separate all this out: neither transport nor dht.
   // TODO: fragment/reassemble big messages.
-  messagePromises = new Map(); // maps message messageTags => responders, separately from inFlight, above
+  messagePromises = new Map(); // maps message messageTags => responders.
   async message({targetKey, targetSname, excluded = [], requestTag, senderKey, senderSname = this.contact.sname, payload}) { // Send message to targetKey, using our existing routingTable contacts.
     //const MAX_PING_MS = 400;
     const MAX_MESSAGE_MS = 2e3;

@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { Node } from '../dht/node.js';
 
 export class Contact {
@@ -31,7 +32,8 @@ export class Contact {
     return this.fromNode(node, host || node);
   }
   clone(hostNode, searchHost = true) { // Answer a Contact that is set up for hostNode - either this instance or a new one.
-    // Unless searchHost is null, any existing contact on hostNode will be returned.
+    // I.e., a Contact with node: this.node and host: hostNode.
+    // Unless searchHost is null, a matching existing contact on hostNode will be returned.
     if (this.host === hostNode) return this; // All good.
 
     // Reuse existing contact in hostNode -- if still running.
@@ -57,41 +59,60 @@ export class Contact {
   store(key, value) {
     return this.sendRPC('store', key, value);
   }
-  disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
+  async disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     this.host.isRunning = false;
     this.host.stopRefresh();
-    this.host.contacts.forEach(async contact => {
+    for (const contact of this.host.contacts) {
       const far = contact.connection;
       if (!far) return;
-      contact.disconnectTransport();
-    });
+      await contact.disconnectTransport();
+    };
   }
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
   // RPC
   static maxPingMs = 250; // No including connect time. These are single-hop WebRTC data channels.
-  sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
+  serializeRequest(messageTag, method, sender, targetKey, ...rest) {
+    // Serialize any of these that need to be, answering something suitable for transport. Subclasses override.
+    // Either serialize or deserialize needs to convert sender.
+    Node.assert(sender instanceof Contact, 'no sender', sender);
+    return [messageTag, method, sender, targetKey, ...rest];
+  }
+  deserializeRequest(data) { // Inverse of serializeRequest. Response object will be spread for Node receiveRPC.
+    return data;
+  }
+  async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
+
     //this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
     if (!sender.isRunning) {this.host.log('not running'); return null;  }// sender closed before call.
-    if (sender.key === this.key) {
-      const result = this.receiveRPC(method, sender, ...rest);
+    if (sender.key === this.key) { // self-send short-circuit
+      const result = this.host.receiveRPC(method, sender, ...rest);
       if (!result) this.host.xlog('no local result');
       return result;
     }
-
+    if (!await this.connect()) return null;
+    // uuid so that the two sides don't send a request with the same id to each other.
+    // Alternatively, we could concatenate a counter to our host.name.
+    const messageTag = uuidv4();
+    const message = this.serializeRequest(messageTag, method, sender, ...rest);
+    const responsePromise = new Promise(resolve => this.host.messagePromises.set(messageTag, resolve));
+    this.transmitRPC(...message);
+    
     const start = Date.now();
-    return this.transmitRPC(method, ...rest) // The main event.
+    return responsePromise
       .then(result => {
 	if (!sender.isRunning) {this.host.log('sender closed'); return null; } // Sender closed after call.
 	return result;
       })
-      .finally(() => Node.noteStatistic(start, 'rpc'));
+      .finally(() => {
+	Node.noteStatistic(start, 'rpc');
+	this.host.messagePromises.delete(messageTag);
+      });
   }
-  async receiveRPC(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
-    Node.assert(typeof(method)==='string', 'no method', method);
-    Node.assert(sender instanceof Contact, 'no sender', sender);
+  async receiveRPC(method, sender, ...rest/*data*/) { // Respond to the request.
+    //const [method, sender, ...rest] = this.deserializeRequest(data);
     return this.host.receiveRPC(method, sender, ...rest);
   }
   // Sponsorship

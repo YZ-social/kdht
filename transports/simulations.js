@@ -12,10 +12,13 @@ export class SimulatedContact extends Contact {
   connection = null;
   async connect() { return this; }
   disconnectTransport() { }
-  async transmitRPC(method, ...rest) { // Transmit the call (with sending contact added) to the receiving node's contact.
+  async transmitRPC(messageTag, method, sender, ...rest) { // Transmit the call (with sending contact added) to the receiving node's contact.
     return await this.constructor.ensureTime(async () => {
-      if (!this.isRunning) return null; // Receiver closed.
-      return await this.node.contact.receiveRPC(method, this.node.ensureContact(this.host.contact), ...rest);
+      //if (!this.isRunning) return; // Receiver closed.
+      const result = this.isRunning ?
+	    await this.node.contact.receiveRPC(method, this.node.ensureContact(this.host.contact), ...rest) :
+	    null;
+      sender.host.messagePromises.get(messageTag)(result);
     });
   }
 }
@@ -85,10 +88,11 @@ export class SimulatedConnectionContact extends SimulatedContact {
     
     return contact;
   }
-  async transmitRPC(method, ...rest) { // "transmit" the call (with sending contact added).
-    if (!this.isRunning) return null; // Receiver closed.
-    const farContactForUs = this.connection || (await this.connect(method))?.connection;
-    if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
-    return await this.constructor.ensureTime(() => farContactForUs.receiveRPC(method, farContactForUs, ...rest));
+  async transmitRPC(messageTag, method, sender, ...rest) { // "transmit" the call (with sending contact added).
+    const farContactForUs = this.isRunning && (this.connection || (await this.connect(method))?.connection);
+    const result = farContactForUs ?
+	  await this.constructor.ensureTime(() => farContactForUs.receiveRPC(method, farContactForUs, ...rest)) :
+	  await Node.delay(this.constructor.maxPingMs, null);
+    sender.host.messagePromises.get(messageTag)(result);    
   }
 }
