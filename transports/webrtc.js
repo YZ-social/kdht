@@ -172,27 +172,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     else if (typeof(sponsor) === 'string') contact.bootstrapHost = sponsor;
     return contact;
   }
-  receiveRPC(method, sender, key, ...rest) { // Receive an RPC from sender, dispatch, and return that value, which will be awaited and sent back to sender.
-    if (method === 'forwardSignals') { // Can't be handled by Node, because 'forwardSignals' is specific to WebContact.
-      const [sendingSname, ...signals] = rest;
-      if (key === this.host.key) { // for us!
-	return this.signals(...rest);
-      } else { // Forward to the target.
-	const target = this.host.findContactByKey(key);
-	if (!target) {
-	  console.log(this.host.contact.sname, 'does not have contact to', sendingSname);
-	  return null;
-	}
-	return target.sendRPC('forwardSignals', key, ...rest);
-      }
-    }
-    return super.receiveRPC(method, sender, key, ...rest);
-  }
-  inFlight = new Map();
   async transmitRPC(messageTag, method, sender, key, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     if (!await this.connect()) return null;
-    const responsePromise = new Promise(resolve => this.inFlight.set(messageTag, resolve));
+    const responsePromise = new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
     const message = [messageTag, method, sender.sname, key.toString(), ...rest];
     this.send(message);
     const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
@@ -201,7 +184,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
     // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.
     // As we do the latter, we generate and note (in transmitRPC) a message tag included in the message.
-    // If we find that in our inFlight tags, then the message is a response.
+    // If we find that in our messageResolvers tags, then the message is a response.
     if (dataString === '"bye"') { // Special messsage that the other side is disconnecting, so we can clean up early.
       this.webrtc.close();
       this.host.xlog('removing disconnected contact', this.sname);
@@ -209,10 +192,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       return;
     }
     const [messageTag, ...data] = JSON.parse(dataString);
-    const responder = this.inFlight.get(messageTag);
+    const responder = this.host.messageResolvers.get(messageTag);
     if (responder) { // A response to something we sent and are waiting for.
       let [result] = data;
-      this.inFlight.delete(messageTag);
+      this.host.messageResolvers.delete(messageTag);
       if (Array.isArray(result)) {
 	if (!result.length) responder(result);
 	const first = result[0];
@@ -230,7 +213,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       const [method, senderLabel, key, ...rest] = data;
       const sender = await this.ensureRemoteContact(senderLabel);
       let response = await this.receiveRPC(method, sender, BigInt(key), ...rest);
-      if ((method !== 'forwardSignals') && this.host.constructor.isContactsResult(response)) {
+      if (this.host.constructor.isContactsResult(response)) {
 	response = response.map(helper => [helper.contact.sname, helper.distance.toString()]);
       }
       this.send([messageTag, response]);

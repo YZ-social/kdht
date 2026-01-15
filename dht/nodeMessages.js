@@ -23,6 +23,7 @@ export class NodeMessages extends NodeContacts {
     return this.findClosestHelpers(key);
   }
 
+  messageResolvers = new Map(); // maps outgoing message tag => promise resolver being waited on.
   receiveRPC(method, sender, ...rest) { // Process a deserialized RPC request, dispatching it to one of the above.
     this.constructor.assert(typeof(method)==='string', 'no method', method);
     this.constructor.assert(sender instanceof Contact, 'no sender', sender);

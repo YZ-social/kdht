@@ -118,7 +118,13 @@ async function parallelReadAll(start = 0) {
   const contacts = await getContacts();
   const readPromises = await Promise.all(contacts.map(async (_, index) => {
     if (index < start) return;
-    const value = await read1(await getRandomLiveContact(), index);
+    let value;
+    for (let liveTry = 0; liveTry < 4; liveTry++) {
+      const contact = await getRandomLiveContact();
+      value = await read1(contact, index);
+      if (contact.isRunning) break;
+      console.log('\n\n*** read from dead contact. retrying', liveTry, '***\n');
+    }
     expect(value).toBe(index);
   }));
   return readPromises.length - start;

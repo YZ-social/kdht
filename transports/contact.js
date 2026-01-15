@@ -105,8 +105,8 @@ export class Contact {
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
   }
-  async receiveRPC(method, sender, ...rest) { // Call the message method to act on the 'to' node side.
-    //const [method, sender, ...rest] = this.deserializeRequest(data);
+  async receiveRPC(...data) { // Call the message method to act on the 'to' node side.
+    const [method, sender, ...rest] = this.deserializeRequest(data);
     return this.host.receiveRPC(method, sender, ...rest);
   }
   // Sponsorship
