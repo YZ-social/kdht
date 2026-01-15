@@ -172,11 +172,20 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     else if (typeof(sponsor) === 'string') contact.bootstrapHost = sponsor;
     return contact;
   }
+  serializeRequest(messageTag, method, sender, targetKey, ...rest) {
+    // Serialize any of these that need to be, answering something suitable for transport. Subclasses override.
+    // Either serialize or deserialize needs to convert sender.
+    Node.assert(sender instanceof Contact, 'no sender', sender);
+    return [messageTag, method, sender.sname, targetKey.toString(), ...rest];
+  }
+  async deserializeRequest(messageTag, method, sender, targetKey, ...rest) { // Inverse of serializeRequest. Response object will be spread for Node receiveRPC.
+    return [messageTag, method, await this.ensureRemoteContact(sender), BigInt(targetKey), ...rest];
+  }
   async transmitRPC(messageTag, method, sender, key, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     if (!await this.connect()) return null;
     const responsePromise = new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
-    const message = [messageTag, method, sender.sname, key.toString(), ...rest];
+    const message = [messageTag, method, sender/*.sname*/, key.toString(), ...rest];
     this.send(message);
     const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
     return await Promise.race([responsePromise, timeout, this.closed]);
@@ -211,8 +220,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       }
     } else { // An incoming request.
       const [method, senderLabel, key, ...rest] = data;
-      const sender = await this.ensureRemoteContact(senderLabel);
-      let response = await this.receiveRPC(method, sender, BigInt(key), ...rest);
+      let response = await this.receiveRPC(method, senderLabel, key, ...rest);
       if (this.host.constructor.isContactsResult(response)) {
 	response = response.map(helper => [helper.contact.sname, helper.distance.toString()]);
       }

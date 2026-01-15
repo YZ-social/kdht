@@ -73,14 +73,11 @@ export class Contact {
 
   // RPC
   static maxPingMs = 250; // No including connect time. These are single-hop WebRTC data channels.
-  serializeRequest(messageTag, method, sender, targetKey, ...rest) {
-    // Serialize any of these that need to be, answering something suitable for transport. Subclasses override.
-    // Either serialize or deserialize needs to convert sender.
-    Node.assert(sender instanceof Contact, 'no sender', sender);
-    return [messageTag, method, sender, targetKey, ...rest];
+  serializeRequest(...rest) { // Return the composite datum suitable for transport over the wire.
+    return rest; // Non-simulation subclases must override.
   }
-  deserializeRequest(data) { // Inverse of serializeRequest. Response object will be spread for Node receiveRPC.
-    return data;
+  async deserializeRequest(...rest) { // Inverse of serializeRequest. Response object will be spread for Node receiveRPC.
+    return rest; // Non-simulation subclases must override.
   }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
@@ -106,7 +103,7 @@ export class Contact {
       .finally(() => Node.noteStatistic(start, 'rpc'));
   }
   async receiveRPC(...data) { // Call the message method to act on the 'to' node side.
-    const [method, sender, ...rest] = this.deserializeRequest(data);
+    const [method, sender, ...rest] = await this.deserializeRequest(...data);
     return this.host.receiveRPC(method, sender, ...rest);
   }
   // Sponsorship

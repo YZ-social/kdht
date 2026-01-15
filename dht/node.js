@@ -16,7 +16,7 @@ export class Node extends NodeProbe {
     targetKey = await this.ensureKey(targetKey);
     return await this.iterate(targetKey, 'findNodes', number);
   }
-  async locateValue(targetKey) { // Promise value stored for targetKey, or undefined.
+  async locateValue(targetKey, additionalTries = 1) { // Promise value stored for targetKey, or undefined.
     // Side effect is to discover other nodes (and they us).
     targetKey = await this.ensureKey(targetKey);
 
@@ -26,6 +26,12 @@ export class Node extends NodeProbe {
 
     const result = await this.iterate(targetKey, 'findValue');
     if (Node.isValueResult(result)) return result.value;
+    // KLUDGE ALERT:
+    if (additionalTries) {
+      console.log('\n\n*** failed to find value and trying again', additionalTries, '***\n');
+      await Node.delay(1e3);
+      return await this.locateValue(targetKey, additionalTries - 1);
+    }
     return undefined;
   }
   async storeValue(targetKey, value) { // Convert targetKey to a bigint if necessary, and store k copies.
