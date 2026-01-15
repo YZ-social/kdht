@@ -11,8 +11,6 @@
 
 // In the present case, these manipulate a Contact that directly contains a
 // DHT node with simulated networking.
-//import { InProcessWebContact as Contact, Node } from '../index.js';
-//import { SimulatedContact as Contact, Node } from '../index.js';
 import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 export { Node, Contact };
 
@@ -24,6 +22,7 @@ export async function start1(name, bootstrapContact, refreshTimeIntervalMS, isSe
 }
 
 export async function startServerNode(name, bootstrapContact, refreshTimeIntervalMS) {
+  Node.refreshTimeIntervalMS = refreshTimeIntervalMS;
   return await start1(name, bootstrapContact, refreshTimeIntervalMS, true);
 }
 

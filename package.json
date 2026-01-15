@@ -11,6 +11,7 @@
   "scripts": {
     "serverTest": "node spec/portal.js --nPortals 20 --nWrites 40",
     "serverTestLight": "node spec/portal.js --nPortals 10 --nWrites 40",
+    "mildThrashTest": "node spec/portal.js --nPortals 10 --nBots 5 --thrash --nWrites 40",
     "smoke": "node spec/portal.js --nPortals 5 --nBots 5 --thrash --nWrites 10",
     "smoke20": "node spec/portal.js --nPortals 10 --nBots 10 --thrash --nWrites 10",
     "load30": "node spec/portal.js --nPortals 10 --nBots 20 --nWrites 100",
@@ -24,7 +25,7 @@
     "thrash100": "node spec/portal.js --nPortals 10 --nBots 90 --thrash true --nWrites 100",
     "thrash150": "node spec/portal.js --nPortals 15 --nBots 135 --thrash true --nWrites 100",
     "thrash200": "node spec/portal.js --nPortals 20 --nBots 180 --thrash true --nWrites 100",
-    "test": "npx jasmine"
+    "test": "npx jasmine && echo '-- SUCCESS --' || echo '**** FAIL ****'"
   },
   "dependencies": {
     "@yz-social/webrtc": "^0.1.0",

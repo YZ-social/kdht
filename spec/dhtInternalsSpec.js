@@ -1,14 +1,15 @@
-import { Node, KBucket, Contact, SimulatedContact, Helper } from '../index.js';
+import { Node, KBucket, SimulatedContact, Helper } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
 describe("DHT internals", function () {
   beforeAll(function () {
-    //Node.distinguisher = 0;
-  });
-  afterAll(function () {
+    // Subtle: None of these tests depend on automatic refresh (of buckets or storage), but some
+    // of the tests trigger the refresh. By doing this before we start, the nodes will not schedule any refresh.
+    // If we failed to do that, then the refreshes would continue to happen after the test, when other
+    // tests might be running.
+    // Note: Do not fail to set Node.refreshTimeIntervalMS in such other tests that need it.
     Node.stopRefresh();
   });
-
   describe("structure", function () {
     let example;
     beforeAll(async function () {
@@ -69,7 +70,7 @@ describe("DHT internals", function () {
     const one = 1n;
     const two = 2n;
     const three = 3n;
-    const max = Node.one << BigInt(Node.keySize);
+    const max = one << BigInt(Node.keySize);
     describe("commonPrefixLength", function () {
       it("is keySize for 0n.", function () {
 	expect(Node.commonPrefixLength(Node.zero)).toBe(Node.keySize);
@@ -199,8 +200,9 @@ describe("DHT internals", function () {
 	  node = host.node;
 	  // These others are all constructed to have distances that increase by one from node.
 	  for (let i = 1; i <= nOthers; i++) {
-	    let other = SimulatedContact.fromKey(BigInt(i), host.host);
-	    await node.addToRoutingTable(other);
+	    let other = SimulatedContact.fromKey(BigInt(i));
+	    let ourViewOfIt = node.ensureContact(other);
+	    await node.addToRoutingTable(ourViewOfIt);
 	  }
 	  //node.report();
 	}, 20e3);
