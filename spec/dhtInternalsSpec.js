@@ -315,6 +315,30 @@ describe("DHT internals", function () {
       expect(result.length).toBeLessThanOrEqual(Node.k);
     }, 30e3);
 
+    it("completes lookup despite some nodes timing out", async function() {
+      // Temporarily set some nodes to have delays exceeding the 10s timeout
+      const originalDelays = network.map(c => c.node.delayMs);
+      network[8].node.delayMs = 12000; // Will timeout
+      network[9].node.delayMs = 15000; // Will timeout
+
+      const searcher = network[0].node;
+      const targetKey = await Node.key("timeout-test");
+
+      const startTime = Date.now();
+      const result = await searcher.iterate(targetKey, 'findNodes', Node.k, true, true);
+      const elapsed = Date.now() - startTime;
+
+      // Restore original delays
+      network.forEach((c, i) => c.node.delayMs = originalDelays[i]);
+
+      console.log(`Timeout test: ${elapsed}ms, ${result.length} nodes found`);
+
+      // Should complete around 10s (the timeout), not 15s (waiting for slowest)
+      expect(elapsed).toBeGreaterThan(9000); // At least one timeout triggered
+      expect(elapsed).toBeLessThan(12000); // Didn't wait for 15s node
+      expect(result.length).toBeGreaterThan(0); // Still found some nodes
+    }, 20e3);
+
     // Verbose diagnostic test - disabled by default. Change xit to it to enable.
     xit("can store and retrieve values with diagnostic tracing", async function() {
       // Enable diagnostic tracing to see store/read details

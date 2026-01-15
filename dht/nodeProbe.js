@@ -38,7 +38,7 @@ export class NodeProbe extends NodeMessages {
   }
 
   static alpha = 3; // How many lookup requests are kept in flight concurrently.
-  static queryTimeoutMs = 2000; // Give up on a query after this many ms.
+  static queryTimeoutMs = 10000; // Give up on a query after this many ms.
   async iterate(targetKey, finder, k = this.constructor.k, trace = false, timing = false, includeSelf = false) {
     // Promise a best-first list of k Helpers from the network, by repeatedly trying to improve our closest known by applying finder.
     // But if any finder operation answers isValueResult, answer that instead.
@@ -78,10 +78,8 @@ export class NodeProbe extends NodeMessages {
     const keysSeen = new Set(allNodesSeen.map(h => h.key));    // Every key we've seen at all (for filtering in step()).
     keysSeen.add(this.key); // Prevent self from being added via other nodes' responses.
 
-    const queryTimes = new Map(); // helper.key -> timestamp when query was sent
-    const respondedKeys = new Set(); // keys of nodes that have responded
-    const timedOutKeys = new Set(); // keys of nodes we've given up on
-    const disconnectedKeys = new Set(); // keys of nodes that were found to be disconnected
+    const pendingTimeouts = new Map(); // helper.key -> timeoutId (queries in flight)
+    const queryState = new Map(); // helper.key -> 'responded' | 'timedOut' | 'disconnected' (queries once they respond or are abandoned)
     const queryResponders = []; // helpers that have responded (for building result)
     let responsesWithoutNewNodes = 0; // count of successive empty responses
     let maxInFlight = alpha; // Normal: alpha parallel queries. Escalates to k when a "round" of alpha queries all fail to find new nodes.
@@ -90,43 +88,38 @@ export class NodeProbe extends NodeMessages {
     let resolveIteration;
     const iterationPromise = new Promise((resolve) => resolveIteration = (...args) => { iterationFinished = true; resolve(...args) }); // to be resolved with a value result, or undefined
 
-    // Check for timed-out queries based on current time
-    const checkTimeouts = () => {
-      const now = Date.now();
-      for (const [key, sendTime] of queryTimes) {
-        if (now - sendTime > queryTimeoutMs) {
-          queryTimes.delete(key);
-          timedOutKeys.add(key);
-          if (trace) this.log('query timed out:', key.toString().slice(0, 8));
-        }
-      }
-    };
-
     // Check if termination condition is met:
-    // Among the k closest nodes we've seen, none have outstanding queries.
+    // We're complete when we've found k 'responded' nodes with no unresolved nodes
+    // (pending or not-yet-queried) closer than them.
     const isComplete = () => {
-      const kClosest = allNodesSeen.slice(0, k);
-      for (const h of kClosest) {
-        // If this node has an outstanding query (not responded, not timed out, not disconnected), not complete
-        if (!respondedKeys.has(h.key) && !timedOutKeys.has(h.key) && !disconnectedKeys.has(h.key)) {
+      let respondedCount = 0;
+      for (const h of allNodesSeen) {
+        const state = queryState.get(h.key);
+        if (state === 'responded') {
+          respondedCount++;
+          if (respondedCount >= k) return true; // Found k responded with no unresolved gaps
+        } else if (!state) {
+          // No record means it's either a pending query, or that a query hasn't even been sent yet.  We need to wait for it to resolve one way or another.
           return false;
         }
+        // 'timedOut' or 'disconnected': resolved but doesn't count, continue
       }
-      return kClosest.length === Math.min(k, allNodesSeen.length);
+      // Exhausted list: fewer than k responsive nodes exist, but all are resolved
+      return true;
     };
 
     // Get the next closest node that needs to be queried
     const getNextToQuery = () => {
       for (const h of allNodesSeen) {
-        if (!respondedKeys.has(h.key) && !queryTimes.has(h.key) && !timedOutKeys.has(h.key) && !disconnectedKeys.has(h.key)) {
+        if (!pendingTimeouts.has(h.key) && !queryState.has(h.key)) {
           return h;
         }
       }
       return null;
     };
 
-    // Handler for when a request completes
-    const handleCompletion = (helper, result) => {
+    // Handler for when a request completes.  result is only expected if status='responded'.
+    const handleCompletion = (helper, status, result) => {
       if (iterationFinished) return; // too late
 
       if (!this.isRunning) {
@@ -134,18 +127,25 @@ export class NodeProbe extends NodeMessages {
         return;
       }
 
-      queryTimes.delete(helper.key);
-
-      if (timing && false) {
-        const elapsed = Date.now() - iterateStartTime;
-        console.log(`  Response: ${elapsed}ms - ${helper.name} (${queryTimes.size} in flight)`);
+      // Clear the timeout (if still active)
+      const timeoutId = pendingTimeouts.get(helper.key);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        pendingTimeouts.delete(helper.key);
       }
 
-      // Handle disconnected node (null result from step())
-      if (result === null) {
-        disconnectedKeys.add(helper.key);
+      if (timing) {
+        const elapsed = Date.now() - iterateStartTime;
+        const label = status === 'responded' ? 'Response' : status === 'timedOut' ? 'Timeout' : 'Disconnected';
+        console.log(`  ${label}: ${elapsed}ms - ${helper.name} (${pendingTimeouts.size} pending)`);
+      }
+
+      // Handle disconnected or timed-out node
+      if (status !== 'responded') {
+        queryState.set(helper.key, status);
       } else {
-        respondedKeys.add(helper.key);
+        // Response arrived - mark as responded (even if previously marked as timed out)
+        queryState.set(helper.key, 'responded');
         queryResponders.push(helper);
 
         // Check for value result (immediate termination, after attempting to add one more storage node)
@@ -182,9 +182,7 @@ export class NodeProbe extends NodeMessages {
         }
       }
 
-      // Check for timeouts and termination
-      checkTimeouts();
-
+      // Check termination
       if (isComplete()) {
         if (trace) this.log('terminated: k closest nodes all resolved');
         resolveIteration();
@@ -192,14 +190,14 @@ export class NodeProbe extends NodeMessages {
       }
 
       // Or terminate when network is exhausted (fewer than k nodes available)
-      if (queryTimes.size === 0 && !getNextToQuery()) {
+      if (pendingTimeouts.size === 0 && !getNextToQuery()) {
         if (trace) this.log('terminated: network exhausted');
         resolveIteration();
         return;
       }
 
       // Launch requests to maintain maxInFlight in flight
-      while (queryTimes.size < maxInFlight && launchNext()) {
+      while (pendingTimeouts.size < maxInFlight && launchNext()) {
         // launchNext returns false when no more candidates
       }
     };
@@ -209,19 +207,29 @@ export class NodeProbe extends NodeMessages {
       const helper = getNextToQuery();
       if (!helper) return false;
 
-      queryTimes.set(helper.key, Date.now());
+      // Set up active timeout that fires if no response arrives in time
+      const timeoutId = setTimeout(() => {
+        if (iterationFinished) return;
+        if (!pendingTimeouts.has(helper.key)) return; // Already resolved
+
+        if (trace) this.log('query timed out:', helper.name);
+
+        handleCompletion(helper, 'timedOut');
+      }, queryTimeoutMs);
+
+      pendingTimeouts.set(helper.key, timeoutId);
 
       if (timing) {
         requestCount++;
-        // const elapsed = Date.now() - iterateStartTime;
-        // console.log(`  Launch ${requestCount}: ${elapsed}ms - ${helper.name} (${queryTimes.size} in flight)`);
+        const elapsed = Date.now() - iterateStartTime;
+        console.log(`  Launch ${requestCount}: ${elapsed}ms - ${helper.name} (${pendingTimeouts.size} pending)`);
       }
 
       this.step(targetKey, finder, helper, keysSeen, trace)
-        .then(result => handleCompletion(helper, result))
+        .then(result => handleCompletion(helper, 'responded', result))
         .catch(err => {
           // Handle errors - treat as disconnected
-          handleCompletion(helper, null);
+          handleCompletion(helper, 'disconnected');
         });
 
       return true;
@@ -244,7 +252,7 @@ export class NodeProbe extends NodeMessages {
 
     if (timing) {
       const totalElapsed = Date.now() - iterateStartTime;
-      console.log(`  Total iterate time: ${totalElapsed}ms (${queryResponders.length} nodes queried)`);
+      console.log(`  Total iterate time: ${totalElapsed}ms (${queryState.size} queried, ${queryResponders.length} responded)`);
     }
 
     if (valueResult) {
@@ -252,21 +260,18 @@ export class NodeProbe extends NodeMessages {
       return valueResult;
     }
 
-    // Build result: k closest nodes that have actually responded
-    let closestResponsive = queryResponders
-      .sort(Helper.compare)
-      .slice(0, k);
-
-    // If includeSelf is true, add self to the results if it belongs among the k closest.
-    // This is used for storeValue where we're a valid storage location.
+    // If includeSelf is true, add self to the results so that on re-sort it might end up among the k closest.
+    // This is used for storeValue, where the local node is itself a valid storage location.
     if (includeSelf) {
       const selfDistance = this.constructor.distance(this.key, targetKey);
       const selfHelper = new Helper(this.contact, selfDistance);
-      // Add self to the list and re-sort/slice to get the true k closest
-      closestResponsive = [...closestResponsive, selfHelper]
-        .sort(Helper.compare)
-        .slice(0, k);
+      queryResponders.push(selfHelper);
     }
+
+    // Build result: k closest nodes that have actually responded
+    const closestResponsive = queryResponders
+      .sort(Helper.compare)
+      .slice(0, k);
 
     if (trace) this.log('probe result', closestResponsive.map(helper => `${helper.name}@${String(helper.distance).slice(0,2)}[${String(helper.distance).length}]`).join(', '));
 
