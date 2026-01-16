@@ -178,15 +178,15 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     Node.assert(sender instanceof Contact, 'no sender', sender);
     return [messageTag, method, sender.sname, targetKey.toString(), ...rest];
   }
-  async deserializeRequest(messageTag, method, sender, targetKey, ...rest) { // Inverse of serializeRequest. Response object will be spread for Node receiveRPC.
-    return [messageTag, method, await this.ensureRemoteContact(sender), BigInt(targetKey), ...rest];
+  async deserializeRequest(method, sender, targetKey, ...rest) { // Inverse of serializeRequest. Response object will be spread for Node receiveRPC.
+    // TODO: Currently, parameters do NOT include messageTag! (Because of how receiveRPC is called without it.)
+    return [method, await this.ensureRemoteContact(sender), BigInt(targetKey), ...rest];
   }
-  async transmitRPC(messageTag, method, sender, key, ...rest) { // Must return a promise.
+  async transmitRPC(messageTag, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     if (!await this.connect()) return null;
     const responsePromise = new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
-    const message = [messageTag, method, sender/*.sname*/, key.toString(), ...rest];
-    this.send(message);
+    this.send([messageTag, ...rest]);
     const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
     return await Promise.race([responsePromise, timeout, this.closed]);
   }

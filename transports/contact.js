@@ -103,8 +103,8 @@ export class Contact {
       .finally(() => Node.noteStatistic(start, 'rpc'));
   }
   async receiveRPC(...data) { // Call the message method to act on the 'to' node side.
-    const [method, sender, ...rest] = await this.deserializeRequest(...data);
-    return this.host.receiveRPC(method, sender, ...rest);
+    const serialized = await this.deserializeRequest(...data);
+    return this.host.receiveRPC(...serialized);
   }
   // Sponsorship
   _sponsors = new Map(); // maps key => contact
