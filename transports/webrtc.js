@@ -185,8 +185,15 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     if (!this.host.constructor.isContactsResult(response)) return response;
     return response.map(helper => [helper.contact.sname, helper.distance.toString()]);
   }
-  async deserializeResponse(responder, result) {
-    //fixme
+  async deserializeResponse(result) {
+    let response;
+    if (!Node.isContactsResult(result)) return result;
+    if (!result.length) return result;
+    const first = result[0];
+    const isSignal = Array.isArray(first) && ['offer', 'answer', 'icecandidate'].includes(first[0]);
+    if (isSignal) return result; // This could be the sponsor or the original sender. Either way, it will know what to do.
+    return await Promise.all(result.map(async ([sname, distance]) =>
+      new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance))));
   }
   async transmitRPC(messageTag, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
@@ -200,23 +207,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     if (responder) { // A response to something we sent and are waiting for.
       let [result] = data;
       this.host.messageResolvers.delete(messageTag);
-      //await this.deserializeResponse(responder, result);
-      if (Array.isArray(result)) {
-	if (!result.length) {
-	  responder(result);
-	} else {
-	  const first = result[0];
-	  const isSignal = Array.isArray(first) && ['offer', 'answer', 'icecandidate'].includes(first[0]);
-	  if (isSignal) {
-	    responder(result); // This could be the sponsor or the original sender. Either way, it will know what to do.
-	  } else {
-	    responder(await Promise.all(result.map(async ([sname, distance]) =>
-	      new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance)))));
-	  }
-	}
-      } else {
-	responder(result);
-      }
+      result = await this.deserializeResponse(result);
+      responder(result);
     } else { // An incoming request.
       const deserialized = await this.deserializeRequest(...data);
       let response = await this.host.receiveRPC(...deserialized);

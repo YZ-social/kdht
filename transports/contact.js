@@ -79,6 +79,12 @@ export class Contact {
   async deserializeRequest(...rest) { // Inverse of serializeRequest. Response object will be spread for Node receiveRPC.
     return rest; // Non-simulation subclases must override.
   }
+  serializeResponse(response) { // Like serializeRequest, but specifically for a probe response.
+    return response;
+  }
+  async deserializeResponse(result) { // Inverse of serializeResponse.
+    return result;
+  }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
 
