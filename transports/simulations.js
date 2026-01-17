@@ -15,8 +15,24 @@ export class SimulatedContact extends Contact {
   async transmitRPC(messageTag, method, sender, ...rest) { // Transmit the call (with sending contact added) to the receiving node's contact.
     return await this.constructor.ensureTime(async () => {
       if (!this.isRunning) return null; // Receiver closed.
-      return await this.node.contact.receiveRPC(method, this.node.ensureContact(this.host.contact), ...rest);
+      const responsePromise = new Promise(resolve => this.node.contact.host.messageResolvers.set(messageTag, resolve));
+      this.node.contact.receiveRPC(messageTag, method, this.node.ensureContact(this.host.contact), ...rest);
+      return await responsePromise;
     });
+  }
+  async receiveRPC(messageTag, ...data) { // FIXME: Same as in webrtc. move to superclass
+    const responder = this.host.messageResolvers.get(messageTag);
+    if (responder) { // A response to something we sent and are waiting for.
+      let [result] = data;
+      this.host.messageResolvers.delete(messageTag);
+      result = await this.deserializeResponse(result);
+      responder(result);
+    } else { // An incoming request.
+      const deserialized = await this.deserializeRequest(...data);
+      let response = await this.host.receiveRPC(...deserialized);
+      response = this.serializeResponse(response);
+      await this.send([messageTag, response]);
+    }
   }
 }
 
@@ -102,10 +118,16 @@ export class SimulatedConnectionContact extends SimulatedContact {
     
     return contact;
   }
+  send(message) {
+    this.connection.receiveRPC(...message);
+  }
   async transmitRPC(messageTag, method, sender, ...rest) { // "transmit" the call (with sending contact added).
     if (!this.isRunning) return null; // Receiver closed.
     const farContactForUs = this.connection;
     if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
-    return await this.constructor.ensureTime(() => farContactForUs.receiveRPC(method, farContactForUs, ...rest));
+    const responsePromise = new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
+    //return await
+    this.constructor.ensureTime(() => farContactForUs.receiveRPC(messageTag, method, farContactForUs, ...rest));
+    return await responsePromise;
   }
 }
