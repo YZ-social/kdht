@@ -89,6 +89,7 @@ export class Contact {
       if (!result) this.host.xlog('no local result');
       return result;
     }
+    if (!await this.connect()) return null;
     // uuid so that the two sides don't send a request with the same id to each other.
     // Alternatively, we could concatenate a counter to our host.name.
     const messageTag = uuidv4();

@@ -47,7 +47,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     return `@${this.host.contact.sname} ==> ${this.sname}`;
   }
 
-  ensureWebRTC(initiate = false, timeoutMS = this.host.timeoutMS || 5e3) { // If not already configured, sets up contact to have properties:
+  ensureWebRTC(initiate = false, timeoutMS = this.host.timeoutMS || 5e3) { // Ensure we are connected, if possible.
+    // If not already configured, sets up contact to have properties:
     // - connection - a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
     //   incomming messages are dispatched to receiveWebRTC(string)
@@ -122,7 +123,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     this.overlay = Promise.race([overlayPromise, timerPromise]);
   }
   async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
-    // Creates a WebRTC instance and uses it's connectVia to to signal.
+    // Creates a connected WebRTC instance.
     const contact = this.host.noteContactForTransport(this);
     ///if (contact.connection) contact.host.xlog('connect existing', contact.sname, contact.counter);
 
@@ -180,13 +181,48 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // TODO: Currently, parameters do NOT include messageTag! (Because of how receiveRPC is called without it.)
     return [method, await this.ensureRemoteContact(sender), BigInt(targetKey), ...rest];
   }
+  serializeResponse(response) {
+    if (!this.host.constructor.isContactsResult(response)) return response;
+    return response.map(helper => [helper.contact.sname, helper.distance.toString()]);
+  }
+  async deserializeResponse(responder, result) {
+    //fixme
+  }
   async transmitRPC(messageTag, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
-    if (!await this.connect()) return null;
     const responsePromise = new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
-    this.send([messageTag, ...rest]);
+    await this.send([messageTag, ...rest]);
     const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
     return await Promise.race([responsePromise, timeout, this.closed]);
+  }
+  async receiveRPC(messageTag, ...data) { // Call the message method to act on the 'to' node side.
+    const responder = this.host.messageResolvers.get(messageTag);
+    if (responder) { // A response to something we sent and are waiting for.
+      let [result] = data;
+      this.host.messageResolvers.delete(messageTag);
+      //await this.deserializeResponse(responder, result);
+      if (Array.isArray(result)) {
+	if (!result.length) {
+	  responder(result);
+	} else {
+	  const first = result[0];
+	  const isSignal = Array.isArray(first) && ['offer', 'answer', 'icecandidate'].includes(first[0]);
+	  if (isSignal) {
+	    responder(result); // This could be the sponsor or the original sender. Either way, it will know what to do.
+	  } else {
+	    responder(await Promise.all(result.map(async ([sname, distance]) =>
+	      new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance)))));
+	  }
+	}
+      } else {
+	responder(result);
+      }
+    } else { // An incoming request.
+      const deserialized = await this.deserializeRequest(...data);
+      let response = await this.host.receiveRPC(...deserialized);
+      response = this.serializeResponse(response);
+      await this.send([messageTag, response]);
+    }
   }
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
     // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.
@@ -199,31 +235,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       return;
     }
     const [messageTag, ...data] = JSON.parse(dataString);
-    const responder = this.host.messageResolvers.get(messageTag);
-    if (responder) { // A response to something we sent and are waiting for.
-      let [result] = data;
-      this.host.messageResolvers.delete(messageTag);
-      if (Array.isArray(result)) {
-	if (!result.length) responder(result);
-	const first = result[0];
-	const isSignal = Array.isArray(first) && ['offer', 'answer', 'icecandidate'].includes(first[0]);
-	if (isSignal) {
-	  responder(result); // This could be the sponsor or the original sender. Either way, it will know what to do.
-	} else {
-	  responder(await Promise.all(result.map(async ([sname, distance]) =>
-	    new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance)))));
-	}
-      } else {
-	responder(result);
-      }
-    } else { // An incoming request.
-      const [method, senderLabel, key, ...rest] = data;
-      let response = await this.receiveRPC(method, senderLabel, key, ...rest);
-      if (this.host.constructor.isContactsResult(response)) {
-	response = response.map(helper => [helper.contact.sname, helper.distance.toString()]);
-      }
-      this.send([messageTag, response]);
-    }
+    await this.receiveRPC(messageTag, ...data);
   }
   async disconnectTransport() {
     await this.send('bye'); await Node.delay(50); // FIXME: Hack: We'll need to be able to pass tests without this, too.

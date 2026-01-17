@@ -60,28 +60,34 @@ export class SimulatedConnectionContact extends SimulatedContact {
       await Node.delay(100);
       const sponsors = Array.from(this._sponsors.values());
       const target = this.node, targetKey = target.key;
-      for (const sponsor of sponsors) {
-	if (!isConnected(sponsor)) continue;
-	mutualSponsor = sponsor;
-	break;
-      }
-      if (!mutualSponsor) {
-	function findPath(contact, excluded) {
-	  if (contact.key === targetKey) return true;
-	  if (!isConnected(contact)) return false;
-	  const closest = contact.node.findClosestHelpers(targetKey)
-		.map(helper => helper.contact)
-		.filter(contact => !excluded.includes(contact.key));
-	  for (const sub of closest) {
-	    if (findPath(sub, [sub.node.key, ...excluded])) return true;
-	  }
-	  return false;
+      function findSponsor() {
+	for (const sponsor of sponsors) {
+	  if (!isConnected(sponsor)) continue;
+	  mutualSponsor = sponsor;
+	  break;
 	}
-	mutualSponsor = findPath(this.host.contact, [this.host.key]);
       }
+      function findPath(contact, excluded) {
+	if (contact.key === targetKey) return true;
+	if (!isConnected(contact)) return false;
+	const closest = contact.node.findClosestHelpers(targetKey)
+	      .map(helper => helper.contact)
+	      .filter(contact => !excluded.includes(contact.key));
+	for (const sub of closest) {
+	  if (findPath(sub, [sub.node.key, ...excluded])) return true;
+	}
+	return false;
+      }
+      findSponsor();
       if (!mutualSponsor) {
-	//console.log('No connection path from', this.host.contact.report, 'to', this.report, 'sponsors:', sponsors.map(c => c.report), 'contacts:', this.node.findClosestHelpers(targetKey).map(helper => helper.contact.report));
-	return null;
+	await Node.delay(100);
+	findSponsor();
+	if (mutualSponsor) ; //console.log('*** found sponsor after delay ***');
+	else if (findPath(this.host.contact, [this.host.key])) console.log('*** found path ***');
+	else {
+	  //console.log('No connection path from', this.host.contact.report, 'to', this.report, 'sponsors:', sponsors.map(c => c.report), 'contacts:', this.node.findClosestHelpers(targetKey).map(helper => helper.contact.report));
+	  return null;
+	}
       }
     }
 
@@ -98,7 +104,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
   }
   async transmitRPC(messageTag, method, sender, ...rest) { // "transmit" the call (with sending contact added).
     if (!this.isRunning) return null; // Receiver closed.
-    const farContactForUs = this.connection || (await this.connect(method))?.connection;
+    const farContactForUs = this.connection;
     if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
     return await this.constructor.ensureTime(() => farContactForUs.receiveRPC(method, farContactForUs, ...rest));
   }
