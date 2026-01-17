@@ -28,7 +28,7 @@ export class Node extends NodeProbe {
     if (Node.isValueResult(result)) return result.value;
     // KLUDGE ALERT:
     if (additionalTries) {
-      console.log('\n\n*** failed to find value and trying again', additionalTries, '***\n');
+      console.log('\n\n*** failed to find value for', targetKey, 'and trying again', additionalTries, '***\n');
       await Node.delay(1e3);
       return await this.locateValue(targetKey, additionalTries - 1);
     }

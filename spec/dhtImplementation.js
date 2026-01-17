@@ -186,5 +186,6 @@ async function serialSetupClientsByTime(refreshTimeIntervalMS, nServerNodes, max
 export async function shutdownClientNodes(nServerNodes, nClientNodes) {
   await stopThrashing();
   await new Promise(resolve => setTimeout(resolve, 5e3));
+  Node.refreshTimeIntervalMS = 0;
   await shutdown(nServerNodes, nClientNodes + nServerNodes);
 }

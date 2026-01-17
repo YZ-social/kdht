@@ -172,9 +172,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     else if (typeof(sponsor) === 'string') contact.bootstrapHost = sponsor;
     return contact;
   }
-  serializeRequest(messageTag, method, sender, targetKey, ...rest) {
-    // Serialize any of these that need to be, answering something suitable for transport. Subclasses override.
-    // Either serialize or deserialize needs to convert sender.
+  serializeRequest(messageTag, method, sender, targetKey, ...rest) { // Stringify sender and targetKey.
     Node.assert(sender instanceof Contact, 'no sender', sender);
     return [messageTag, method, sender.sname, targetKey.toString(), ...rest];
   }
