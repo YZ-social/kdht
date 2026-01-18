@@ -197,25 +197,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   async transmitRPC(messageTag, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
-    const responsePromise = new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
+    const responsePromise = this.getResponsePromise(messageTag);
     await this.send([messageTag, ...rest]);
     const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
     return await Promise.race([responsePromise, timeout, this.closed]);
   }
-  async receiveRPC(messageTag, ...data) { // Call the message method to act on the 'to' node side.
-    const responder = this.host.messageResolvers.get(messageTag);
-    if (responder) { // A response to something we sent and are waiting for.
-      let [result] = data;
-      this.host.messageResolvers.delete(messageTag);
-      result = await this.deserializeResponse(result);
-      responder(result);
-    } else { // An incoming request.
-      const deserialized = await this.deserializeRequest(...data);
-      let response = await this.host.receiveRPC(...deserialized);
-      response = this.serializeResponse(response);
-      await this.send([messageTag, response]);
-    }
-  }
+
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
     // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.
     // As we do the latter, we generate and note (in transmitRPC) a message tag included in the message.

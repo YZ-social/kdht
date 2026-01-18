@@ -109,9 +109,22 @@ export class Contact {
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));
   }
-  async receiveRPC(...data) { // Call the message method to act on the 'to' node side.
-    const serialized = await this.deserializeRequest(...data);
-    return this.host.receiveRPC(...serialized);
+  getResponsePromise(messageTag) { // Get a promise that will resolve when a response comes in as messageTag.
+    return new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
+  }
+  async receiveRPC(messageTag, ...data) { // Call the message method to act on the 'to' node side.
+    const responder = this.host.messageResolvers.get(messageTag);
+    if (responder) { // A response to something we sent and are waiting for.
+      let [result] = data;
+      this.host.messageResolvers.delete(messageTag);
+      result = await this.deserializeResponse(result);
+      responder(result);
+    } else { // An incoming request.
+      const deserialized = await this.deserializeRequest(...data);
+      let response = await this.host.receiveRPC(...deserialized);
+      response = this.serializeResponse(response);
+      await this.send([messageTag, response]);
+    }
   }
   // Sponsorship
   _sponsors = new Map(); // maps key => contact
