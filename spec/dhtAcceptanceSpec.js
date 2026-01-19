@@ -216,7 +216,7 @@ describe("DHT", function () {
   test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probing and disconnects turned off."});
   test({setupTimeMS: 1e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
   test({pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster smoke-testing."});
-  test({setupTimeMS: 60e3, maxTransports: 100, notes: "Normal ops"});
+  test({setupTimeMS: 60e3, notes: "Normal ops"});
 
   
   // test({maxClientNodes: 55, setupTimeMS: 240e3, pingTimeMS: 40, maxTransports: 62,

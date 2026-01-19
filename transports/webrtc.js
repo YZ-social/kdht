@@ -42,6 +42,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     return this.checkSignals(await response?.json());
   }
   async messsageSignals(signals) {
+    // Try sponsors first (two hops if connected).
     const sponsors = Array.from(this._sponsors.values());
     for (const sponsor of sponsors) {
       const response = await sponsor.sendRPC('signals', this.key, signals);
