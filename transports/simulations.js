@@ -6,7 +6,7 @@ export class SimulatedContact extends Contact {
   get key() { return this.node.key; }
   get isServerNode() { return this.node.isServerNode; }
 
-  get isRunning() { // Ask our canonical home contact.
+  get isRunning() { // Is the far node running.
     return this.node.isRunning;
   }
   connection = null;
@@ -47,7 +47,8 @@ export class SimulatedConnectionContact extends SimulatedContact {
     // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
     // TODO: Simulate webrtc signaling.
     const contact = this;
-    let { host, node, isServerNode } = contact;
+    let { host, node, isServerNode, connection } = contact;
+    if (connection) return connection;
 
     // Anyone can connect to a server node using the server's connect endpoint.
     // Anyone in the DHT can connect to another DHT node through a sponsor.
@@ -55,6 +56,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
       // No point in slowing the tests down to actually wait for this. It doesn't change the outcome.
       //await Node.delay(250); // Connect through portal.
     } else {
+      //this.host.xlog('connecting', this.sname);
       let mutualSponsor = null;
       const isConnected = (contact) => { // Is contact already connected to us?
 	return contact.connection && contact.node.existingContact(this.node.name)?.connection;
@@ -62,13 +64,15 @@ export class SimulatedConnectionContact extends SimulatedContact {
       await Node.delay(100);
       const sponsors = Array.from(this._sponsors.values());
       const target = this.node, targetKey = target.key;
-      function findSponsor() {
+      const findSponsor =  () => {
 	for (const sponsor of sponsors) {
-	  if (!isConnected(sponsor)) continue;
-	  mutualSponsor = sponsor;
-	  break;
+	  //if (isConnected(sponsor)) return sponsor;
+	  if (sponsor.sendRPC('signals', this.key, [])) {
+	    return sponsor;
+	  }
 	}
-      }
+	return null;
+      };
       function findPath(contact, excluded) {
 	if (contact.key === targetKey) return true;
 	if (!isConnected(contact)) return false;
@@ -80,14 +84,14 @@ export class SimulatedConnectionContact extends SimulatedContact {
 	}
 	return false;
       }
-      findSponsor();
-      if (!mutualSponsor) {
+      if (! findSponsor()) {
 	await Node.delay(100);
-	findSponsor();
-	if (mutualSponsor) ; //console.log('*** found sponsor after delay ***');
+	if ( findSponsor()) console.log('*** found sponsor after delay ***');
 	else if (findPath(this.host.contact, [this.host.key])) console.log('*** found path ***');
 	else {
-	  //console.log('No connection path from', this.host.contact.report, 'to', this.report, 'sponsors:', sponsors.map(c => c.report), 'contacts:', this.node.findClosestHelpers(targetKey).map(helper => helper.contact.report));
+	  // console.log('No connection path from', this.host.contact.report, 'to', this.report, 'sponsors:', sponsors.map(c => c.report)
+	  // 	      //, 'contacts:', this.node.findClosestHelpers(targetKey).map(helper => helper.contact.report)
+	  // 	     );
 	  return null;
 	}
       }
@@ -105,7 +109,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     return contact;
   }
   send(message) {
-    this.connection.receiveRPC(...message);
+    this.connection?.receiveRPC(...message);
   }
   async transmitRPC(messageTag, method, sender, ...rest) { // "transmit" the call (with sending contact added).
     if (!this.isRunning) return null; // Receiver closed.

@@ -98,11 +98,16 @@ export class Contact {
     if (!await this.connect()) return null;
     // uuid so that the two sides don't send a request with the same id to each other.
     // Alternatively, we could concatenate a counter to our host.name.
-    const messageTag = uuidv4();
+    let messageTag = uuidv4();
+    // if (method === 'signals') {
+    //   messageTag = 'X' + messageTag;
+    //   this.host.xlog(this.counter, 'requesting', messageTag, method, 'of', this.sname);
+    // }
     const message = this.serializeRequest(messageTag, method, sender, ...rest);
 
     const start = Date.now();
-    return this.transmitRPC(...message)
+    // FIXME: after we merge st-expts, we can reconsider/remove this timeout
+    return Promise.race([this.transmitRPC(...message), Node.delay(3e3, null)])
       .then(result => {
 	if (!sender.isRunning) {this.host.log('sender closed'); return null; } // Sender closed after call.
 	return result;
@@ -116,13 +121,18 @@ export class Contact {
     const responder = this.host.messageResolvers.get(messageTag);
     if (responder) { // A response to something we sent and are waiting for.
       let [result] = data;
-      this.host.messageResolvers.delete(messageTag);
+      //fixme restore this.host.messageResolvers.delete(messageTag); 
       result = await this.deserializeResponse(result);
       responder(result);
+    } else if (!this.host.isRunning) {
+      //this.disconnectTransport();
+    } else if (typeof(data[0]) !== 'string') { // Kludge: In testing, it is possible for a disconnecting node to send a request that will come back to a new session of the same id.
+      this.host.xlog(this.counter, 'received result without responder', messageTag, data, 'at', this.sname);
     } else { // An incoming request.
       const deserialized = await this.deserializeRequest(...data);
       let response = await this.host.receiveRPC(...deserialized);
       response = this.serializeResponse(response);
+      //if (messageTag.startsWith('X')) this.host.xlog(this.counter, 'responding', messageTag, response, 'to', this.sname);
       await this.send([messageTag, response]);
     }
   }
