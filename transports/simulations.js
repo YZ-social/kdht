@@ -118,7 +118,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     if (!this.isRunning) return null; // Receiver closed.
     const farContactForUs = this.connection;
     if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
-    const responsePromise = this.getResponsePromise(messageTag);
+    const responsePromise = Promise.race([this.getResponsePromise(messageTag), Node.delay(this.constructor.maxPingMs, null)]);
     //return await
     this.constructor.ensureTime(() => farContactForUs.receiveRPC(messageTag, method, farContactForUs, ...rest));
     return await responsePromise;

@@ -72,7 +72,7 @@ export class Contact {
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
   // RPC
-  static maxPingMs = 250; // No including connect time. These are single-hop WebRTC data channels.
+  static maxPingMs = 330; // Not including connect time. These are single-hop WebRTC data channels.
   serializeRequest(...rest) { // Return the composite datum suitable for transport over the wire.
     return rest; // Non-simulation subclases must override.
   }
@@ -107,7 +107,7 @@ export class Contact {
 
     const start = Date.now();
     // FIXME: after we merge st-expts, we can reconsider/remove this timeout
-    return Promise.race([this.transmitRPC(...message), Node.delay(3e3, null)])
+    return this.transmitRPC(...message)
       .then(result => {
 	if (!sender.isRunning) {this.host.log('sender closed'); return null; } // Sender closed after call.
 	return result;
