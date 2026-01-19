@@ -61,6 +61,7 @@ let contact = await WebContact.create({name: host, debug: argv.verbose});
 let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
 let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
 await contact.join(bootstrapContact);
+contact.host.xlog('joined');
 
 // process.on('SIGINT', async () => {
 //   console.log(process.title, 'Shutdown for Ctrl+C');

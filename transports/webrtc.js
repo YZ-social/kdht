@@ -43,15 +43,28 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   async messsageSignals(signals) {
     // Try sponsors first (two hops if connected).
+    const payload = [this.host.contact.sname, ...signals];
+    //this.host.xlog('contact messageSignals', payload);
     const sponsors = Array.from(this._sponsors.values());
     for (const sponsor of sponsors) {
-      const response = await sponsor.sendRPC('signals', this.key, signals);
+      const response = await sponsor.sendRPC('signals', this.key, payload);
       if (response) return response;
       this._sponsors.delete(sponsor.key);
     }
     this.host.xlog('Unable to signal through sponsor. Using message to', this.sname);
     return this.checkSignals(await this.host.message({targetKey: this.key, targetSname: this.sname,
 						      payload: ['signal', this.host.contact.sname, ...signals]}));
+  }
+  async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
+    // new contact on host to receive them, and promising a response.
+    //this.host.xlog('contact signals', senderSname, signals);
+    let contact = await this.ensureRemoteContact(senderSname);
+
+    if (contact.webrtc) return await contact.webrtc.respond(signals);
+
+    this.host.noteContactForTransport(contact);
+    contact.ensureWebRTC();
+    return await contact.webrtc.respond(signals);
   }
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;
@@ -145,16 +158,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     await Promise.all([this.connection, this.overlay]);
     return this.connection;
   }
-  async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
-    // new contact on host to receive them, and promising a response.
-    let contact = await this.ensureRemoteContact(senderSname);
-
-    if (contact.webrtc) return await contact.webrtc.respond(signals); 
-
-    this.host.noteContactForTransport(contact);
-    contact.ensureWebRTC();
-    return await contact.webrtc.respond(signals);
-  }
 
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
@@ -191,17 +194,22 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // TODO: Currently, parameters do NOT include messageTag! (Because of how receiveRPC is called without it.)
     return [method, await this.ensureRemoteContact(sender), BigInt(targetKey), ...rest];
   }
+  isSignalResponse(response) {
+    const first = response[0];
+    if (!first) return false;
+    if (('description' in first) || ('candidate' in first)) return true;
+    return false;
+  }
   serializeResponse(response) {
     if (!this.host.constructor.isContactsResult(response)) return response;
+    if (this.isSignalResponse(response)) return response;
     return response.map(helper => [helper.contact.sname, helper.distance.toString()]);
   }
   async deserializeResponse(result) {
     let response;
     if (!Node.isContactsResult(result)) return result;
     if (!result.length) return result;
-    const first = result[0];
-    const isSignal = Array.isArray(first) && ['offer', 'answer', 'icecandidate'].includes(first[0]);
-    if (isSignal) return result; // This could be the sponsor or the original sender. Either way, it will know what to do.
+    if (this.isSignalResponse(result)) return result;
     return await Promise.all(result.map(async ([sname, distance]) =>
       new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance))));
   }

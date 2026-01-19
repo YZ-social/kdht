@@ -11,13 +11,15 @@ describe("DHT write/read", function () {
   let contact, portalProcess, botProcess;
   const verbose = false;
   const baseURL = 'http://localhost:3000/kdht';
-  const nPortals = 10;
-  const nBots = 10;
+  const nPortals = 5;
+  const nBots = 5;
   const fixedSpacing  = 2; // Between portals.
   const variableSpacing = 5; // Additional random between portals.
   const nWrites = 40;
   const waitBeforeRead = 15e3;
   const thrash = true;
+  const showPortals = true;
+  const showBots = true;
 
   
   const __filename = fileURLToPath(import.meta.url);
@@ -30,15 +32,21 @@ describe("DHT write/read", function () {
 
     console.log(new Date(), 'starting portals over', portalSeconds, 'seconds');
     portalProcess = spawn('node', [path.resolve(__dirname, 'portal.js'), '--nPortals', nPortals, '--verbose', verbose.toString()]);
-    // portalProcess.stdout.on('data', echo);
-    // portalProcess.stderr.on('data', echo);
+    if (showPortals) {
+      portalProcess.stdout.on('data', echo);
+      portalProcess.stderr.on('data', echo);
+    }
     await Node.delay(portalSeconds * 1e3);
 
-    console.log(new Date(), 'starting bots over', botsMilliseconds/1e3, 'seconds');
-    botProcess = spawn('node', [path.resolve(__dirname, 'bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--verbose', verbose.toString()]);
-    // botProcess.stdout.on('data', echo);
-    // botProcess.stderr.on('data', echo);
-    await Node.delay(botsMilliseconds);
+    if (nBots) {
+      console.log(new Date(), 'starting bots over', botsMilliseconds/1e3, 'seconds');
+      botProcess = spawn('node', [path.resolve(__dirname, 'bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--verbose', verbose.toString()]);
+      if (showBots) {
+	botProcess.stdout.on('data', echo);
+	botProcess.stderr.on('data', echo);
+      }
+      await Node.delay(botsMilliseconds);
+    }
 
     contact = await WebContact.create({name: uuidv4(), debug: verbose});
     const bootstrapName = await contact.fetchBootstrap(baseURL);
