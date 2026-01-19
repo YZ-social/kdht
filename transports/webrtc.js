@@ -5,7 +5,6 @@ import { Helper } from '../dht/helper.js';
 import { Contact } from './contact.js';
 import { WebRTC } from '@yz-social/webrtc';
 
-
 export class WebContact extends Contact { // Our wrapper for the means of contacting a remote node.
   // Can this set all be done more simply?
   get name() { return this.node.name; } // Key of remote node as a string (e.g., as a guid).
@@ -16,10 +15,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (!response.ok) throw new Error(`fetch ${response.url} failed ${response.status}: ${response.statusText}.`);
   }
+  // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
+  // https://github.com/nodejs/undici/issues/3492
   async fetchBootstrap(baseURL, label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
     // worker index or the string 'random' to an available sname to which we can connect().
     const url = `${baseURL}/name/${label}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.xlog(e));
     this.checkResponse(response);
     return await response.json();
   }
@@ -33,9 +34,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async fetchSignals(url, signalsToSend) { 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
       body: JSON.stringify(signalsToSend)
-    });
+    }).catch(e => this.host.xlog(e));
     this.checkResponse(response);
     return this.checkSignals(await response.json());
   }
