@@ -13,6 +13,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get isRunning() { return this.node.isRunning; } // Have we marked at is no longer running.
 
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
+    if (!response) return;
     if (!response.ok) throw new Error(`fetch ${response.url} failed ${response.status}: ${response.statusText}.`);
   }
   // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
@@ -38,7 +39,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       body: JSON.stringify(signalsToSend)
     }).catch(e => this.host.xlog(e));
     this.checkResponse(response);
-    return this.checkSignals(await response.json());
+    return this.checkSignals(await response?.json());
   }
   async messsageSignals(signals) {
     const sponsors = Array.from(this._sponsors.values());
