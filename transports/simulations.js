@@ -108,6 +108,9 @@ export class SimulatedConnectionContact extends SimulatedContact {
     
     return contact;
   }
+  signals(...rest) {
+    return [this.name]; // Just a simulation
+  }
   send(message) {
     this.connection?.receiveRPC(...message);
   }

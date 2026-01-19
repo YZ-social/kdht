@@ -26,8 +26,8 @@ export class NodeMessages extends NodeContacts {
     //this.xlog(this.key, 'handling signals request', key, signals);
     await this.constructor.delay(100); // fixme remove
     const contact = this.findContactByKey(key);
-    if (!this.isRunning) { this.xlog('was asked to sponsor signals to', contact?.name, 'but is no longer running'); return null; }
-    if (this.key === key) return [this.name];
+    if (!this.isRunning) return null;
+    if (this.key === key) return await this.contact.signals(...signals);
     if (!contact) return null;
     //const forwarded = ['forward-to-' + contact?.name + '-through-' + this.name ];
     const forwarded = await contact.sendRPC('signals', key, signals);

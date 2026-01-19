@@ -127,7 +127,7 @@ export class Contact {
     } else if (!this.host.isRunning) {
       //this.disconnectTransport();
     } else if (typeof(data[0]) !== 'string') { // Kludge: In testing, it is possible for a disconnecting node to send a request that will come back to a new session of the same id.
-      this.host.xlog(this.counter, 'received result without responder', messageTag, data, 'at', this.sname);
+      ; //this.host.xlog(this.counter, 'received result without responder', messageTag, data, 'at', this.sname);
     } else { // An incoming request.
       const deserialized = await this.deserializeRequest(...data);
       let response = await this.host.receiveRPC(...deserialized);
