@@ -121,11 +121,11 @@ export class Contact {
     const responder = this.host.messageResolvers.get(messageTag);
     if (responder) { // A response to something we sent and are waiting for.
       let [result] = data;
-      //fixme restore this.host.messageResolvers.delete(messageTag); 
+      this.host.messageResolvers.delete(messageTag);
       result = await this.deserializeResponse(result);
       responder(result);
     } else if (!this.host.isRunning) {
-      //this.disconnectTransport();
+      this.disconnectTransport();
     } else if (typeof(data[0]) !== 'string') { // Kludge: In testing, it is possible for a disconnecting node to send a request that will come back to a new session of the same id.
       ; //this.host.xlog(this.counter, 'received result without responder', messageTag, data, 'at', this.sname);
     } else { // An incoming request.
