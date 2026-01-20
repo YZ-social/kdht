@@ -102,6 +102,12 @@ export class Contact {
   async deserializeResponse(result) { // Inverse of serializeResponse.
     return result;
   }
+  rpcTimeout(method) { // Promise to resolve to null at appriate timeout for RPC method
+    let hops = 15; // recursive calls
+    if (method === 'signals') hops = 2;
+    else if (['ping', 'findNodes', 'findValue', 'store'].includes(method)) hops = 1;
+    return Node.delay(hops * this.constructor.maxPingMs, null);
+  }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
 

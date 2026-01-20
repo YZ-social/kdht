@@ -221,12 +221,11 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     return await Promise.all(result.map(async ([sname, distance]) =>
       new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance))));
   }
-  async transmitRPC(messageTag, ...rest) { // Must return a promise.
+  async transmitRPC(messageTag, method, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     const responsePromise = this.getResponsePromise(messageTag);
-    await this.send([messageTag, ...rest]);
-    const timeout = Node.delay(this.constructor.maxPingMs, null); // Faster than waiting for webrtc to observe a close
-    return await Promise.race([responsePromise, timeout, this.closed]);
+    await this.send([messageTag, method, ...rest]);
+    return await Promise.race([responsePromise, this.rpcTimeout(method), this.closed]);
   }
 
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
