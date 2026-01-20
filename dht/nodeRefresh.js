@@ -32,7 +32,7 @@ export class NodeRefresh extends NodeKeys {
     return this.workQueue = this.workQueue.then(thunk);
   }
   timers = new Map();
-  schedule(timerKey, statisticsKey, thunk) {    
+  schedule(timerKey, statisticsKey, thunk, timeout = this.fuzzyInterval()) {
     // Schedule thunk() to occur at a fuzzyInterval from now, cancelling any
     // existing timer at the same key. This is used in such a way that:
     // 1. A side effect of calling thunk() is that it will be scheduled again, if appropriate.
@@ -41,7 +41,6 @@ export class NodeRefresh extends NodeKeys {
     //    E.g., bucket index 1 === 1 and stored value key BigInt(1) === BigInt(1), but 1 !== BigInt(1)
     if (this.isStopped()) return;
     const start = Date.now();
-    const timeout = this.fuzzyInterval();
     clearInterval(this.timers.get(timerKey));
     this.timers.set(timerKey, setTimeout(async () => {
       const lag = Date.now() - start - timeout;

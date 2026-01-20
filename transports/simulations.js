@@ -11,7 +11,6 @@ export class SimulatedContact extends Contact {
   }
   connection = null;
   async connect() { return this; }
-  disconnectTransport() { }
   // Dispatch directly on the node, returning the response. This is different than the send to and from with messageTag used by
   // SimulatedConnectionContact and WebContact.
   async transmitRPC(messageTag, method, sender, ...rest) {
@@ -30,20 +29,19 @@ export class SimulatedConnectionContact extends SimulatedContact {
     // Report if we are the last node to hold a value.
     if (Node.refreshTimeIntervalMS && Node.contacts?.length) { // i.e., not shutting down and in simulation where we track all Contacts.
       for (const key of this.host.storage.keys()) {
-	if (!Node.contacts.some(contact => contact?.host.storage.has(key) && (contact?.key !== this.key))) {
-	  console.log('\n\n*** removing last storer for ', key, this.host.storage.get(key), '***\n');
-	}
+	const found = Node.contacts.find(contact => contact?.host.storage.has(key) && (contact?.key !== this.key));
+	if (!found) console.log('\n\n*** removing last storer for ', key, this.host.storage.get(key), 'among', Node.contacts.filter(e => e).length, 'contacts ***\n');
       }
     }
     return super.disconnect();
   }
-  disconnectTransport() {
+  disconnectTransport(andNotify = true) {
     const farContactForUs = this.connection;
     if (!farContactForUs) return;
     Node.assert(farContactForUs.key === this.host.key, 'Far contact backpointer', farContactForUs.node.name, 'does not point to us', this.host.name);
     Node.assert(farContactForUs.host.key === this.key, 'Far contact host', farContactForUs.host.name, 'is not hosted at contact', this.name);
-    farContactForUs.connection = null;
-    this.connection = null;
+    super.disconnectTransport(andNotify);
+    this.connection = farContactForUs.connection = null;
   }
   async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
@@ -113,8 +111,14 @@ export class SimulatedConnectionContact extends SimulatedContact {
   signals(...rest) {
     return [this.name]; // Just a simulation
   }
-  send(message) {
+  async send(message) {
+    await Node.delay(10);
     this.connection?.receiveRPC(...message);
+  }
+  async synchronousSend(message) {
+    const other = this.connection;
+    await Node.delay(1);
+    other?.receiveRPC(...message);
   }
   async transmitRPC(messageTag, method, sender, ...rest) { // "transmit" the call (with sending contact added).
     if (!this.isRunning) return null; // Receiver closed.

@@ -98,7 +98,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
       resolve(null); // closed promise
-      this.webrtc = this.connection = null;
+      this.webrtc = this.connection = this.unsafeData = null;
     };
     if (initiate) {
       if (bootstrapHost/* || isServerNode*/) {
@@ -120,6 +120,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
       if  (this.host.debug) await webrtc.reportConnection(true); // TODO: make this asymchronous?
       if (webrtc.statsElapsed > 500) this.host.xlog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
+      this.unsafeData = dataChannel;
       return dataChannel;
     });
     if (!timeoutMS) {
@@ -129,7 +130,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
 	const now = Date.now();
-	this.host.xlog('Unable to connect to', this.name);
+	this.host.xlog('Unable to connect to', this.sname);
 	// this.host.xlog('**** connection timeout', this.sname, now - start,
 	// 	       'status:', webrtc.pc.connectionState, 'signaling:', webrtc.pc.signalingState,
 	// 	       'last signal:', now - webrtc.lastOutboundSignal,
@@ -161,6 +162,15 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     let channel = await this.connection;
     if (channel?.readyState === 'open') channel.send(JSON.stringify(message));
     else this.host.xlog('Unable to open channel');
+  }
+  synchronousSend(message) { // this.send awaits channel open promise. This is if we know it has been opened.
+    if (this.unsafeData?.readyState !== 'open') return; // But it may have since been closed.
+    this.host.log('sending', message, 'to', this.sname);
+    try {
+      this.unsafeData.send(JSON.stringify(message));
+    } catch (e) { // Some webrtc can change readyState in background.
+      this.host.log(e); 
+    }
   }
   getName(sname) { // Answer name from sname.
     if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
@@ -233,9 +243,11 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     await this.receiveRPC(messageTag, ...data);
   }
   async disconnectTransport() {
-    await this.send('bye'); await Node.delay(50); // FIXME: Hack: We'll need to be able to pass tests without this, too.
-
-    this.webrtc?.close();
-    this.connection = this.webrtc = this.initiating = null;
+    if (!this.connection) return;
+    super.disconnectTransport();
+    Node.delay(100).then(() => { // Allow time for super to send close/bye message.
+      this.webrtc?.close();
+      this.connection = this.webrtc = this.initiating = null;
+    });
   }
 }

@@ -41,10 +41,10 @@ export class KBucket {
     await this.node.locateNodes(targetKey); // Side-effect is to update this bucket.
     return true;
   }
-  resetRefresh() { // We are organically performing a lookup in this bucket. Reset the timer.
+  resetRefresh(now = false) { // We are organically performing a lookup in this bucket. Reset the timer.
     // clearInterval(this.refreshTimer);
     // this.refreshTimer = this.node.repeat(() => this.refresh(), 'bucket');
-    this.node.schedule(this.index, 'bucket', () => this.refresh());
+    this.node.schedule(this.index, 'bucket', () => this.refresh(), now ? 1 : undefined); // Not zero.
   }
 
   removeKey(key, deleteIfEmpty = true) { // Removes item specified by key (if present) from bucket and return 'present' if it was, else false.

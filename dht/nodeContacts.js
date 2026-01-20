@@ -84,14 +84,15 @@ export class NodeContacts extends NodeTransports {
   queueRoutingTableChange(thunk) { // Promise to resolve thunk() -- after all previous queued thunks have resolved.
     return this.routingTableSerializer = this.routingTableSerializer.then(thunk);
   }
-  removeContact(contact) { // Removes from node entirely if present, from looseTransports or bucket as necessary.
+  removeContact(contact) { // Removes from node entirely if present, from looseTransports or bucket as necessary, returning bucket if that's where it was, else null.
     return this.queueRoutingTableChange(() => {
       delete this.contactDictionary[contact.name];
       const key = contact.key;
-      if (this.removeLooseTransport(key)) return;
+      if (this.removeLooseTransport(key)) return null;
       const bucketIndex = this.getBucketIndex(key);
       const bucket = this.routingTable.get(bucketIndex);
-      bucket?.removeKey(key); // Host might not yet have added node or anyone else as contact for that bucket yet, so maybe no bucket.
+      // Host might not yet have added node or anyone else as contact for that bucket yet, so maybe no bucket.
+      return bucket?.removeKey(key) ? bucket : null;
     });
   }
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.

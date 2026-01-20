@@ -61,13 +61,30 @@ export class Contact {
   }
   async disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
-    this.host.isRunning = false;
+    // Attempt to ensure that there are other copies.
+    if (!this.host.isStopped()) {
+      await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
+    }
     this.host.stopRefresh();
     for (const contact of this.host.contacts) {
       const far = contact.connection;
       if (!far) return;
-      await contact.disconnectTransport();
+      contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
+      await contact.disconnectTransport(false);
     }
+    this.host.isRunning = false;
+  }
+  disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
+    if (andNotify) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
+  }
+  close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
+    this.host.log('closing disconnected contact', this.sname, this.xxx++);
+    this.disconnectTransport(false);
+    this.host.removeLooseTransport(this.key); // If any.
+  }
+  bye() { // The sender is disconnecting from the network
+    this.host.log('removing disconnected contact', this.sname);
+    this.host.removeContact(this).then(bucket => bucket?.resetRefresh('now')); // Accelerate the bucket refresh
   }
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
@@ -88,7 +105,6 @@ export class Contact {
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
 
-    //this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
     if (!sender.isRunning) return null; // sender closed before call.
     if (sender.key === this.key) { // self-send short-circuit
       const result = this.host.receiveRPC(method, sender, ...rest);
@@ -106,7 +122,6 @@ export class Contact {
     const message = this.serializeRequest(messageTag, method, sender, ...rest);
 
     const start = Date.now();
-    // FIXME: after we merge st-expts, we can reconsider/remove this timeout
     return this.transmitRPC(...message)
       .then(result => {
 	if (!sender.isRunning) return null; // Sender closed after call.
@@ -126,8 +141,13 @@ export class Contact {
       responder(result);
     } else if (!this.host.isRunning) {
       this.disconnectTransport();
-    } else if (typeof(data[0]) !== 'string') { // Kludge: In testing, it is possible for a disconnecting node to send a request that will come back to a new session of the same id.
+      // Kludge: In testing, it is possible for a disconnecting node to send a request that will respond to a new session of the same id.
+    } else if (typeof(data[0]) !== 'string' || data[0] === 'pong') {
       ; //this.host.xlog(this.counter, 'received result without responder', messageTag, data, 'at', this.sname);
+    } else if (data[0] === 'close') {
+      this.close();
+    } else if (data[0] === 'bye') {
+      this.bye();
     } else { // An incoming request.
       const deserialized = await this.deserializeRequest(...data);
       let response = await this.host.receiveRPC(...deserialized);
