@@ -98,7 +98,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
       resolve(null); // closed promise
-      this.webrtc = this.connection = this.overlay = null;
+      this.webrtc = this.connection = null;
     };
     if (initiate) {
       if (bootstrapHost/* || isServerNode*/) {
@@ -122,34 +122,26 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       if (webrtc.statsElapsed > 500) this.host.xlog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
       return dataChannel;
     });
-    const overlayChannelName = 'overlay';
-    const overlayPromise = webrtc.getDataChannelPromise(overlayChannelName);
-    webrtc.createChannel(overlayChannelName, {negotiated: true});
-    overlayPromise.then(async overlay => {
-      overlay.addEventListener('message', event => host.messageHandler(event.data));
-      return overlay;
-    });
     if (!timeoutMS) {
       this.connection = channelPromise;
-      this.overlay = overlayPromise;
       return;
     }
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
 	const now = Date.now();
-	this.host.xlog('**** connection timeout', this.sname, now - start,
-		       'status:', webrtc.pc.connectionState, 'signaling:', webrtc.pc.signalingState,
-		       'last signal:', now - webrtc.lastOutboundSignal,
-		       'last send:', now - webrtc.lastOutboundSend,
-		       'last response:', now - webrtc.lastResponse,
-		       '****');
+	this.host.xlog('Unable to connect to', this.name);
+	// this.host.xlog('**** connection timeout', this.sname, now - start,
+	// 	       'status:', webrtc.pc.connectionState, 'signaling:', webrtc.pc.signalingState,
+	// 	       'last signal:', now - webrtc.lastOutboundSignal,
+	// 	       'last send:', now - webrtc.lastOutboundSend,
+	// 	       'last response:', now - webrtc.lastResponse,
+	// 	       '****');
 	onclose();
 	await this.host.removeContact(this); // fixme?
 	expired(null);
       }, timeoutMS);
     });
     this.connection = Promise.race([channelPromise, timerPromise]);
-    this.overlay = Promise.race([overlayPromise, timerPromise]);
   }
   async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Creates a connected WebRTC instance.
@@ -161,7 +153,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // Anyone in the DHT can connect to another DHT node through a sponsor.
     if (contact.connection) return contact.connection;
     contact.ensureWebRTC(true);
-    await Promise.all([this.connection, this.overlay]);
+    await this.connection;
     return this.connection;
   }
 
