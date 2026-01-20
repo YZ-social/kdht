@@ -22,17 +22,32 @@ export class NodeMessages extends NodeContacts {
     if (value !== undefined) return {value};
     return this.findClosestHelpers(key);
   }
-  async signals(key, signals) {
-    //this.xlog(this.key, 'handling signals request', key, signals);
-    await this.constructor.delay(100); // fixme remove
-    const contact = this.findContactByKey(key);
+  async signals(key, signals, forwardingExclusions = false) {
+    const origin = signals[0];
+    //this.xlog(this.key, 'handling signals request for', {origin, key, signals, forwardingExclusions});
+    //await this.constructor.delay(100); // fixme remove
     if (!this.isRunning) return null;
-    if (this.key === key) return await this.contact.signals(...signals);
-    if (!contact) return null;
-    //const forwarded = ['forward-to-' + contact?.name + '-through-' + this.name ];
-    const forwarded = await contact.sendRPC('signals', key, signals);
-    //this.xlog('got forwarded value', forwarded, 'from', contact.sname, !!contact.connection);
-    return forwarded;
+    if (this.key === key) return await this.contact.signals(...signals); // Yay, us!
+
+    let contact = this.findContactByKey(key); // If we have the target as a contact, use it directly.
+    if (!contact && !forwardingExclusions) return null;
+    if (contact) return await contact.sendRPC('signals', key, signals, forwardingExclusions);
+    // Forward recursively.
+    const contacts = this.findClosestHelpers(key).map(helper => helper.contact);
+    forwardingExclusions.push(this.name);
+    //this.xlog('forwarding signals', {key, forwardingExclusions, contacts: contacts.map(c => c.sname)});
+    for (const contact of contacts) {
+      // this.xlog('contact', contact.sname, contact.isRunning ? 'running' : 'dead',
+      // 		contact.connection ? 'connected': 'unconnected',
+      // 		forwardingExclusions.includes(contact.name) ? 'excluded' : 'allowed');
+      if (!contact.isRunning) continue;
+      if (!contact.connection) continue;
+      if (forwardingExclusions.includes(contact.name)) continue;
+      const response = await contact.sendRPC('signals', key, signals, forwardingExclusions);
+      //this.xlog('got response from', contact.sname);
+      if (response) return response;
+    }
+    return null;
   }
 
   messageResolvers = new Map(); // maps outgoing message tag => promise resolver being waited on.

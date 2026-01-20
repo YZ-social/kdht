@@ -51,9 +51,15 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       if (response) return response;
       this._sponsors.delete(sponsor.key);
     }
-    this.host.xlog('Unable to signal through sponsor. Using message to', this.sname);
-    return this.checkSignals(await this.host.message({targetKey: this.key, targetSname: this.sname,
-						      payload: ['signal', this.host.contact.sname, ...signals]}));
+    if (!this.host.sRunning) return [];
+    this.host.xlog('Unable to signal through sponsor. Using recursive message to', this.sname, this.key);
+    const recursive = await this.host.contact.sendRPC('signals', this.key, payload, []);
+    //this.host.xlog('got recursive response', recursive);
+    if (!this.host.isRunning) return [];
+    if (!recursive) this.host.xlog('Unable to deliver signals to', this.sname);
+    return this.checkSignals(recursive);
+    // return this.checkSignals(await this.host.message({targetKey: this.key, targetSname: this.sname,
+    // 						      payload: ['signal', this.host.contact.sname, ...signals]}));
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
     // new contact on host to receive them, and promising a response.
