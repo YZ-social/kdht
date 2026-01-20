@@ -9,6 +9,9 @@ export class NodeMessages extends NodeContacts {
     return 'pong'; // Answer something truthy. See isValueResult.
   }
   store(key, value) { // Tell the node to store key => value, returning truthy.
+    if (this.constructor.diagnosticTrace) {
+      this.log(`store RPC received: key=${key}, value=${value}`);
+    }
     this.storeLocally(key, value);
     return 'pong'; // Answer something truthy. See isValueResult.
   }

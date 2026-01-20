@@ -33,7 +33,7 @@ describe("DHT internals", function () {
 	expect(retrieved).toBeUndefined();
       });
     });
-      
+
     describe("report", function () {
       beforeAll(async function () { // Add some data for which we know the expected internal structure.
 	example.storeLocally(await Node.key("foo"), 17); // May or may not have already been set to same value, depending on test order.
@@ -65,7 +65,7 @@ describe("DHT internals", function () {
       });
     });
   });
-  
+
   describe("operations", function () {
     const one = 1n;
     const two = 2n;
@@ -88,7 +88,7 @@ describe("DHT internals", function () {
     describe("getBucketIndex", function () {
       let node;
       beforeAll(function () {
-	node = Node.fromKey(Node.zero); 
+	node = Node.fromKey(Node.zero);
       });
       it("bucket keySize -1 is farthest.", function () {
 	const distance = max - Node.one; // max distance within nTagBits. All bits on.
@@ -113,6 +113,7 @@ describe("DHT internals", function () {
 	node = await Node.create();
       });
       function test(bucketIndex) {
+// console.log(`[dhtInternalsSpec:index=${bucketIndex}]`);
 	it(`computes random of ${bucketIndex}.`, function () {
 	  const random = node.ensureBucket(bucketIndex).randomTarget;
 	  const computedBucket = node.getBucketIndex(random);
@@ -132,7 +133,7 @@ describe("DHT internals", function () {
 	const bucket0 = new KBucket(node, 0);
 	const bucket10 = new KBucket(node, 10);
 	const bucket60 = new KBucket(node, 60);
-	const bucket90 = new KBucket(node, 90);	
+	const bucket90 = new KBucket(node, 90);
 	const addTo = async bucket => {
 	  const key = bucket.randomTarget;
 	  keys.push(key);
@@ -143,9 +144,9 @@ describe("DHT internals", function () {
 	await addTo(bucket60);
 	await addTo(bucket90);
 	node.routingTable.set(0, bucket0);
-	node.routingTable.set(10, bucket10);	
+	node.routingTable.set(10, bucket10);
 	node.routingTable.set(60, bucket60);
-	node.routingTable.set(90, bucket90);	
+	node.routingTable.set(90, bucket90);
       });
       it("is initially empty.", async function () {
 	const node = await Node.create();
@@ -171,7 +172,7 @@ describe("DHT internals", function () {
   0: ${node.routingTable.get(0).contacts.map(c => c.key.toString() + 'n').join(', ')}
   10: ${node.routingTable.get(10).contacts.map(c => c.key.toString() + 'n').join(', ')}
   60: ${node.routingTable.get(60).contacts.map(c => c.key.toString() + 'n').join(', ')}
-  90: ${node.routingTable.get(90).contacts.map(c => c.key.toString() + 'n').join(', ')}`;	
+  90: ${node.routingTable.get(90).contacts.map(c => c.key.toString() + 'n').join(', ')}`;
 	expect(report).toBe(expected);
       });
     });
@@ -251,5 +252,291 @@ describe("DHT internals", function () {
 	});
       });
     });
+  });
+
+  describe("lookup performance with laggy nodes", function() {
+    // Test to demonstrate blocking behavior with slow nodes
+    // After implementing racing, this will show the improvement
+    let network;
+    const nNodes = 10;
+
+    beforeAll(async function() {
+      // Create a small network
+      network = [];
+      for (let i = 0; i < nNodes; i++) {
+        const contact = await SimulatedContact.create(i);
+        network.push(contact);
+      }
+
+      // Make 6 out of 10 nodes laggy with varying delays
+      network[4].node.delayMs = 200;
+      network[5].node.delayMs = 200;
+      network[6].node.delayMs = 400;
+      network[7].node.delayMs = 400;
+      network[8].node.delayMs = 600;
+      network[9].node.delayMs = 600;
+
+      console.log('Network setup: nodes 0-3 are fast (40ms), nodes 4-9 are laggy (200/400/600ms)');
+
+      // Build network: each node knows about all others
+      for (let i = 0; i < nNodes; i++) {
+        const node = network[i].node;
+        for (let j = 0; j < nNodes; j++) {
+          if (i !== j) {
+            await node.addToRoutingTable(network[j].clone(node));
+          }
+        }
+      }
+    }, 30e3);
+
+    afterAll(function() {
+      network.forEach(contact => contact.disconnect());
+    });
+
+    it("completes lookup without blocking on all laggy nodes", async function() {
+      // Tests that the continuous-flow algorithm (keeping alpha requests in flight)
+      // makes progress without waiting for ALL slow nodes to respond.
+      // With 6/10 nodes being laggy (200-600ms), the lookup must contact some slow nodes,
+      // but shouldn't need to wait for every single slow response.
+      const searcher = network[0].node;
+      const targetKey = await Node.key("test-value");
+
+      // Perform a findNodes lookup with timing enabled
+      const startTime = Date.now();
+      const result = await searcher.iterate(targetKey, 'findNodes', Node.k, false, true);
+      const elapsed = Date.now() - startTime;
+
+      console.log(`Lookup: ${elapsed}ms, ${result.length} nodes found`);
+
+      // If we had to wait for ALL 6 slow nodes sequentially, it would take 2400ms+.
+      // The continuous flow should allow faster completion by not blocking on stragglers.
+      expect(elapsed).toBeLessThan(1500);
+      expect(result.length).toBeGreaterThan(0);
+      expect(result.length).toBeLessThanOrEqual(Node.k);
+    }, 30e3);
+
+    it("completes lookup despite some nodes timing out", async function() {
+      // Temporarily set some nodes to have delays exceeding the 10s timeout
+      const originalDelays = network.map(c => c.node.delayMs);
+      network[8].node.delayMs = 12000; // Will timeout
+      network[9].node.delayMs = 15000; // Will timeout
+
+      const searcher = network[0].node;
+      const targetKey = await Node.key("timeout-test");
+
+      const startTime = Date.now();
+      const result = await searcher.iterate(targetKey, 'findNodes', Node.k, true, true);
+      const elapsed = Date.now() - startTime;
+
+      // Restore original delays
+      network.forEach((c, i) => c.node.delayMs = originalDelays[i]);
+
+      console.log(`Timeout test: ${elapsed}ms, ${result.length} nodes found`);
+
+      // Should complete around 10s (the timeout), not 15s (waiting for slowest)
+      expect(elapsed).toBeGreaterThan(9000); // At least one timeout triggered
+      expect(elapsed).toBeLessThan(12000); // Didn't wait for 15s node
+      expect(result.length).toBeGreaterThan(0); // Still found some nodes
+    }, 20e3);
+
+    // Verbose diagnostic test - disabled by default. Change xit to it to enable.
+    it("can store and retrieve values with diagnostic tracing", async function() {
+      // Enable diagnostic tracing to see store/read details
+      Node.diagnosticTrace = true;
+
+      const storer = network[0].node;
+      const reader = network[3].node; // Different node reads
+      const targetKey = await Node.key("diagnostic-test-key");
+      const testValue = "diagnostic-test-value";
+
+      console.log('\n--- Store/Read Diagnostic Test ---');
+      console.log(`Storing "${testValue}" from node ${storer.name}`);
+
+      const storeCount = await storer.storeValue(targetKey, testValue);
+      console.log(`Store completed: ${storeCount} copies`);
+
+      console.log(`\nReading from node ${reader.name}`);
+      const retrieved = await reader.locateValue(targetKey);
+
+      console.log(`\n--- Store/Read Summary ---`);
+      console.log(`Stored to ${storeCount} nodes`);
+      console.log(`Retrieved: ${retrieved}`);
+      console.log(`Match: ${retrieved === testValue}`);
+
+      Node.diagnosticTrace = false; // Clean up
+
+      expect(storeCount).toBeGreaterThan(0);
+      expect(retrieved).toBe(testValue);
+    }, 30e3);
+  });
+
+  // Randomized store/read tests - disabled by default. Change xdescribe to describe to enable.
+  describe("store/read with randomized networks", function() {
+    // Track results across all tests for summary
+    const testResults = [];
+
+    afterAll(function() {
+      // Print summary of all test results
+      console.log('\n========== STORE/READ TEST SUMMARY ==========');
+      console.log(`Total tests: ${testResults.length}`);
+      const successes = testResults.filter(r => r.found);
+      const failures = testResults.filter(r => !r.found);
+      console.log(`Successes: ${successes.length}, Failures: ${failures.length}`);
+
+      if (successes.length > 0) {
+        const ranks = successes.map(r => r.rank);
+        const avgRank = ranks.reduce((a, b) => a + b, 0) / ranks.length;
+        const maxRank = Math.max(...ranks);
+        const storeCounts = successes.map(r => r.storedToCount);
+        const avgStoreCount = storeCounts.reduce((a, b) => a + b, 0) / storeCounts.length;
+        console.log(`Average rank of responder: ${avgRank.toFixed(2)} (1 = closest)`);
+        console.log(`Worst rank: ${maxRank}`);
+        console.log(`Average nodes stored to: ${avgStoreCount.toFixed(1)}`);
+
+        // Distribution of ranks
+        const rankDist = {};
+        ranks.forEach(r => rankDist[r] = (rankDist[r] || 0) + 1);
+        console.log('Rank distribution:', rankDist);
+      }
+
+      if (failures.length > 0) {
+        console.log('\nFailed tests:');
+        failures.forEach(f => console.log(`  Test ${f.testId}: stored to ${f.storedToCount} nodes, queried ${f.queriedCount} nodes`));
+      }
+      console.log('==============================================\n');
+    });
+
+    // Helper to create a randomized network
+    async function createRandomNetwork(nNodes, connectivityFactor = 0.5) {
+      const network = [];
+      for (let i = 0; i < nNodes; i++) {
+        const contact = await SimulatedContact.create(i);
+        network.push(contact);
+      }
+
+      // Randomly connect nodes based on connectivity factor
+      for (let i = 0; i < nNodes; i++) {
+        const node = network[i].node;
+        for (let j = 0; j < nNodes; j++) {
+          if (i !== j && Math.random() < connectivityFactor) {
+            await node.addToRoutingTable(network[j].clone(node));
+          }
+        }
+      }
+
+      return network;
+    }
+
+    // Helper to run a store/read test and track where value was found
+    async function runStoreReadTest(testId, network, storerIdx, readerIdx, keyString) {
+      const storer = network[storerIdx].node;
+      const reader = network[readerIdx].node;
+      const targetKey = await Node.key(keyString);
+      const testValue = `value-${testId}`;
+
+      // Perform store and track recipients (sorted by distance from targetKey)
+      const k = storer.constructor.k;
+      let helpers = await storer.locateNodes(targetKey, k * 2);
+      helpers = [...helpers].sort(Helper.compare); // Ensure sorted by distance
+
+      const storedTo = [];
+      for (const helper of helpers.slice(0, k)) {
+        const stored = await helper.contact.store(targetKey, testValue);
+        if (stored) {
+          storedTo.push({
+            name: helper.name,
+            key: helper.key,
+            distance: helper.distance
+          });
+        }
+      }
+
+      // Now read - iterate now returns { value, responder } when found
+      const result = await reader.iterate(targetKey, 'findValue', k, false); // trace=false for cleaner output
+
+      const found = Node.isValueResult(result);
+      let rank = -1;
+      let responderName = 'unknown';
+      let responderDistance = null;
+
+      if (found && result.responder) {
+        // Find the rank of the responder in the storedTo list
+        const responderKey = result.responder.key;
+        responderName = result.responder.name;
+        responderDistance = result.responder.distance;
+
+        for (let i = 0; i < storedTo.length; i++) {
+          if (storedTo[i].key === responderKey) {
+            rank = i + 1;
+            break;
+          }
+        }
+
+        // If responder not in storedTo list, it might have gotten the value via cache propagation
+        if (rank === -1) {
+          responderName = `${result.responder.name} (not in store list!)`;
+          rank = storedTo.length + 1; // Worse than any stored node
+        }
+      }
+
+      const testResult = {
+        testId,
+        found,
+        rank: found ? rank : -1,
+        responderName,
+        responderDistance,
+        storedToCount: storedTo.length,
+        storedToNames: storedTo.map(s => s.name),
+        queriedCount: found ? 0 : (Array.isArray(result) ? result.length : 0),
+        value: found ? result.value : undefined
+      };
+
+      testResults.push(testResult);
+      return testResult;
+    }
+
+    // Generate 20 randomized store/read tests
+    for (let testNum = 1; testNum <= 20; testNum++) {
+      it(`randomized store/read test ${testNum}`, async function() {
+        // Randomize network parameters
+        const nNodes = 8 + Math.floor(Math.random() * 8); // 8-15 nodes
+        const connectivity = 0.4 + Math.random() * 0.4; // 40-80% connectivity
+
+        const network = await createRandomNetwork(nNodes, connectivity);
+
+        // Random storer and reader (different nodes)
+        const storerIdx = Math.floor(Math.random() * nNodes);
+        let readerIdx = Math.floor(Math.random() * nNodes);
+        while (readerIdx === storerIdx) {
+          readerIdx = Math.floor(Math.random() * nNodes);
+        }
+
+        const result = await runStoreReadTest(
+          testNum,
+          network,
+          storerIdx,
+          readerIdx,
+          `test-key-${testNum}-${Date.now()}`
+        );
+
+        // Log individual test result
+        if (result.found) {
+          const distStr = result.responderDistance ? ` dist=${String(result.responderDistance).length}digits` : '';
+          console.log(`Test ${testNum}: FOUND at rank ${result.rank}/${result.storedToCount} (${result.responderName}${distStr}) - ${nNodes} nodes, ${(connectivity*100).toFixed(0)}% connectivity`);
+          if (result.rank > 3) {
+            console.log(`  ⚠ WARNING: Value found at rank ${result.rank} (not among top 3 closest to key)`);
+            console.log(`    Stored to: ${result.storedToNames.slice(0, 5).join(', ')}${result.storedToNames.length > 5 ? '...' : ''}`);
+          }
+        } else {
+          console.log(`Test ${testNum}: NOT FOUND - stored to ${result.storedToCount}, queried ${result.queriedCount} - ${nNodes} nodes, ${(connectivity*100).toFixed(0)}% connectivity`);
+          console.log(`    Stored to: ${result.storedToNames.join(', ')}`);
+        }
+
+        // Clean up network
+        network.forEach(contact => contact.disconnect());
+
+        expect(result.found).toBe(true);
+      }, 60e3);
+    }
   });
 });

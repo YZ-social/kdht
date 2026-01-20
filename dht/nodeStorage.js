@@ -5,7 +5,11 @@ export class NodeStorage extends NodeRefresh {
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
   // TODO: store across sessions
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
+    const hadValue = this.storage.has(key);
     this.storage.set(key, value);
+    if (this.constructor.diagnosticTrace) {
+      this.log(`storeLocally(${key}, ${value}) - ${hadValue ? 'updated' : 'NEW'}`);
+    }
     // TODO: The paper says this can be optimized.
     // Claude.ai suggests just writing to the next in line, but that doesn't work.
     this.schedule(key, 'storage', () => this.storeValue(key, value));

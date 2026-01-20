@@ -89,7 +89,7 @@ export class Contact {
     const sender = this.host.contact;
 
     //this.host.log('sendRPC', method, rest, sender.isRunning ? 'running' : 'stopped', 'sender key:', sender.key, 'to node:', this.sname, this.key);
-    if (!sender.isRunning) {this.host.log('not running'); return null;  }// sender closed before call.
+    if (!sender.isRunning) return null; // sender closed before call.
     if (sender.key === this.key) { // self-send short-circuit
       const result = this.host.receiveRPC(method, sender, ...rest);
       if (!result) this.host.xlog('no local result');
@@ -109,7 +109,7 @@ export class Contact {
     // FIXME: after we merge st-expts, we can reconsider/remove this timeout
     return this.transmitRPC(...message)
       .then(result => {
-	if (!sender.isRunning) {this.host.log('sender closed'); return null; } // Sender closed after call.
+	if (!sender.isRunning) return null; // Sender closed after call.
 	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));

@@ -15,10 +15,12 @@ export class SimulatedContact extends Contact {
   // Dispatch directly on the node, returning the response. This is different than the send to and from with messageTag used by
   // SimulatedConnectionContact and WebContact.
   async transmitRPC(messageTag, method, sender, ...rest) {
+    // Use delay from the destination node if set, representing a laggy VM/connection
+    const delayMs = this.node.delayMs;
     return await this.constructor.ensureTime(async () => {
       if (!this.isRunning) return null; // Receiver closed.
       return await this.node.receiveRPC(method, this.node.ensureContact(this.host.contact), ...rest);
-    });
+    }, delayMs);
   }
 }
 
@@ -118,9 +120,10 @@ export class SimulatedConnectionContact extends SimulatedContact {
     if (!this.isRunning) return null; // Receiver closed.
     const farContactForUs = this.connection;
     if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
+    // Use delay from the destination node if set, representing a laggy VM/connection
+    const delayMs = this.node.delayMs;
     const responsePromise = Promise.race([this.getResponsePromise(messageTag), Node.delay(this.constructor.maxPingMs, null)]);
-    //return await
-    this.constructor.ensureTime(() => farContactForUs.receiveRPC(messageTag, method, farContactForUs, ...rest));
+    this.constructor.ensureTime(() => farContactForUs.receiveRPC(messageTag, method, farContactForUs, ...rest), delayMs);
     return await responsePromise;
   }
 }

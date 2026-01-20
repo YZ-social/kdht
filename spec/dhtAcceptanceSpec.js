@@ -231,7 +231,7 @@ describe("DHT", function () {
   //test({maxTransports: 95, maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});
 
   //test({maxClientNodes: 7, nServerNodes: 5, refreshTimeIntervalMS: 3e3, runtimeBeforeWriteMS: 0e3, runtimeBeforeReadMS: 0e3, startThrashingBefore: 'never'});
-  //test({maxClientNodes: 3, nServerNodes: 3, refreshTimeIntervalMS: 3e3, runtimeBeforeWriteMS: 6e3, runtimeBeforeReadMS: 6e3});
+  //test({maxClientNodes: 3, nServerNodes: 3, startThrashingBefore: 'never', refreshTimeIntervalMS: 3e3, runtimeBeforeWriteMS: 6e3, runtimeBeforeReadMS: 6e3});
 
   
   // TODO:
