@@ -118,7 +118,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       clearTimeout(timeout);
       dataChannel.addEventListener('close', onclose);
       dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
-      if  (this.host.debug) await webrtc.reportConnection(true); // TODO: make this asymchronous?
+      await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) this.host.xlog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
       this.unsafeData = dataChannel;
       return dataChannel;
@@ -130,7 +130,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
 	const now = Date.now();
-	this.host.xlog('Unable to connect to', this.sname);
+	this.host.ilog('Unable to connect to', this.sname);
 	// this.host.xlog('**** connection timeout', this.sname, now - start,
 	// 	       'status:', webrtc.pc.connectionState, 'signaling:', webrtc.pc.signalingState,
 	// 	       'last signal:', now - webrtc.lastOutboundSignal,
@@ -161,7 +161,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
     if (channel?.readyState === 'open') channel.send(JSON.stringify(message));
-    else this.host.xlog('Unable to open channel');
+    else this.host.xlog('Tried to send on unopen channel on', this.sname, message);
   }
   synchronousSend(message) { // this.send awaits channel open promise. This is if we know it has been opened.
     if (this.unsafeData?.readyState !== 'open') return; // But it may have since been closed.
@@ -232,12 +232,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.
     // As we do the latter, we generate and note (in transmitRPC) a message tag included in the message.
     // If we find that in our messageResolvers tags, then the message is a response.
-    if (dataString === '"bye"') { // Special messsage that the other side is disconnecting, so we can clean up early.
-      this.webrtc.close();
-      this.host.xlog('removing disconnected contact', this.sname);
-      await this.host.removeContact(this);  // TODO: Make sure we're not invoking this in maxTransports cases.
-      return;
-    }
     const [messageTag, ...data] = JSON.parse(dataString);
     await this.receiveRPC(messageTag, ...data);
   }

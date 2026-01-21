@@ -83,7 +83,7 @@ export class Contact {
     this.host.removeLooseTransport(this.key); // If any.
   }
   bye() { // The sender is disconnecting from the network
-    this.host.log('removing disconnected contact', this.sname);
+    this.host.ilog('removing disconnected contact', this.sname);
     this.host.removeContact(this).then(bucket => bucket?.resetRefresh('now')); // Accelerate the bucket refresh
   }
   distance(key) { return this.host.constructor.distance(this.key, key); }
@@ -158,7 +158,6 @@ export class Contact {
       const deserialized = await this.deserializeRequest(...data);
       let response = await this.host.receiveRPC(...deserialized);
       response = this.serializeResponse(response);
-      //if (messageTag.startsWith('X')) this.host.xlog(this.counter, 'responding', messageTag, response, 'to', this.sname);
       await this.send([messageTag, response]);
     }
   }

@@ -12,10 +12,12 @@ export class NodeUtilities {
   }
   
   debug = false;
+  info = true;
   get sname() { // The home contact sname, or just name if no contact
     return this.contact?.sname || this.name;
   }
-  log(...rest) { if (this.debug) console.log(new Date(), this.sname, ...rest); }
+  log(...rest) { if (this.debug) this.xlog(new Date(), this.sname, ...rest); }
+  ilog(...rest) { if (this.info || this.debug) this.xlog(...rest); }
   xlog(...rest) { console.log(new Date().toISOString(), this.sname, ...rest); }
   static assert(ok, ...rest) { // If !ok, log rests and exit.
     if (ok) return;

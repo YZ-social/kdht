@@ -106,7 +106,7 @@ export class Node extends NodeProbe {
     return k - remaining;
   }
   async join(contact) {
-    this.log('joining', contact.sname);
+    this.ilog('joining', contact.sname);
     contact = this.ensureContact(contact);
     await contact.connect();
     await this.addToRoutingTable(contact);
@@ -126,7 +126,7 @@ export class Node extends NodeProbe {
     //   if (!started) started = true;
     //   else if (!bucket?.contacts.length) await this.ensureBucket(index).refresh();
     // }
-    this.log('joined', contact.sname);
+    this.ilog('joined', contact.sname);
     return this.contact; // Answering this node's home contact is handy for chaining or keeping track of contacts being made and joined.
   }
 }

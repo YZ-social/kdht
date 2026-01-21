@@ -16,7 +16,7 @@ export { Node, Contact };
 
 
 export async function start1(name, bootstrapContact, refreshTimeIntervalMS, isServerNode = false) {
-  const contact = await Contact.create({name, refreshTimeIntervalMS, isServerNode});
+  const contact = await Contact.create({name, refreshTimeIntervalMS, isServerNode, info: false});
   if (bootstrapContact) await contact.join(bootstrapContact);
   return contact;
 }

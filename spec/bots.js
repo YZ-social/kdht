@@ -64,7 +64,6 @@ let contact = await WebContact.create({name: host, debug: argv.verbose});
 let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
 let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
 await contact.join(bootstrapContact);
-contact.host.xlog('joined');
 
 // process.on('SIGINT', async () => {
 //   console.log(process.title, 'Shutdown for Ctrl+C');
@@ -76,7 +75,6 @@ while (argv.thrash) {
   await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
   const old = contact;
   const next = uuidv4();
-  contact.host.xlog('disconnecting');
   await contact.disconnect();
   await Node.delay(1e3); // TODO: remove?
 
@@ -84,6 +82,5 @@ while (argv.thrash) {
   bootstrapName = await contact.fetchBootstrap(argv.baseURL);
   bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
   await contact.join(bootstrapContact);
-  old.host.xlog('rejoined as', next);  
 }
 
