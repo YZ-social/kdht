@@ -79,6 +79,7 @@ const argv = yargs(hideBin(process.argv))
 if (cluster.isPrimary) { // Parent process with portal webserver through which clienta can bootstrap
   // Our job is to launch some kdht nodes to which clients can connect by signaling through
   // a little web server operated here.
+  console.log(`${cpus()[0].model}, ${logicalCores} logical cores.`);
   process.title = 'kdht-portal-server';
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);

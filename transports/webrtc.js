@@ -76,7 +76,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     return `@${this.host.contact.sname} ==> ${this.sname}`;
   }
 
-  ensureWebRTC(initiate = false, timeoutMS = this.host.timeoutMS || 10e3) { // Ensure we are connected, if possible.
+  ensureWebRTC(initiate = false, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
     // If not already configured, sets up contact to have properties:
     // - connection - a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel

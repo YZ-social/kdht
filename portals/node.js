@@ -28,7 +28,6 @@ export async function setup({baseURL, externalBaseURL = '', verbose, fixedSpacin
   const bootstrap = joinURL && await contact.ensureRemoteContact(bootstrapName, joinURL);
   process.send(contact.sname); // Report in to server as available for others to bootstrap through.
   if (bootstrap) await contact.join(bootstrap);
-  contact.host.xlog('joined');
   process.on('SIGINT', async () => {
     console.log(process.title, 'Shutdown for Ctrl+C');
     await contact.disconnect();

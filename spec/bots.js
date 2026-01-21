@@ -45,8 +45,10 @@ const argv = yargs(hideBin(process.argv))
       .parse();
 
 const host = uuidv4();
+process.title = 'kdht-bot-' + host;
 
 if (cluster.isPrimary) {
+  console.log(`${cpus()[0].model}, ${logicalCores} logical cores. Starting ${argv.nBots} over ${Node.refreshTimeIntervalMS/1000} seconds.`);
   for (let i = 1; i < argv.nBots; i++) { // The cluster primary becomes bot 0.
     cluster.fork();
   }
@@ -56,7 +58,6 @@ if (cluster.isPrimary) {
     launchWriteRead(argv.nWrites, argv.baseURL, Node.refreshTimeIntervalMS, argv.verbose);
   }
 }
-process.title = 'kdht-bot-' + host;
 
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
 console.log(cluster.worker?.id || 0, host);
@@ -65,11 +66,11 @@ let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
 let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
 await contact.join(bootstrapContact);
 
-// process.on('SIGINT', async () => {
-//   console.log(process.title, 'Shutdown for Ctrl+C');
-//   await contact.disconnect();
-//   process.exit(0);
-// });
+process.on('SIGINT', async () => {
+  console.log(process.title, 'Shutdown for Ctrl+C');
+  await contact.disconnect();
+  process.exit(0);
+});
 
 while (argv.thrash) {
   await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
