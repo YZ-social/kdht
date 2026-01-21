@@ -15,7 +15,10 @@ export class NodeRefresh extends NodeKeys {
   isStopped(interval) {
     return !this.isRunning || 0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval;
   }
-  fuzzyInterval(target = this.refreshTimeIntervalMS/2, margin = target/2) { // Like static fuzzyInterval with target defaulting to refreshTimeIntervalMS/2.
+  // The refreshTimeIntervalMS is the number of nominal number milliseconds we expect to be able to handle for short session timems.
+  // The actual period between bucket and data refreshes may be more or less than this, depending on how well we deal with churn.
+  // That actual average time between refereshes is the default target value here. E.g., this.refreshTimeIntervalMS / 2, or 1.5 * this.refreshTimeIntervalMS, etc.
+  fuzzyInterval(target = 2 * this.refreshTimeIntervalMS, margin = target/2) { // Like static fuzzyInterval with target defaulting to refreshTimeIntervalMS/2.
     return this.constructor.fuzzyInterval(target, margin);
   }
   static fuzzyInterval(target, margin = target/2) {

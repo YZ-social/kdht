@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {cpus, availableParallelism } from 'node:os';
 import cluster from 'node:cluster';
 import process from 'node:process';
 import { launchWriteRead } from './writes.js';
@@ -7,14 +8,16 @@ import { WebContact, Node } from '../index.js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
+const logicalCores = availableParallelism();
+
 // Todo: Allow a remote portal to be specified (passing a host to WebContact.create/ensureRemoteContact).
 const argv = yargs(hideBin(process.argv))
-      .usage("Launch nBots that connect to the network through the local portal. A bot is just an ordinary node that can only be contacted through another node. They provide either continuity or churn-testing, depend on whether or not they are told to 'thrash'.")
+      .usage(`Launch nBots that connect to the network through the local portal. A bot is just an ordinary node that can only be contacted through another node. They provide either continuity or churn-testing, depend on whether or not they are told to 'thrash'. Model description "${cpus()[0].model}", ${logicalCores} logical cores.`)
       .option('nBots', {
 	alias: 'n',
 	alias: 'nbots',
 	type: 'number',
-	default: 20,
+	default: Math.min(logicalCores / 2, 2),
 	description: "The number of bots, which can only be reached through the network."
       })
       .option('baseURL', {
@@ -74,7 +77,7 @@ while (argv.thrash) {
   const old = contact;
   const next = uuidv4();
   contact.host.xlog('disconnecting');
-  contact.disconnect();
+  await contact.disconnect();
   await Node.delay(1e3); // TODO: remove?
 
   contact = await WebContact.create({name: next, debug: argv.verbose});

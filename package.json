@@ -1,6 +1,6 @@
 {
   "name": "@yz-social/kdht",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Pure Kademlia base, for testing variations.",
   "exports": {
     ".": "./index.js",
@@ -9,26 +9,15 @@
   },
   "type": "module",
   "scripts": {
-    "serverTest": "node spec/portal.js --nPortals 20 --nWrites 40",
-    "serverTestLight": "node spec/portal.js --nPortals 10 --nWrites 40",
-    "mildThrashTest": "node spec/portal.js --nPortals 10 --nBots 5 --thrash --nWrites 40",
-    "smoke": "node spec/portal.js --nPortals 5 --nBots 5 --thrash --nWrites 10",
-    "smoke20": "node spec/portal.js --nPortals 10 --nBots 10 --thrash --nWrites 10",
-    "load30": "node spec/portal.js --nPortals 10 --nBots 20 --nWrites 100",
-    "load50": "node spec/portal.js --nPortals 10 --nBots 65 --nWrites 100",
-    "load75": "node spec/portal.js --nPortals 10 --nBots 40 --nWrites 100",
-    "load100": "node spec/portal.js --nPortals 10 --nBots 90 --nWrites 100",
-    "load150": "node spec/portal.js --nPortals 15 --nBots 135 --nWrites 100",
-    "load200": "node spec/portal.js --nPortals 20 --nBots 180 --nWrites 100",
-    "thrash30": "node spec/portal.js --nPortals 10 --nBots 20 --thrash true --nWrites 100",
-    "thrash50": "node spec/portal.js --nPortals 10 --nBots 40 --thrash true --nWrites 100",
-    "thrash100": "node spec/portal.js --nPortals 10 --nBots 90 --thrash true --nWrites 100",
-    "thrash150": "node spec/portal.js --nPortals 15 --nBots 135 --thrash true --nWrites 100",
-    "thrash200": "node spec/portal.js --nPortals 20 --nBots 180 --thrash true --nWrites 100",
+    "start": "node spec/portal.js",
+    "stop": "pkill kdht",
+    "background": "npm stop; (npm start 1>server.log 2>&1 &); sleep 1",
+    "bots": "node spec/bots.js",
+    "thrashbots": "node spec/bots.js --thrash",
     "test": "npx jasmine && echo '-- SUCCESS --' || echo '**** FAIL ****'"
   },
   "dependencies": {
-    "@yz-social/webrtc": "^0.1.0",
+    "@yz-social/webrtc": "^0.1.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

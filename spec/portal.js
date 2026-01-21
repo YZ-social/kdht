@@ -6,19 +6,22 @@ import { launchWriteRead } from './writes.js';
 import express from 'express';
 import logger from 'morgan';
 import path from 'path';
+import {cpus, availableParallelism } from 'node:os';
 import { fileURLToPath } from 'url';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { Node } from '../index.js';
 
+const logicalCores = availableParallelism();
+
 // TODO: Allow a remote portal to be specified that this portal will hook with, forming one big network.
 const argv = yargs(hideBin(process.argv))
-      .usage("Start an http post server through which nodes can connect to set of nPortals stable nodes.")
+      .usage(`Start an http post server through which nodes can connect to set of nPortals stable nodes. Model description "${cpus()[0].model}", ${logicalCores} logical cores.`)
       .option('nPortals', {
 	alias: 'nportals',	
 	alias: 'p',
 	type: 'number',
-	default: 20,
+	default: Math.min(logicalCores / 2, 2),
 	description: "The number of steady nodes that handle initial connections."
       })
       .option('nBots', {

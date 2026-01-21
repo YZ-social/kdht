@@ -217,7 +217,6 @@ describe("DHT", function () {
   test({setupTimeMS: 1e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
   test({pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster thrash smoke-testing."});
   test({notes: "Normal ops"});
-
   
   // test({maxClientNodes: 55, setupTimeMS: 240e3, pingTimeMS: 40, maxTransports: 62,
   // 	//startThrashingBefore: 'never', runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0,

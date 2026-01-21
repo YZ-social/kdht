@@ -2,6 +2,7 @@
 const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } = globalThis; // For linters.
 import process from 'node:process';
 import { spawn, exec } from 'node:child_process';
+import {cpus, availableParallelism } from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 import { fileURLToPath } from 'url';
@@ -11,8 +12,11 @@ describe("DHT write/read", function () {
   let contact, portalProcess, botProcess;
   const verbose = false;
   const baseURL = 'http://localhost:3000/kdht';
-  const nPortals = 5;
-  const nBots = 5;
+  const logicalCores = availableParallelism();
+  console.log(`Model description "${cpus()[0].model}", ${logicalCores} logical cores.`);
+  const maxPerCluster = logicalCores / 2; // Why half? Because we have at least two processes.
+  const nPortals = maxPerCluster;
+  const nBots = maxPerCluster;
   const fixedSpacing  = 2; // Between portals.
   const variableSpacing = 5; // Additional random between portals.
   const nWrites = 40;
@@ -39,13 +43,15 @@ describe("DHT write/read", function () {
     await Node.delay(portalSeconds * 1e3);
 
     if (nBots) {
-      console.log(new Date(), 'starting', nBots, 'bots over', botsMilliseconds/1e3, 'seconds');
-      botProcess = spawn('node', [path.resolve(__dirname, 'bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--verbose', verbose.toString()]);
-      if (showBots) {
-	botProcess.stdout.on('data', echo);
-	botProcess.stderr.on('data', echo);
+      for (let launched = 0, round = Math.min(nBots, maxPerCluster); launched < nBots; round = Math.min(nBots - launched, maxPerCluster), launched += round) {
+	console.log(new Date(), 'starting', round, 'bots over', botsMilliseconds/1e3, 'seconds');
+	botProcess = spawn('node', [path.resolve(__dirname, 'bots.js'), '--nBots', round, '--thrash', thrash.toString(), '--verbose', verbose.toString()]);
+	if (showBots) {
+	  botProcess.stdout.on('data', echo);
+	  botProcess.stderr.on('data', echo);
+	}
+	await Node.delay(botsMilliseconds);
       }
-      await Node.delay(botsMilliseconds);
     }
 
     contact = await WebContact.create({name: uuidv4(), debug: verbose});
@@ -63,7 +69,7 @@ describe("DHT write/read", function () {
       await Node.delay(waitBeforeRead);
     }
     console.log(new Date(), 'Reading');
-  }, 5e3 * nWrites + 2 * Node.refreshTimeIntervalMS);
+  }, 5e3 * nWrites + (1 + Math.ceil(nBots / maxPerCluster)) * Node.refreshTimeIntervalMS);
   afterAll(async function () {
     contact.disconnect();
     console.log(new Date(), 'killing portals and bots');
