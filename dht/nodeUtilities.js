@@ -16,7 +16,7 @@ export class NodeUtilities {
     return this.contact?.sname || this.name;
   }
   log(...rest) { if (this.debug) console.log(new Date(), this.sname, ...rest); }
-  xlog(...rest) { console.log(new Date(), this.sname, ...rest); }
+  xlog(...rest) { console.log(new Date().toISOString(), this.sname, ...rest); }
   static assert(ok, ...rest) { // If !ok, log rests and exit.
     if (ok) return;
     console.error(...rest, new Error("Assert failure").stack); // Not throwing error, because we want to exit. But we are grabbing stack.

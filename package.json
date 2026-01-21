@@ -1,6 +1,6 @@
 {
   "name": "@yz-social/kdht",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Pure Kademlia base, for testing variations.",
   "exports": {
     ".": "./index.js",
@@ -9,7 +9,7 @@
   },
   "type": "module",
   "scripts": {
-    "start": "node spec/portal.js --externalBaseURL https://yz.social/kdht",
+    "start": "node spec/portal.js --externalBaseURL https://ki1r0y.com/kdht",
     "stop": "pkill kdht",
     "background": "npm stop; (npm start 1>server.log 2>&1 &); sleep 1",
     "bots": "node spec/bots.js",

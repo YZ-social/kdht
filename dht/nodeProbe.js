@@ -86,7 +86,7 @@ export class NodeProbe extends NodeMessages {
     let iterationFinished = false;
 
     let resolveIteration;
-    const iterationPromise = new Promise((resolve) => resolveIteration = (...args) => { iterationFinished = true; resolve(...args) }); // to be resolved with a value result, or undefined
+    const iterationPromise = new Promise((resolve) => resolveIteration = (...args) => { iterationFinished = true; resolve(...args); }); // to be resolved with a value result, or undefined
 
     // Check if termination condition is met:
     // We're complete when we've found k 'responded' nodes with no unresolved nodes
@@ -166,7 +166,7 @@ export class NodeProbe extends NodeMessages {
 
         // Result is array of Helpers (may be empty if node had no new contacts)
         // Merge new helpers into allNodesSeen and track progress
-        if (result.length > 0) {
+        if (result?.length > 0) {
           allNodesSeen.push(...result);
           allNodesSeen.sort(Helper.compare); // Keep sorted by distance (best-first).
           responsesWithoutNewNodes = 0; // reset counter
