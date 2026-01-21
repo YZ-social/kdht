@@ -72,7 +72,7 @@ export class NodeUtilities {
     for (let index = 0; index < this.constructor.keySize; index++) {
       const bucket = this.routingTable.get(index);
       if (!bucket) continue;
-      report += `\n  ${index}: ` + (contactsString(bucket.contacts) || '-');
+      report += `\n  ${index} (${bucket.contacts.length}): ` + (contactsString(bucket.contacts) || '-');
     }
     return logger ? logger(report) : report;
   }

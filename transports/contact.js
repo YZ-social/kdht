@@ -61,6 +61,7 @@ export class Contact {
   }
   async disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
+    this.host.ilog('disconnecting from network');
     // Attempt to ensure that there are other copies.
     if (!this.host.isStopped()) {
       await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
