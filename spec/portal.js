@@ -21,7 +21,7 @@ const argv = yargs(hideBin(process.argv))
 	alias: 'nportals',	
 	alias: 'p',
 	type: 'number',
-	default: Math.min(logicalCores / 2, 2),
+	default: Math.max(logicalCores / 2, 2),
 	description: "The number of steady nodes that handle initial connections."
       })
       .option('nBots', {

@@ -17,7 +17,7 @@ const argv = yargs(hideBin(process.argv))
 	alias: 'n',
 	alias: 'nbots',
 	type: 'number',
-	default: Math.min(logicalCores / 2, 2),
+	default: Math.max(logicalCores / 2, 2),
 	description: "The number of bots, which can only be reached through the network."
       })
       .option('baseURL', {
