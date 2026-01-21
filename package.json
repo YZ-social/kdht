@@ -9,7 +9,7 @@
   },
   "type": "module",
   "scripts": {
-    "start": "node spec/portal.js",
+    "start": "node spec/portal.js --externalBaseURL https://yz.social/kdht",
     "stop": "pkill kdht",
     "background": "npm stop; (npm start 1>server.log 2>&1 &); sleep 1",
     "bots": "node spec/bots.js",
