@@ -118,7 +118,7 @@ export class NodeProbe extends NodeMessages {
       return null;
     };
 
-    // Handler for when a request completes.  result is only expected if status='responded'.
+    // Handler for when a request completes.  a non-null result is only expected if status='responded'.
     const handleCompletion = (helper, status, result) => {
       if (iterationFinished) return; // too late
 
@@ -166,7 +166,7 @@ export class NodeProbe extends NodeMessages {
 
         // Result is array of Helpers (may be empty if node had no new contacts)
         // Merge new helpers into allNodesSeen and track progress
-        if (result?.length > 0) {
+        if (result.length > 0) {
           allNodesSeen.push(...result);
           allNodesSeen.sort(Helper.compare); // Keep sorted by distance (best-first).
           responsesWithoutNewNodes = 0; // reset counter
@@ -226,7 +226,7 @@ export class NodeProbe extends NodeMessages {
       }
 
       this.step(targetKey, finder, helper, keysSeen, trace)
-        .then(result => handleCompletion(helper, 'responded', result))
+        .then(result => handleCompletion(helper, result ? 'responded' : 'disconnected', result))
         .catch(err => {
           // Handle errors - treat as disconnected
           handleCompletion(helper, 'disconnected');
