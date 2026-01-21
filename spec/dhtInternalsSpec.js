@@ -52,7 +52,7 @@ describe("DHT internals", function () {
 	let report = example.report(string => string); // No op for what to do with the report. Just return it.
 	expect(report).toBe(`Node: 0, 0 transports
   storing 2: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
-  90: 1n, 2n`);
+  90 (2): 1n, 2n`);
       });
     });
 
@@ -169,10 +169,10 @@ describe("DHT internals", function () {
       it("reports name and bucket contents.", function () {
 	let report = node.report(string => string);
 	let expected = `Node: ${node.name}, 0 transports
-  0: ${node.routingTable.get(0).contacts.map(c => c.key.toString() + 'n').join(', ')}
-  10: ${node.routingTable.get(10).contacts.map(c => c.key.toString() + 'n').join(', ')}
-  60: ${node.routingTable.get(60).contacts.map(c => c.key.toString() + 'n').join(', ')}
-  90: ${node.routingTable.get(90).contacts.map(c => c.key.toString() + 'n').join(', ')}`;
+  0 (1): ${node.routingTable.get(0).contacts.map(c => c.key.toString() + 'n').join(', ')}
+  10 (1): ${node.routingTable.get(10).contacts.map(c => c.key.toString() + 'n').join(', ')}
+  60 (1): ${node.routingTable.get(60).contacts.map(c => c.key.toString() + 'n').join(', ')}
+  90 (1): ${node.routingTable.get(90).contacts.map(c => c.key.toString() + 'n').join(', ')}`;
 	expect(report).toBe(expected);
       });
     });
@@ -264,7 +264,7 @@ describe("DHT internals", function () {
       // Create a small network
       network = [];
       for (let i = 0; i < nNodes; i++) {
-        const contact = await SimulatedContact.create(i);
+        const contact = await SimulatedContact.create({name: i, info: false});
         network.push(contact);
       }
 
@@ -410,7 +410,7 @@ describe("DHT internals", function () {
     async function createRandomNetwork(nNodes, connectivityFactor = 0.5) {
       const network = [];
       for (let i = 0; i < nNodes; i++) {
-        const contact = await SimulatedContact.create(i);
+        const contact = await SimulatedContact.create({name: i, info: false});
         network.push(contact);
       }
 
