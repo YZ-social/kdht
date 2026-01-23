@@ -14,10 +14,24 @@
 import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 export { Node, Contact };
 
+const info = false; // Whether or not to log basic operations of each node.
+
+export async function serializeAction(contact, action) { // Mutex action(runningContact) against others on the same contact.
+  // The contact may be a contact or a promise for one.
+  // Returns and sets up inProcess resolution to be result of action, which is usually the next runningContact.
+  contact = await contact;
+  return contact.inProcess = contact.inProcess.then(action);
+}
 
 export async function start1(name, bootstrapContact, refreshTimeIntervalMS, isServerNode = false) {
-  const contact = await Contact.create({name, refreshTimeIntervalMS, isServerNode, info: false});
-  if (bootstrapContact) await contact.join(bootstrapContact);
+  const contact = await Contact.create({name, refreshTimeIntervalMS, isServerNode, info});
+  contact.creationTimestamp = Date.now();
+  contact.inProcess = Promise.resolve(contact);
+  if (bootstrapContact) await serializeAction(bootstrapContact, async liveBootstrap => {
+    // For client nodes, the bootstrapContact may be thrashing, hence serializeAction.
+    await contact.join(bootstrapContact);
+    return liveBootstrap;
+  });
   return contact;
 }
 
@@ -26,31 +40,40 @@ export async function startServerNode(name, bootstrapContact, refreshTimeInterva
   return await start1(name, bootstrapContact, refreshTimeIntervalMS, true);
 }
 
-export async function stop1(contact) {
-
-  // For debugging: Report if we're killing the last holder of our data.
-  // This is fine for simulations, but some decentralized reporting would be needed for real systems.
-  // if (contact && isThrashing) {
-  //   for (const key of contact.node.storage.keys()) {
-  //     let remaining = [];
-  //     for (const contact of contacts) {
-  // 	if (contact?.isConnected && contact.node.storage.has(key)) remaining.push(contact.node.name);
-  //     }
-  //     if (!remaining.length) console.log(`Disconnecting ${contact.node.name}, last holder of ${key}: ${contact.node.storage.get(key)}.`);
-  //   }
-  // }
-
-  return await contact?.disconnect();
+export function stop1(contact) {
+  return serializeAction(contact, promised => promised.disconnect());
 }
 
 export async function write1(contact, key, value) {
-  // Make a request through contact to store value under key in the DHT
+  // Make a request through contact at index to store value under key in the DHT
   // resolving when ready. (See test suite definitions.)
-  return await contact.node.storeValue(key, value);
+  // Coordinate with stop1 such that each excludes the other for the duration.
+  let stored;
+  await serializeAction(contact, async promised => {
+    stored = await promised.node.storeValue(key, value);
+    promised.host.log('stored', stored, 'copies');
+    return promised;
+  });
+  return stored;
 }
 export async function read1(contact, key) {
   // Promise the result of requesting key from the DHT through contact.
-  return await contact.node.locateValue(key);
+  let retrieved;
+  await serializeAction(contact, async promised => {
+    retrieved = await promised.node.locateValue(key);
+    if (retrieved === undefined) {
+      const now = Date.now();
+      const lifetime = now - promised.creationTimestamp;
+      promised.host.xlog('could not locate the value at', key, 'and joined', lifetime/1e3, 'seconds ago, and has', promised.host.contacts.length, 'contacts, Refreshing buckets and trying again.');
+      for (const bucket of promised.host.routingTable.values()) { // Alas, forEachBucket does not await calls on bucket.
+	await bucket.refresh();
+      }
+      retrieved = await promised.node.locateValue(key);
+      if (retrieved === undefined) promised.host.xlog('still unable to locate the value at', key);
+    }
+    return promised;
+  });
+  return retrieved;
 }
 
 
@@ -72,13 +95,24 @@ function randomInteger(max = contacts.length) {
   // Return a random number between 0 (inclusive) and max (exclusive), defaulting to the number of contacts made.
   return Math.floor(Math.random() * max);
 }
-export async function getRandomLiveContact() {
+export function getRandomLiveContact() {
   // Answer a randomly selected contact (including those for server nodes) that is
   // is not in the process of reconnecting.
-  return contacts[randomInteger()] || await getRandomLiveContact();
+  return contacts[randomInteger()];
 }
-export async function getBootstrapContact(nServerNodes) {
-  return contacts[randomInteger(nServerNodes)];
+export function getBootstrapContact(nServerNodes, excludingIndex) {
+  const index = randomInteger(nServerNodes);
+  if (index === excludingIndex) return getBootstrapContact(nServerNodes, excludingIndex);
+  return contacts[index];
+}
+
+export async function readThroughRandom(index) {
+  let value;
+  await serializeAction(getRandomLiveContact(), contact => {
+    value = read1(contact, index);
+    return contact;
+  });
+  return value;
 }
 
 var isThrashing = false;
@@ -90,14 +124,18 @@ function thrash(i, nServerNodes, refreshTimeIntervalMS) { // Start disconnect/re
   const runtimeMS = randomInteger(2 * (average - min)) + min;
   thrashers[i] = setTimeout(async () => {
     if (!isThrashing) return;
+    const contacts = await getContacts();
     const contact = contacts[i];
-    contacts[i] = null;
-    await stop1(contact);
-    if (!isThrashing) return;
-    const bootstrapContact = await getBootstrapContact(nServerNodes);
-    const started = await start1(i, bootstrapContact, refreshTimeIntervalMS);
-    if (!isThrashing) return; 
-   contacts[i] = started;
+    await serializeAction(contact, async old => {
+      const bootstrapContact = getBootstrapContact(nServerNodes);
+      await old.disconnect();
+      // Because simulations invoke operations directly on the far node of their contacts,
+      // we must arrange for the new nodes to be different names/keys so that we don't operate on
+      // stale contacts.
+      const suffix = parseInt(old.name.split('-')[1] || 0);
+      const next = contacts[i] = start1(`${i}-${suffix + 1}`, bootstrapContact, refreshTimeIntervalMS);
+      return next;
+    });
     thrash(i, nServerNodes, refreshTimeIntervalMS);
   }, runtimeMS);
 }

@@ -9,7 +9,7 @@ const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach} = glob
 // implementation changes for different DHTs.
 import { setupServerNodes, shutdownServerNodes,
 	 start1, setupClientsByTime, shutdownClientNodes,
-	 getContacts, getRandomLiveContact,
+	 getContacts, readThroughRandom,
 	 startThrashing, write1, read1, Node, Contact } from './dhtImplementation.js';
 
 // Some definitions:
@@ -74,41 +74,17 @@ function delay(ms, label = '') {
   }, ms));
 }
 
-export async function startWrite1(name, bootstrapContact, refreshTimeIntervalMS, index) {
-  return await start1(name, bootstrapContact, refreshTimeIntervalMS)
-    .then(contact => write1(contact, name, name));
-}
-
-async function awaitNonNullContact(contacts, i) { // Kind of stupid...
-  // When a contact thrashes, its contact[i] is null for a moment.
-  // TODO Alt: When thrashing, set slot to a promise and await it in all references, rather than this.
-  let contact = contacts[i];
-  if (contact) return contact;
-  await delay(50);
-  return await awaitNonNullContact(contacts, i);
-}
-
 async function parallelWriteAll() {
   // Persist a unique string through each contact all at once, but not resolving until all are ready.
   const contacts = await getContacts();
   // The key and value are the same, to facilitate read confirmation.
-  const writes = await Promise.all(contacts.map(async (contact, index) => {
-    let ok;
-    for (let i = 0; i < 10; i++) {
-      contact ||= await awaitNonNullContact(contacts, index);
-      ok = await write1(contact, index, index);
-      if (ok) break;
-      contact = contacts[index];
-    }
-    // It's ok if the contact disconnect right after, as long the write succeeded.
-    expect(ok).toBeTruthy();
-  }));
+  const writes = await Promise.all(contacts.map(async (contact, index) => write1(contact, index, index)));
   return writes.length;
 }
 async function serialWriteAll() { // One-at-atime alternative to above, useful for debugging.
   const contacts = await getContacts();
   for (let index = 0; index < contacts.length; index++) {
-    const ok = await write1(await awaitNonNullContact(contacts, index), index, index);
+    const ok = await write1(contacts[index], index, index);
     expect(ok).toBeTruthy();
   }
   return contacts.length;
@@ -117,14 +93,7 @@ async function parallelReadAll(start = 0) {
   // Reads from a random contact, confirming the value, for each key written by writeAll.
   const contacts = await getContacts();
   const readPromises = await Promise.all(contacts.map(async (_, index) => {
-    if (index < start) return;
-    let value;
-    for (let liveTry = 0; liveTry < 4; liveTry++) {
-      const contact = await getRandomLiveContact();
-      value = await read1(contact, index);
-      if (contact.isRunning) break;
-      console.log('\n\n*** read from dead contact. retrying', liveTry, '***\n');
-    }
+    const value = await readThroughRandom(index);
     expect(value).toBe(index);
   }));
   return readPromises.length - start;
@@ -132,7 +101,7 @@ async function parallelReadAll(start = 0) {
 async function serialReadAll() { // One-at-a-time alternative of above, useful for debugging.
   const contacts = await getContacts();
   for (let index = 0; index < contacts.length; index++) {
-    const value = await read1(await getRandomLiveContact(), index);
+    const value = await readThroughRandom(index);
     expect(value).toBe(index);
   }
   return contacts.length;
@@ -182,9 +151,9 @@ describe("DHT", function () {
 	  if (maxClientNodes < Infinity) expect(nJoined).toBe(maxClientNodes); // Sanity check
 	  if (startThrashingBefore === 'writing') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  await delay(runtimeBeforeWriteMS, 'pause before writing');
+	  console.log('writing');
 	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
 				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
-	  //console.log('end client setup');
 	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 3 * setupTimeMS);
 	afterAll(async function () {
 	  //console.log('start client shutdown');

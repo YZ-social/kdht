@@ -25,16 +25,6 @@ export class SimulatedContact extends Contact {
 
 export class SimulatedConnectionContact extends SimulatedContact {
   connection = null; // The cached connection (to another node's connected contact back to us) over which messages can be directly sent, if any.
-  disconnect() {
-    // Report if we are the last node to hold a value.
-    if (Node.refreshTimeIntervalMS && Node.contacts?.length) { // i.e., not shutting down and in simulation where we track all Contacts.
-      for (const key of this.host.storage.keys()) {
-	const found = Node.contacts.find(contact => contact?.host.storage.has(key) && (contact?.key !== this.key));
-	if (!found) console.log('\n\n*** removing last storer for ', key, this.host.storage.get(key), 'among', Node.contacts.filter(e => e).length, 'contacts ***\n');
-      }
-    }
-    return super.disconnect();
-  }
   disconnectTransport(andNotify = true) {
     const farContactForUs = this.connection;
     if (!farContactForUs) return;
