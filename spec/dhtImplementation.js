@@ -41,7 +41,7 @@ export async function startServerNode(name, bootstrapContact, refreshTimeInterva
 }
 
 export function stop1(contact) {
-  return serializeAction(contact, promised => promised.disconnect());
+  return serializeAction(contact, promised => { promised.disconnect(); return promised; });
 }
 
 export async function write1(contact, key, value) {

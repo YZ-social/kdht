@@ -48,7 +48,7 @@ async function timed(operation, logString) {
   await operation(startTime);
   const endTime = Date.now();
   const elapsed = endTime - startTime;
-  console.log(await logString(elapsed/1e3));
+  console.log(new Date(), await logString(elapsed/1e3));
   return elapsed;
 }
 
@@ -125,25 +125,25 @@ describe("DHT", function () {
     
     describe(notes || suiteLabel, function () {
       beforeAll(async function () {
-	console.log('\n' + suiteLabel);
+	console.log('\n', new Date(), suiteLabel);
 	if (notes) console.log(notes);
 	await delay(3e3); // For gc
 	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS, maxTransports),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes); // sanity check
-	//console.log('end server setup');
-      });
+	console.log(new Date(), 'end server setup');
+      }, 10e3);
       afterAll(async function () {
-	//console.log('start server shutdown');
+	console.log(new Date(), 'start server shutdown');
 	await shutdownServerNodes(nServerNodes);
 	expect(await getContactsLength()).toBe(0); // sanity check
-	//console.log('end server shutdown');	
+	console.log(new Date(), 'end server shutdown');
       }, 20e3);
 
       describe("joins within a refresh interval", function () {
 	let nJoined = 0, nWritten = 0;
 	beforeAll(async function () {
-	  //console.log('start client setup');
+	  console.log(new Date(), 'start client setup');
 	  if (startThrashingBefore === 'creation') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  let elapsed = await timed(async _ => nJoined = await setupClientsByTime(refreshTimeIntervalMS, nServerNodes, maxClientNodes, setupTimeMS),
 				    elapsed => `Created ${nJoined} / ${elapsed} = ${(elapsed/nJoined).toFixed(3)} client nodes/second.`);
@@ -151,16 +151,16 @@ describe("DHT", function () {
 	  if (maxClientNodes < Infinity) expect(nJoined).toBe(maxClientNodes); // Sanity check
 	  if (startThrashingBefore === 'writing') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  await delay(runtimeBeforeWriteMS, 'pause before writing');
-	  console.log('writing');
+	  console.log(new Date(), 'writing');
 	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
 				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
-	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 3 * setupTimeMS);
+	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 5 * setupTimeMS);
 	afterAll(async function () {
-	  //console.log('start client shutdown');
+	  console.log(new Date(), 'start client shutdown');
 	  //await Node.reportAll();
 	  await shutdownClientNodes(nServerNodes, nJoined);
 	  expect(await getContactsLength()).toBe(nServerNodes); // Sanity check.
-	  //console.log('end client shutdown');	  
+	  console.log(new Date(), 'end client shutdown');
 	}, 20e3);
 	it("produces.", async function () {
 	  const total = await getContactsLength();
