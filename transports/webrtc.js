@@ -25,13 +25,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     this.checkResponse(response);
     return await response.json();
   }
-  async checkSignals(signals) {
-    if (!signals) {
-      await this.host.removeContact(this);
-      return [];
-    }
-    return signals;
-  }
   async fetchSignals(url, signalsToSend) { 
     const response = await fetch(url, {
       method: 'POST',
@@ -40,26 +33,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     }).catch(e => this.host.xlog(e));
     this.checkResponse(response);
     return this.checkSignals(await response?.json());
-  }
-  async messsageSignals(signals) {
-    // Try sponsors first (two hops if connected).
-    const payload = [this.host.contact.sname, ...signals];
-    //this.host.xlog('contact messageSignals', payload);
-    const sponsors = Array.from(this._sponsors.values());
-    for (const sponsor of sponsors) {
-      const response = await sponsor.sendRPC('signals', this.key, payload);
-      if (response) return this.checkSignals(response.result);
-      this._sponsors.delete(sponsor.key);
-    }
-    if (!this.host.isRunning) return [];
-    this.host.xlog('Unable to signal through sponsor. Using recursive message to', this.sname, this.key);
-    const recursive = await this.host.contact.sendRPC('signals', this.key, payload, []);
-    //this.host.xlog('got recursive response', recursive);
-    if (!this.host.isRunning) return [];
-    if (!recursive) this.host.xlog('Unable to deliver signals to', this.sname);
-    return this.checkSignals(recursive?.result);
-    // return this.checkSignals(await this.host.message({targetKey: this.key, targetSname: this.sname,
-    // 						      payload: ['signal', this.host.contact.sname, ...signals]}));
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
     // new contact on host to receive them, and promising a response.
@@ -105,7 +78,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${host.contact.sname}/${this.sname}`;
 	this.webrtc.transferSignals = signals => this.fetchSignals(url, signals);
       } else {
-	this.webrtc.transferSignals = signals => this.messsageSignals(signals);
+	this.webrtc.transferSignals = signals => this.messageSignals(signals);
       }
     } // Otherwise, we just hang on to signals until we're asked to respond().
 
@@ -171,28 +144,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     } catch (e) { // Some webrtc can change readyState in background.
       this.host.log(e); 
     }
-  }
-  getName(sname) { // Answer name from sname.
-    if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
-    return sname;
-  }
-  async ensureRemoteContact(sname, sponsor = null) {
-    let contact;
-    if (sname === this.host.contact.sname) {
-      contact = this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
-    }
-    const name = this.getName(sname);
-    if (!contact) {
-      // Not the final answer. Just an optimization to avoid hashing name.
-      contact = this.host.existingContact(name);
-    }
-    if (!contact) {
-      const isServerNode = name !== sname;
-      contact = await this.constructor.create({name, isServerNode}, this.host); // checks for existence AFTER creating Node.
-    }
-    if (sponsor instanceof Contact) contact.noteSponsor(sponsor);
-    else if (typeof(sponsor) === 'string') contact.bootstrapHost = sponsor;
-    return contact;
   }
   serializeRequest(messageTag, method, sender, targetKey, ...rest) { // Stringify sender and targetKey.
     Node.assert(sender instanceof Contact, 'no sender', sender);

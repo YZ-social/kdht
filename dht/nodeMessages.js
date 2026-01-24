@@ -47,8 +47,11 @@ export class NodeMessages extends NodeContacts {
     // We were a sponsor but contact has since disconnected.
     return {forwardingExclusions};
   }
-  static maxTries = Math.pow(this.alpha, 3); // alpha tries at each of three deep.
+  static maxTries = Math.pow(this.alpha, 3); // alpha tries at each of three deep, or equivalent.
   async recursiveSignals(key, signals, forwardingExclusions, targetNameForDebugging) { // Forward recursively.
+    // The target key may not be reachable from here (and might not even still be running).
+    // So bound our branching.
+    let remainingThisNode = this.constructor.alpha; // If it's good enough for probing, then it's good enough here.
     if (forwardingExclusions.length > this.constructor.maxTries) {
       this.xlog('abandoning wandering path towards', targetNameForDebugging, 'through', forwardingExclusions.join(', '));
       return {forwardingExclusions};
@@ -57,11 +60,8 @@ export class NodeMessages extends NodeContacts {
     const contacts = helpers.map(helper => helper.contact);
     forwardingExclusions.push(this.name);
 
-    // The target key may not be reachable from here (and might not even still be running).
-    // So bound our branching. The total time before giving up is a function of the tree depth.
-    let remaining = this.constructor.alpha; // If it's good enough for probing, then it's good enough here.
     for (const contact of contacts) {
-      if (!remaining--) break;
+      if (!remainingThisNode--) break;
       if (!contact.isRunning) continue;
       if (!contact.connection) continue;
       if (forwardingExclusions.includes(contact.name)) continue;

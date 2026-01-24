@@ -45,12 +45,34 @@ export class Contact {
     const clone = this.constructor.fromNode(this.node, hostNode);
     return clone;
   }
+  async ensureRemoteContact(sname, sponsor = null) { // Like ensureContact, but through different parameters.
+    let contact;
+    if (sname === this.host.contact.sname) {
+      contact = this.host.contact; // ok, not remote, but contacts can send back us in a list of closest nodes.
+    }
+    const name = this.getName(sname);
+    if (!contact) {
+      // Not the final answer. Just an optimization to avoid hashing name.
+      contact = this.host.existingContact(name);
+    }
+    if (!contact) {
+      const isServerNode = name !== sname;
+      contact = await this.constructor.create({name, isServerNode}, this.host); // checks for existence AFTER creating Node.
+    }
+    if (sponsor instanceof Contact) contact.noteSponsor(sponsor);
+    else if (typeof(sponsor) === 'string') contact.bootstrapHost = sponsor;
+    return contact;
+  }
   static serverSignifier = 'S';
   get sname() { // Serialized name, indicating whether it is a server node.
     if (this._sname) return this._sname;
     if (this.name.length < 36) return this._sname = this.name; // Kluge: index of portal node.
     if (this.isServerNode) return this._sname = this.constructor.serverSignifier + this.name;
     return this._sname = this.name;
+  }
+  getName(sname) { // Answer name from sname.
+    if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
+    return sname;
   }
 
   // Operations
@@ -177,6 +199,62 @@ export class Contact {
       if (await predicate(candidate)) return candidate;
     }
     return null;
+  }
+
+  // Signaling
+  async messageSignals(signals) { // send signals through the network, promising the response signals.
+    // If contact cannot be reached, remove it and promise [].
+
+    // sendRPC('signals', key, payload, optional) answers {result, forwardingExclusions} or null.
+    // result may be null if the target could not be reached.
+    // forwardingExclusions is a list of everything we tried, whether successful or not.
+    const payload = [this.host.contact.sname, ...signals]; // 
+    
+    // Try sponsors first. (Just two round trips if connected.)
+    const sponsors = Array.from(this._sponsors.values());
+    //this.host.xlog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
+    const trySponsors = async () => {
+      for (const sponsor of sponsors) {
+	const response = await sponsor.sendRPC('signals', this.key, payload);
+	//this.host.xlog('sponsor:', sponsor.sname, 'response:', response);
+	if (response) return response.result || [];
+	//this._sponsors.delete(sponsor.key); // FIXME: but it might be ok next time.
+      }
+      return null;
+    };
+    const try1 = await trySponsors();
+    if (try1) return try1;
+
+    // FIXME: I think we can remove this now?
+    // Why does it sometimes work to try sponsors again after a delay?
+    // And why is this usually (but always?) when the sponsor is a server node?
+    Node.delay(100);
+    if (!this.host.isRunning) return [];
+    const try2 = await trySponsors();
+    //if (try2) this.host.xlog('found', this.sname, 'in second try of sponsors', sponsors.map(c => c.report).join(', '));
+    if (try2) return try2;
+    
+    if (!this.host.isRunning) return [];
+    // if (this.node.isRunning)
+    //   this.host.xlog('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.');
+    // Node.delay(100); // Why do we spin without this delay? fixme remove?
+    const start = Date.now();
+    const {forwardingExclusions, result} = (await this.host.recursiveSignals(this.key, payload, [], this.name)) || {};
+    if (this.isRunning && !result) // Of course, only simulations know if this is false.
+      this.host.xlog('Recursive response', !!result, 'to', this.isRunning ? 'running' : 'disconnected', this.sname,
+		     'in', forwardingExclusions?.length, 'steps over',
+		     Date.now() - start, 'ms, after trying',
+		     sponsors.length, 'sponsors.',
+		    );
+    if (!this.host.isRunning) return []; // fixme remove
+    return this.checkSignals(result);
+  }
+  async checkSignals(signals) {
+    if (!signals) {
+      await this.host.removeContact(this);
+      return [];
+    }
+    return signals;
   }
 
   // Utilities
