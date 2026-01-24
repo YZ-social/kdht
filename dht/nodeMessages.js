@@ -25,30 +25,59 @@ export class NodeMessages extends NodeContacts {
     if (value !== undefined) return {value};
     return this.findClosestHelpers(key);
   }
-  async signals(key, signals, forwardingExclusions = false) {
-    const origin = signals[0];
-    //this.xlog(this.key, 'handling signals request for', {origin, key, signals, forwardingExclusions});
-    //await this.constructor.delay(100); // fixme remove
-    if (!this.isRunning) return null;
-    if (this.key === key) return await this.contact.signals(...signals); // Yay, us!
+  async signals(key, signals, forwardingExclusions = null, targetNameForDebugging) {
+    // Handle an exchange of signals, with a response that may include {result, forwardingExclusions}. See code.
 
-    let contact = this.findContactByKey(key); // If we have the target as a contact, use it directly.
-    if (!contact && !forwardingExclusions) return null;
-    if (contact) return await contact.sendRPC('signals', key, signals, forwardingExclusions);
+    if (!this.isRunning) return {forwardingExclusions}; // Can happen in simulations.
+
+    // If the key is us, pass the signals to our home contact and respond with the WebRTC signals from the contact.
+    // (Subtle: the signals will contain the sender name. The handler in our home contact will create
+    // a new specific contact if necessary, and set up the WebRTC through that.)
+    if (this.key === key) return {result: await this.contact.signals(...signals), forwardingExclusions};
+
+    // If we have a direct connection to the key, pass it on and answer what it tells us.
+    // (E.g., if we sponsored target for sender, we will have a direct connection that will answer as above.)
+    let contact = this.findContactByKey(key);
+    if (contact) forwardingExclusions?.push(this.name); // Keeps stats accurate if sender is examining paths.
+    if (contact) return await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
+
     // Forward recursively.
-    const contacts = this.findClosestHelpers(key).map(helper => helper.contact);
+    if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, targetNameForDebugging);
+
+    // We were a sponsor but contact has since disconnected.
+    return {forwardingExclusions};
+  }
+  static maxTries = Math.pow(this.alpha, 3); // alpha tries at each of three deep.
+  async recursiveSignals(key, signals, forwardingExclusions, targetNameForDebugging) { // Forward recursively.
+    if (forwardingExclusions.length > this.constructor.maxTries) {
+      this.xlog('abandoning wandering path towards', targetNameForDebugging, 'through', forwardingExclusions.join(', '));
+      return {forwardingExclusions};
+    }
+    const helpers = this.findClosestHelpers(key);
+    const contacts = helpers.map(helper => helper.contact);
     forwardingExclusions.push(this.name);
-    //this.xlog('forwarding signals', {key, forwardingExclusions, contacts: contacts.map(c => c.sname)});
+
+    // The target key may not be reachable from here (and might not even still be running).
+    // So bound our branching. The total time before giving up is a function of the tree depth.
+    let remaining = this.constructor.alpha; // If it's good enough for probing, then it's good enough here.
     for (const contact of contacts) {
-      // this.xlog('contact', contact.sname, contact.isRunning ? 'running' : 'dead',
-      // 		contact.connection ? 'connected': 'unconnected',
-      // 		forwardingExclusions.includes(contact.name) ? 'excluded' : 'allowed');
+      if (!remaining--) break;
       if (!contact.isRunning) continue;
       if (!contact.connection) continue;
       if (forwardingExclusions.includes(contact.name)) continue;
-      const response = await contact.sendRPC('signals', key, signals, forwardingExclusions);
-      //this.xlog('got response from', contact.sname);
-      if (response) return response;
+      this.constructor.assert(contact.key !== this.key, 'forwarding through self');
+      //this.xlog('forwarding through', contact.sname);
+      const response = await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
+      if (response) {
+	const {forwardingExclusions: extendedExclusions, result} = response;
+	//this.xlog('got response from', contact.sname, result, 'through', forwardingExclusions.join(', '));	
+	if (result) return response; // Success!
+	// We don't know whether the target or an intermediary is dead to the one before. Keep going.
+	forwardingExclusions = extendedExclusions; // TODO: don't directly trust extendedExclusions. add/union.
+      } else { // No response at all: continue with further calls that exclude contact.
+	//this.xlog('No forwarding response from', contact.sname, );
+	forwardingExclusions.push(contact.name);
+      }
     }
     return null;
   }

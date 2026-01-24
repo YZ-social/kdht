@@ -61,22 +61,23 @@ export class Contact {
   }
   async disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
-    this.host.ilog('disconnecting from network');
     // Attempt to ensure that there are other copies.
+    if (this.refreshTimeIntervalMS) this.host.ilog('disconnecting from network');
     if (!this.host.isStopped()) {
+      if (this.host.storage.size) this.host.ilog('Copying', this.host.storage.size, 'stored values');
       await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
     }
     this.host.stopRefresh();
     for (const contact of this.host.contacts) {
-      const far = contact.connection;
+      const far = await contact.connection;
       if (!far) return;
       contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
       await contact.disconnectTransport(false);
     }
     this.host.isRunning = false;
   }
-  disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
-    if (andNotify) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
+  async disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
+    if (andNotify && await this.connection) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
   }
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
     this.host.log('closing disconnected contact', this.sname, this.xxx++);
