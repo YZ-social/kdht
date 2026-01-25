@@ -6,9 +6,6 @@ export class SimulatedContact extends Contact {
   get key() { return this.node.key; }
   get isServerNode() { return this.node.isServerNode; }
 
-  get isRunning() { // Is the far node running.
-    return this.node.isRunning;
-  }
   connection = null;
   async connect() { return this; }
   // Dispatch directly on the node, returning the response. This is different than the send to and from with messageTag used by

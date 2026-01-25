@@ -28,24 +28,33 @@ export class NodeMessages extends NodeContacts {
   async signals(key, signals, forwardingExclusions = null, targetNameForDebugging) {
     // Handle an exchange of signals, with a response that may include {result, forwardingExclusions}. See code.
 
-    if (!this.isRunning) return {forwardingExclusions}; // Can happen in simulations.
+    if (!this.isRunning) { // In case it happens in simulations.
+      //this.xlog('\n*** not running ***');
+      return null;  //{forwardingExclusions}; // FIXME
+    }
 
     // If the key is us, pass the signals to our home contact and respond with the WebRTC signals from the contact.
     // (Subtle: the signals will contain the sender name. The handler in our home contact will create
     // a new specific contact if necessary, and set up the WebRTC through that.)
+    // The forwardingExclusions are passed back, in case the sender wants to see the steps involved.
     if (this.key === key) return {result: await this.contact.signals(...signals), forwardingExclusions};
 
     // If we have a direct connection to the key, pass it on and answer what it tells us.
     // (E.g., if we sponsored target for sender, we will have a direct connection that will answer as above.)
     let contact = this.findContactByKey(key);
-    if (contact) forwardingExclusions?.push(this.name); // Keeps stats accurate if sender is examining paths.
-    if (contact) return await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
+    if (contact && contact.connection) {
+      forwardingExclusions?.push(this.name); // Keeps stats accurate if sender is examining paths.
+      const response = await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
+      if (response) return response;
+      return {forwardingExclusions}; // Subtle: If it fails, return a definitive failure instead of just null.
+    }
 
     // Forward recursively.
     if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, targetNameForDebugging);
 
-    // We were a sponsor but contact has since disconnected.
-    return {forwardingExclusions};
+    // We were a sponsor but for a contact has since disconnected. We do not know if they are still connected to others.
+    //this.xlog('\n*** sponsored disconnected ***');
+    return {forwardingExclusions}; // FIXME: Is this definitively right, or should we answer null here?
   }
   static maxTries = Math.pow(this.alpha, 3); // alpha tries at each of three deep, or equivalent.
   async recursiveSignals(key, signals, forwardingExclusions, targetNameForDebugging) { // Forward recursively.
@@ -69,11 +78,7 @@ export class NodeMessages extends NodeContacts {
       //this.xlog('forwarding through', contact.sname);
       const response = await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
       if (response) {
-	const {forwardingExclusions: extendedExclusions, result} = response;
-	//this.xlog('got response from', contact.sname, result, 'through', forwardingExclusions.join(', '));	
-	if (result) return response; // Success!
-	// We don't know whether the target or an intermediary is dead to the one before. Keep going.
-	forwardingExclusions = extendedExclusions; // TODO: don't directly trust extendedExclusions. add/union.
+	return response;
       } else { // No response at all: continue with further calls that exclude contact.
 	//this.xlog('No forwarding response from', contact.sname, );
 	forwardingExclusions.push(contact.name);

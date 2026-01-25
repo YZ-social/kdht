@@ -86,7 +86,7 @@ export class NodeContacts extends NodeTransports {
   }
   removeContact(contact) { // Removes from node entirely if present, from looseTransports or bucket as necessary, returning bucket if that's where it was, else null.
     return this.queueRoutingTableChange(() => {
-      delete this.contactDictionary[contact.name];
+      delete this.contactDictionary[contact.name]; // fixme examine this
       const key = contact.key;
       if (this.removeLooseTransport(key)) return null;
       const bucketIndex = this.getBucketIndex(key);

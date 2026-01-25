@@ -74,6 +74,9 @@ export class Contact {
     if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
     return sname;
   }
+  get isRunning() { // Is the far node running. Non-simulations are never falsy unless we have other info such as from 'bye'.
+    return this.node.isRunning;
+  }
 
   // Operations
   join(other) { return this.host.join(other); }
@@ -84,9 +87,10 @@ export class Contact {
   async disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     // Attempt to ensure that there are other copies.
-    if (this.refreshTimeIntervalMS) this.host.ilog('disconnecting from network');
+    if (this.host.refreshTimeIntervalMS)
+      this.host.xlog('disconnecting from network'); // fixme ilog
     if (!this.host.isStopped()) {
-      if (this.host.storage.size) this.host.ilog('Copying', this.host.storage.size, 'stored values');
+      if (this.host.storage.size) this.host.log('Copying', this.host.storage.size, 'stored values');
       await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
     }
     this.host.stopRefresh();
@@ -215,6 +219,7 @@ export class Contact {
     //this.host.xlog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
     const trySponsors = async () => {
       for (const sponsor of sponsors) {
+	if (!sponsor.connection) continue;
 	const response = await sponsor.sendRPC('signals', this.key, payload);
 	//this.host.xlog('sponsor:', sponsor.sname, 'response:', response);
 	if (response) return response.result || [];
@@ -240,10 +245,11 @@ export class Contact {
     // Node.delay(100); // Why do we spin without this delay? fixme remove?
     const start = Date.now();
     const {forwardingExclusions, result} = (await this.host.recursiveSignals(this.key, payload, [], this.name)) || {};
-    if (this.isRunning && !result) // Of course, only simulations know if this is false.
+    const elapsed = Date.now() - start;
+    if (!!this.isRunning !== !!result) // Of course, only simulations can really know isRunning to be false.
       this.host.xlog('Recursive response', !!result, 'to', this.isRunning ? 'running' : 'disconnected', this.sname,
 		     'in', forwardingExclusions?.length, 'steps over',
-		     Date.now() - start, 'ms, after trying',
+		     elapsed, 'ms, after trying',
 		     sponsors.length, 'sponsors.',
 		    );
     if (!this.host.isRunning) return []; // fixme remove

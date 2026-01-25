@@ -64,7 +64,7 @@ export async function read1(contact, key) {
     if (retrieved === undefined) {
       const now = Date.now();
       const lifetime = now - promised.creationTimestamp;
-      promised.host.xlog('could not locate the value at', key, 'and joined', lifetime/1e3, 'seconds ago, and has', promised.host.contacts.length, 'contacts, Refreshing buckets and trying again.');
+      promised.host.xlog('could not locate the value at key', key, 'from node joined', lifetime/1e3, 'seconds ago, and having', promised.host.contacts.length, 'contacts, Refreshing buckets and trying again.');
       for (const bucket of promised.host.routingTable.values()) { // Alas, forEachBucket does not await calls on bucket.
 	await bucket.refresh();
       }
@@ -153,6 +153,7 @@ export async function stopThrashing() {
 
 async function shutdown(startIndex, stopIndex) { // Internal
   // Shutdown n nodes.
+  Node.refreshTimeIntervalMS = 0;
   for (let i = startIndex; i < stopIndex; i++) {
     await stop1(contacts.pop());
   }
@@ -224,6 +225,5 @@ async function serialSetupClientsByTime(refreshTimeIntervalMS, nServerNodes, max
 export async function shutdownClientNodes(nServerNodes, nClientNodes) {
   await stopThrashing();
   await new Promise(resolve => setTimeout(resolve, 5e3));
-  Node.refreshTimeIntervalMS = 0;
   await shutdown(nServerNodes, nClientNodes + nServerNodes);
 }
