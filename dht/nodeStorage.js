@@ -14,6 +14,7 @@ export class NodeStorage extends NodeRefresh {
     // Claude.ai suggests just writing to the next in line, but that doesn't work.
     this.schedule(key, 'storage', () => {
       this.ilog('refresh value', value, 'at key', key);
+      // IF storeValue determines we are one of the nodes to store, then it will get scheduled again.
       this.storeValue(key, value);
     });
   }
@@ -22,7 +23,7 @@ export class NodeStorage extends NodeRefresh {
   }
   async replicateCloserStorage(contact) { // Replicate to new contact any of our data for which contact is closer than us.
     for (const key in this.storage.keys()) {
-      if (contact.distance(key) <= this.distance(key)) { //fixme define distance on contact
+      if (contact.distance(key) <= this.distance(key)) {
 	await contact.store(key, this.retrieveLocally(key));
       }
     }

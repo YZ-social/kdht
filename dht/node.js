@@ -114,7 +114,6 @@ export class Node extends NodeProbe {
 
     // Refresh every bucket farther out than our closest neighbor.
     // I think(?) that this can be done by refreshing "just" the farthest bucket:
-    //this.ensureBucket(this.constructor.keySize - 1).resetRefresh();
     await this.ensureBucket(this.constructor.keySize - 1).refresh();
     // But if it turns out to be necessary to explicitly refresh each next bucket in turn, this is how:
     // let started = false;

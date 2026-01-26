@@ -55,6 +55,7 @@ export class NodeProbe extends NodeMessages {
     if (trace) this.log(`iterate: key=${targetKey}, finder=${finder}, k=${k}`);
 
     if (targetKey !== this.key) {
+      // Schedule a refresh for the targetKey's bucket.
       const bucketIndex = this.getBucketIndex(targetKey);
       const bucket = this.routingTable.get(bucketIndex);
       // Subtle: if we don't have one now, but will after, refreshes will be rescheduled by KBucket constructor.
