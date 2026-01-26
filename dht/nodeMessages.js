@@ -50,16 +50,17 @@ export class NodeMessages extends NodeContacts {
     }
 
     // Forward recursively.
-    if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, targetNameForDebugging);
+    if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, Contact.forwardingTimeoutMS, targetNameForDebugging);
 
     // We were a sponsor but for a contact has since disconnected. We do not know if they are still connected to others.
     //this.xlog('\n*** sponsored disconnected ***');
     return {forwardingExclusions}; // FIXME: Is this definitively right, or should we answer null here?
   }
   static maxTries = Math.pow(this.alpha, 3); // alpha tries at each of three deep, or equivalent.
-  async recursiveSignals(key, signals, forwardingExclusions, targetNameForDebugging) { // Forward recursively.
+  async recursiveSignals(key, signals, forwardingExclusions, expiration, targetNameForDebugging) { // Forward recursively.
     // The target key may not be reachable from here (and might not even still be running).
     // So bound our branching.
+    if (Date.now() > expiration) return null;
     let remainingThisNode = this.constructor.alpha; // If it's good enough for probing, then it's good enough here.
     if (forwardingExclusions.length > this.constructor.maxTries) {
       this.xlog('abandoning wandering path towards', targetNameForDebugging, 'through', forwardingExclusions.join(', '));

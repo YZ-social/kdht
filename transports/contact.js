@@ -256,6 +256,7 @@ export class Contact {
     //return `${this.connection ? '_' : ''}${this.sname}v${this.counter}${this.isRunning ? '' : '*'}`;
     return `${this.connection ? '_' : ''}${this.sname}${this.isRunning ? '' : '*'}`; // simpler version
   }
+  static forwardingTimeoutMS = 3 * this.maxPingMS / 2 - 0.2 * this.maxPingMS;
   static pingTimeMS = 40; // ms
   static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.
     const start = Date.now();
