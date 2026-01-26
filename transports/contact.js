@@ -226,15 +226,6 @@ export class Contact {
     const try1 = await trySponsors();
     if (try1) return try1;
 
-    // FIXME: I think we can remove this now?
-    // Why does it sometimes work to try sponsors again after a delay?
-    // And why is this usually (but always?) when the sponsor is a server node?
-    // Node.delay(100);
-    // if (!this.host.isRunning) return [];
-    // const try2 = await trySponsors();
-    // if (try2) this.host.xlog('found', this.sname, 'in second try of sponsors', sponsors.map(c => c.report).join(', '));
-    // if (try2) return try2;
-    
     if (!this.host.isRunning) return [];
     if (this.node.isRunning)
       this.host.ilog('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.');
