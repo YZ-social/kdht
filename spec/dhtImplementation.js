@@ -15,11 +15,17 @@ import { SimulatedConnectionContact as Contact, Node } from '../index.js';
 export { Node, Contact };
 
 const info = false; // Whether or not to log basic operations of each node.
+const readWriteLevel = 'info'; // To 'info', 'debug', or falsy
+function logLevel(contact, value) {
+  if (!readWriteLevel) return;
+  contact.host[readWriteLevel] = value;
+}
 
 export async function serializeAction(contact, action) { // Mutex action(runningContact) against others on the same contact.
   // The contact may be a contact or a promise for one.
   // Returns and sets up inProcess resolution to be result of action, which is usually the next runningContact.
   contact = await contact;
+  if (!contact) return console.log('No contact for serialized action'); // Why does this ever fire?
   return contact.inProcess = contact.inProcess.then(action);
 }
 
@@ -50,8 +56,10 @@ export async function write1(contact, key, value) {
   // Coordinate with stop1 such that each excludes the other for the duration.
   let stored;
   await serializeAction(contact, async promised => {
+    logLevel(promised, true);
     stored = await promised.node.storeValue(key, value);
-    promised.host.log('stored', stored, 'copies');
+    promised.host.ilog('stored', stored, 'copies');
+    logLevel(promised, false);
     return promised;
   });
   return stored;
@@ -60,7 +68,10 @@ export async function read1(contact, key) {
   // Promise the result of requesting key from the DHT through contact.
   let retrieved;
   await serializeAction(contact, async promised => {
+    logLevel(promised, true);
     retrieved = await promised.node.locateValue(key);
+    promised.host.ilog('read', retrieved);
+    logLevel(promised, false);
     if (retrieved === undefined) {
       const now = Date.now();
       const lifetime = now - promised.creationTimestamp;

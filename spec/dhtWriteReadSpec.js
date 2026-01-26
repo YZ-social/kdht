@@ -14,7 +14,7 @@ describe("DHT write/read", function () {
   const baseURL = 'http://localhost:3000/kdht';
   const logicalCores = availableParallelism();
   console.log(`Model description "${cpus()[0].model}", ${logicalCores} logical cores.`);
-  const maxPerCluster = logicalCores / 2; // Why half? Because we have at least two processes.
+  const maxPerCluster = logicalCores / 2; // Why half? Because we have at least two processes, and clusters of logicalCores size tend to go... off.
   const nPortals = maxPerCluster;
   const nBots = maxPerCluster;
   const fixedSpacing  = 2; // Between portals.
@@ -57,9 +57,9 @@ describe("DHT write/read", function () {
     contact = await WebContact.create({name: uuidv4(), debug: verbose});
     const bootstrapName = await contact.fetchBootstrap(baseURL);
     const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, baseURL);
-    console.log(new Date(), contact.sname, 'joining', bootstrapContact.sname);
+    console.log(new Date(), 'client node', contact.sname, 'joining', bootstrapContact.sname);
     await contact.join(bootstrapContact);
-    console.log(new Date(), contact.sname, 'joined');    
+    console.log(new Date(), 'client node', contact.sname, 'joined');
     for (let index = 0; index < nWrites; index++) {
       const wrote = await contact.storeValue(index, index);
       console.log('Wrote', index);

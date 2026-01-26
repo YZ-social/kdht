@@ -152,7 +152,7 @@ describe("DHT", function () {
 	  if (startThrashingBefore === 'writing') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  await delay(runtimeBeforeWriteMS, 'pause before writing');
 	  console.log(new Date(), 'writing');
-	  elapsed = await timed(async _ => nWritten = await parallelWriteAll(), // Alt: serialWriteAll
+	  elapsed = await timed(async _ => nWritten = await serialWriteAll(), // Alt: serial/parallelWriteAll
 				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
 	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 5 * setupTimeMS);
 	afterAll(async function () {
@@ -170,8 +170,9 @@ describe("DHT", function () {
 	it("can be read.", async function () {
 	  if (startThrashingBefore === 'reading') await startThrashing(nServerNodes, refreshTimeIntervalMS);
 	  await delay(runtimeBeforeReadMS, 'pause before reading');
+	  console.log(new Date(), 'reading');
 	  let nRead = 0;
-	  await timed(async _ => nRead = await parallelReadAll(), // alt: serialReadAll
+	  await timed(async _ => nRead = await serialReadAll(), // alt: serial/parallelReadAll
 		      elapsed => `Read ${nRead} / ${elapsed} = ${Math.round(nRead/elapsed)} values/second.`);
 	  expect(nRead).toBe(nWritten);
 	}, 10 * setupTimeMS + 5 * runtimeBeforeReadMS);
@@ -186,6 +187,7 @@ describe("DHT", function () {
   test({setupTimeMS: 1e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
   test({pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster thrash smoke-testing."});
   test({notes: "Normal ops"});
+  test({setupTimeMS: 40e3, maxTransports: 100, notes: "Bigger network overflowing bucket and transport limits."});
   
   // test({maxClientNodes: 55, setupTimeMS: 240e3, pingTimeMS: 40, maxTransports: 62,
   // 	//startThrashingBefore: 'never', runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0,
