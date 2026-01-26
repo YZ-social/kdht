@@ -25,6 +25,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
   async disconnectTransport(andNotify = true) {
     const farContactForUs = await this.connection;
     if (!farContactForUs) return;
+    this.disconnectTime = Date.now();
     Node.assert(farContactForUs.key === this.host.key, 'Far contact backpointer', farContactForUs.node.name, 'does not point to us', this.host.name);
     Node.assert(farContactForUs.host.key === this.key, 'Far contact host', farContactForUs.host.name, 'is not hosted at contact', this.name);
     super.disconnectTransport(andNotify);
@@ -38,6 +39,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     let { host, node, isServerNode, connection } = contact;
     Node.assert(host.key !== node.key, 'connecting to self', host, node);
     if (connection) return connection;
+    const start = Date.now();
 
     return this.connection = new Promise(resolveHere => {
       const farContactForUs = node.ensureContact(host.contact);
@@ -48,7 +50,6 @@ export class SimulatedConnectionContact extends SimulatedContact {
 	if (isServerNode) {
 	  await Node.delay(200); // Connect through portal.
 	} else {
-	  this.host.ilog('connecting', this.sname);
 	  // WebRTC typically requires two rounds of signals.
 	  const batch1 = await this.messageSignals(['dummy offer', 'dummy candidate']);
 	  const batch2 = batch1.length && await this.messageSignals(['dummy offer', 'dummy candidate']); 
@@ -58,6 +59,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
 	    this.connection = farContactForUs.connection = null;
 	    return;
 	  }
+	  this.host.ilog('connected to', this.sname, 'in', (Date.now() - start).toLocaleString(), 'ms.');
 	}
 
 	resolveHere(farContactForUs);

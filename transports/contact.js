@@ -88,7 +88,7 @@ export class Contact {
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     // Attempt to ensure that there are other copies.
     if (this.host.refreshTimeIntervalMS)
-      this.host.xlog('disconnecting from network'); // fixme ilog
+      this.host.ilog('disconnecting from network');
     if (!this.host.isStopped()) {
       if (this.host.storage.size) this.host.log('Copying', this.host.storage.size, 'stored values');
       await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
@@ -112,7 +112,7 @@ export class Contact {
   }
   bye() { // The sender is disconnecting from the network
     this.host.ilog('removing disconnected contact', this.sname);
-    this.host.removeContact(this).then(bucket => bucket?.resetRefresh('now')); // Accelerate the bucket refresh
+    this.host.removeContact(this).then(bucket => bucket?.refresh()); // Accelerate the bucket refresh
   }
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
@@ -149,10 +149,6 @@ export class Contact {
     // uuid so that the two sides don't send a request with the same id to each other.
     // Alternatively, we could concatenate a counter to our host.name.
     let messageTag = uuidv4();
-    // if (method === 'signals') {
-    //   messageTag = 'X' + messageTag;
-    //   this.host.xlog(this.counter, 'requesting', messageTag, method, 'of', this.sname);
-    // }
     const message = this.serializeRequest(messageTag, method, sender, ...rest);
 
     const start = Date.now();
@@ -233,26 +229,26 @@ export class Contact {
     // FIXME: I think we can remove this now?
     // Why does it sometimes work to try sponsors again after a delay?
     // And why is this usually (but always?) when the sponsor is a server node?
-    Node.delay(100);
-    if (!this.host.isRunning) return [];
-    const try2 = await trySponsors();
-    //if (try2) this.host.xlog('found', this.sname, 'in second try of sponsors', sponsors.map(c => c.report).join(', '));
-    if (try2) return try2;
+    // Node.delay(100);
+    // if (!this.host.isRunning) return [];
+    // const try2 = await trySponsors();
+    // if (try2) this.host.xlog('found', this.sname, 'in second try of sponsors', sponsors.map(c => c.report).join(', '));
+    // if (try2) return try2;
     
     if (!this.host.isRunning) return [];
-    // if (this.node.isRunning)
-    //   this.host.xlog('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.');
-    // Node.delay(100); // Why do we spin without this delay? fixme remove?
+    if (this.node.isRunning)
+      this.host.ilog('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.');
+
     const start = Date.now();
-    const {forwardingExclusions, result} = (await this.host.recursiveSignals(this.key, payload, [], this.name)) || {};
+    const {forwardingExclusions, result} = (await this.host.recursiveSignals(this.key, payload, [], Date.now + this.constructor.forwardingTimeoutMS, this.name)) || {};
     const elapsed = Date.now() - start;
     if (!!this.isRunning !== !!result) // Of course, only simulations can really know isRunning to be false.
-      this.host.xlog('Recursive response', !!result, 'to', this.isRunning ? 'running' : 'disconnected', this.sname,
+      this.host.ilog('Recursive response', !!result, 'to', this.isRunning ? 'running' : 'disconnected', this.sname,
 		     'in', forwardingExclusions?.length, 'steps over',
 		     elapsed, 'ms, after trying',
 		     sponsors.length, 'sponsors.',
 		    );
-    if (!this.host.isRunning) return []; // fixme remove
+    if (!this.host.isRunning) return [];
     return this.checkSignals(result);
   }
   async checkSignals(signals) {
