@@ -59,7 +59,7 @@ export class KBucket {
     return false;
   }
 
-  async addContact(contact) { // Returns 'present' or 'added' if it was added to end within capacity, else false.
+  addContact(contact) { // Returns 'present' or 'added' if it was added to end within capacity, else false.
     // Resets refresh timer.
     this.node.constructor.assert(contact.node.key !== this.node.key, 'attempt to add self contact to bucket');
     let added = this.removeKey(contact.key, false) || 'added';
@@ -67,7 +67,7 @@ export class KBucket {
     if (this.isFull) {
       if (added === 'present') this.node.looseTransports.push(contact); // So no findContact will fail during ping. Should we instead serialize findContact?
       const head = this.contacts[0];
-      if (await head.sendRPC('ping', head.key)) { // still alive
+      if (head.connection) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back, below.
       }

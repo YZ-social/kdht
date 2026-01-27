@@ -110,7 +110,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	// 	       'last response:', now - webrtc.lastResponse,
 	// 	       '****');
 	onclose();
-	await this.host.removeContact(this); // fixme?
+	this.host.removeContact(this); // fixme?
 	expired(null);
       }, timeoutMS);
     });

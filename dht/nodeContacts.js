@@ -84,20 +84,14 @@ export class NodeContacts extends NodeTransports {
     if (sponsor) contact.noteSponsor(sponsor);
     return contact;
   }
-  routingTableSerializer = Promise.resolve();
-  queueRoutingTableChange(thunk) { // Promise to resolve thunk() -- after all previous queued thunks have resolved.
-    return this.routingTableSerializer = this.routingTableSerializer.then(thunk);
-  }
   removeContact(contact) { // Removes from node entirely if present, from looseTransports or bucket as necessary, returning bucket if that's where it was, else null.
-    return this.queueRoutingTableChange(() => {
-      delete this.contactDictionary[contact.name];
-      const key = contact.key;
-      if (this.removeLooseTransport(key)) return null;
-      const bucketIndex = this.getBucketIndex(key);
-      const bucket = this.routingTable.get(bucketIndex);
-      // Host might not yet have added node or anyone else as contact for that bucket yet, so maybe no bucket.
-      return bucket?.removeKey(key) ? bucket : null;
-    });
+    delete this.contactDictionary[contact.name];
+    const key = contact.key;
+    if (this.removeLooseTransport(key)) return null;
+    const bucketIndex = this.getBucketIndex(key);
+    const bucket = this.routingTable.get(bucketIndex);
+    // Host might not yet have added node or anyone else as contact for that bucket yet, so maybe no bucket.
+    return bucket?.removeKey(key) ? bucket : null;
   }
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
     if (contact.key === this.key) return null; // Do not add self.
@@ -106,18 +100,16 @@ export class NodeContacts extends NodeTransports {
     // we have already dropped the connection.
     //this.constructor.assert(contact.connection, 'Adding contact without connection', contact.report, 'in', this.contact.report);
 
-    return this.queueRoutingTableChange(async () => {
-      const bucketIndex = this.getBucketIndex(contact.key);
-      const bucket = this.ensureBucket(bucketIndex);
+    const bucketIndex = this.getBucketIndex(contact.key);
+    const bucket = this.ensureBucket(bucketIndex);
 
-      // Try to add to bucket
-      const added = await bucket.addContact(contact);
-      if (added !== 'present') { // Not already tracked in bucket.
-	this.removeLooseTransport(contact.key); // Can't be in two places.
-	this.replicateCloserStorage(contact); // Asynchronous, but don't wait for it here.
-      }
-      return added;
-    });
+    // Try to add to bucket
+    const added = bucket.addContact(contact);
+    if (added !== 'present') { // Not already tracked in bucket.
+      this.removeLooseTransport(contact.key); // Can't be in two places.
+      this.replicateCloserStorage(contact); // Asynchronous, but don't wait for it here.
+    }
+    return added;
   }
   findClosestHelpers(targetKey, count = this.constructor.k) { // Answer count closest Helpers to targetKey, including ourself.
     if (!this.contact) return []; // Can happen while we are shutting down during a probe.

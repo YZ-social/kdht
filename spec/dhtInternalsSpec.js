@@ -177,16 +177,16 @@ describe("DHT internals", function () {
       });
     });
     describe("discovery", function () {
-      it("does not place self.", async function () {
+      it("does not place self.", function () {
 	let node = Node.fromKey(Node.one);
-	expect(await node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeFalsy();
+	expect(node.addToRoutingTable(SimulatedContact.fromKey(Node.one))).toBeFalsy();
 	expect(node.routingTable.size).toBe(0);
       });
-      it("places in bucket if room.", async function () {
+      it("places in bucket if room.", function () {
 	let contact = SimulatedContact.fromKey(Node.zero);
 	let node = contact.node;
 	let other = SimulatedContact.fromKey(Node.one, node); // Closest bucket
-	expect(await node.addToRoutingTable(other)).toBeTruthy();
+	expect(node.addToRoutingTable(other)).toBeTruthy();
 	expect(node.getBucketIndex(Node.one)).toBe(0);
 	const bucket = node.routingTable.get(0);
 	expect(bucket.contacts[0].key).toBe(Node.one);
@@ -202,7 +202,7 @@ describe("DHT internals", function () {
 	  for (let i = 1; i <= nOthers; i++) {
 	    let other = SimulatedContact.fromKey(BigInt(i));
 	    let ourViewOfIt = node.ensureContact(other);
-	    await node.addToRoutingTable(ourViewOfIt);
+	    node.addToRoutingTable(ourViewOfIt);
 	    await ourViewOfIt.connect();
 	  }
 	  //node.report();
@@ -284,7 +284,7 @@ describe("DHT internals", function () {
         const node = network[i].node;
         for (let j = 0; j < nNodes; j++) {
           if (i !== j) {
-            await node.addToRoutingTable(network[j].clone(node));
+            node.addToRoutingTable(network[j].clone(node));
           }
         }
       }
@@ -420,7 +420,7 @@ describe("DHT internals", function () {
         const node = network[i].node;
         for (let j = 0; j < nNodes; j++) {
           if (i !== j && Math.random() < connectivityFactor) {
-            await node.addToRoutingTable(network[j].clone(node));
+            node.addToRoutingTable(network[j].clone(node));
           }
         }
       }

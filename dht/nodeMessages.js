@@ -93,8 +93,7 @@ export class NodeMessages extends NodeContacts {
     this.constructor.assert(typeof(method)==='string', 'no method', method, sender, rest);
     this.constructor.assert(sender instanceof Contact, 'no sender', method, sender, rest);
     this.constructor.assert(sender.host.key === this.key, 'sender', sender.host.name, 'not on receiver', this.name);
-    // The sender exists, so add it to the routing table, but asynchronously so as to allow it to finish joining.
-    this.addToRoutingTable(sender);
+    this.addToRoutingTable(sender); // sender exists, so add it to the routing table.
     if (!(method in this)) {
       this.xlog('Does not handle method', method);
       return null;

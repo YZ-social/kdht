@@ -18,10 +18,10 @@ export class NodeProbe extends NodeMessages {
     if (!results) { // disconnected
       if (trace) this.log(helper.name, '=> disconnected');
       this.log('removing unconnected contact', contact.sname);
-      await this.removeContact(contact);
+      this.removeContact(contact);
       return null; // signal that there is *no* response from this contact - to distinguish from a response that confirms that the contact is alive, even if there are (after filtering) no new contacts to try.
     }
-    await this.addToRoutingTable(contact); // Live node, so update bucket.
+    this.addToRoutingTable(contact); // Live node, so update bucket.
     // this.log('step added contact', contact.sname);
     if (this.constructor.isContactsResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       const rawResults = results;
