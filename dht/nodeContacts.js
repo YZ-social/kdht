@@ -56,6 +56,10 @@ export class NodeContacts extends NodeTransports {
     });
     return contacts;
   }
+  get connections() {
+    return this.contacts.filter(contact => contact.connection)
+      .concat(this.looseTransports.filter(contact => contact.connection));
+  }
   contactDictionary = {}; // maps name => contact for lifetime of Node instance until removeContact.
   existingContact(name) { // Returns contact with the given name for this node, without searching buckets or looseTransports.
     return this.contactDictionary[name];

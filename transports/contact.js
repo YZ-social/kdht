@@ -84,7 +84,12 @@ export class Contact {
   store(key, value) {
     return this.sendRPC('store', key, value);
   }
-  async disconnect() { // Simulate a disconnection of node, marking as such and rejecting any RPCs in flight.
+  async disconnect() { // Disconnect host node and all it's connections. Stages are:
+    // (0: Testing only - Test cleanup globally sets Node.refreshTimeIntervalMS to zero.)
+    // 1. Refresh all value storage.
+    // 2. Stop refreshes at this host by setting host.refreshTimeIntervalMS to zero.
+    // 3. For each connected contact, send 'bye' and disconnectTransport
+    // 4. Stop any other activity by setting host.isRunning to false.
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     // Attempt to ensure that there are other copies.
     if (this.host.refreshTimeIntervalMS)
@@ -94,11 +99,11 @@ export class Contact {
       await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
     }
     this.host.stopRefresh();
-    for (const contact of this.host.contacts) {
+    for (const contact of this.host.connections) {
       const far = await contact.connection;
       if (!far) return;
       contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
-      await contact.disconnectTransport(false);
+      await contact.disconnectTransport();
     }
     this.host.isRunning = false;
   }
@@ -106,7 +111,7 @@ export class Contact {
     if (andNotify && await this.connection) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
   }
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
-    this.host.log('closing disconnected contact', this.sname, this.xxx++);
+    this.host.log('closing disconnected contact', this.sname);
     this.disconnectTransport(false);
     this.host.removeLooseTransport(this.key); // If any.
   }
@@ -204,6 +209,7 @@ export class Contact {
   // Signaling
   async messageSignals(signals) { // send signals through the network, promising the response signals.
     // If contact cannot be reached, remove it and promise [].
+    if (this.host.isStopped()) return [];
 
     // sendRPC('signals', key, payload, optional) answers {result, forwardingExclusions} or null.
     // result may be null if the target could not be reached.
@@ -226,7 +232,7 @@ export class Contact {
     const try1 = await trySponsors();
     if (try1) return try1;
 
-    if (!this.host.isRunning) return [];
+    if (this.host.isStopped()) return [];
     if (this.node.isRunning)
       this.host.ilog('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.');
 
@@ -239,7 +245,7 @@ export class Contact {
 		     elapsed, 'ms, after trying',
 		     sponsors.length, 'sponsors.',
 		    );
-    if (!this.host.isRunning) return [];
+    if (this.host.isStopped()) return [];
     return this.checkSignals(result);
   }
   async checkSignals(signals) {

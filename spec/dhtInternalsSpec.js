@@ -203,6 +203,7 @@ describe("DHT internals", function () {
 	    let other = SimulatedContact.fromKey(BigInt(i));
 	    let ourViewOfIt = node.ensureContact(other);
 	    await node.addToRoutingTable(ourViewOfIt);
+	    await ourViewOfIt.connect();
 	  }
 	  //node.report();
 	}, 20e3);

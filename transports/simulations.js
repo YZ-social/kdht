@@ -7,7 +7,20 @@ export class SimulatedContact extends Contact {
   get isServerNode() { return this.node.isServerNode; }
 
   connection = null;
-  async connect() { return this; }
+  async connect() { return this.connection = this.node.contact; }
+  disconnectTransport(andNotify = true) {
+    super.disconnectTransport(andNotify);
+    this.connection = null;
+  }
+  async send(message) {
+    const other = await this.connection;
+    await Node.delay(10);
+    other?.receiveRPC(...message);
+  }
+  async synchronousSend(message) {
+    const other = await this.connection;
+    other?.receiveRPC(...message);
+  }
   // Dispatch directly on the node, returning the response. This is different than the send to and from with messageTag used by
   // SimulatedConnectionContact and WebContact.
   async transmitRPC(messageTag, method, sender, ...rest) {
@@ -75,16 +88,6 @@ export class SimulatedConnectionContact extends SimulatedContact {
     let contact = await this.ensureRemoteContact(senderSname);
     this.host.log('returning signals from', senderSname);
     return ['dummy answer', 'dummy candidate'];
-  }
-  async send(message) {
-    const other = await this.connection;
-    await Node.delay(10);
-    other?.receiveRPC(...message);
-  }
-  async synchronousSend(message) {
-    const other = await this.connection;
-    //await Node.delay(1);
-    other?.receiveRPC(...message);
   }
   async transmitRPC(messageTag, method, sender, ...rest) { // "transmit" the call (with sending contact added).
     if (!this.isRunning) return null; // Receiver closed.
