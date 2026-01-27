@@ -132,8 +132,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
-    if (channel?.readyState === 'open') channel.send(JSON.stringify(message));
-    else this.host.xlog('Tried to send on unopen channel on', this.sname, message);
+    if (!channel) return;
+    if (channel.readyState === 'open') channel.send(JSON.stringify(message));
+    else this.host.ilog('Tried to send on unopen channel on', this.sname, message);
   }
   synchronousSend(message) { // this.send awaits channel open promise. This is if we know it has been opened.
     if (this.unsafeData?.readyState !== 'open') return; // But it may have since been closed.
@@ -185,9 +186,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const [messageTag, ...data] = JSON.parse(dataString);
     await this.receiveRPC(messageTag, ...data);
   }
-  async disconnectTransport() {
+  async disconnectTransport(andNotify = true) {
     if (!this.connection) return;
-    super.disconnectTransport();
+    super.disconnectTransport(andNotify);
     Node.delay(100).then(() => { // Allow time for super to send close/bye message.
       this.webrtc?.close();
       this.connection = this.webrtc = this.initiating = null;
