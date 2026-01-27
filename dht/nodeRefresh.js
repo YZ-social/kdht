@@ -30,10 +30,6 @@ export class NodeRefresh extends NodeKeys {
     const adjustment = this.randomInteger(margin);
     return Math.floor(target + margin/2 - adjustment);
   }
-  workQueue = Promise.resolve();
-  queueWork(thunk) { // Promise to resolve thunk() -- after all previous queued thunks have resolved.
-    return this.workQueue = this.workQueue.then(thunk);
-  }
   timers = new Map();
   schedule(timerKey, statisticsKey, thunk, timeout = this.fuzzyInterval()) {
     // Schedule thunk() to occur at a fuzzyInterval from now, cancelling any
@@ -46,16 +42,14 @@ export class NodeRefresh extends NodeKeys {
     const start = Date.now();
     clearInterval(this.timers.get(timerKey));
     this.timers.set(timerKey, setTimeout(async () => {
-      const lag = Date.now() - start - timeout;
+      const now = Date.now();
+      const elapsed = now - start;
+      const lag = elapsed - timeout;
       this.timers.delete(timerKey);
       if (this.isStopped()) return;
+      this.ilog('refresh', statisticsKey, timerKey, 'last/lag ms:', elapsed.toLocaleString(), lag.toLocaleString());
       if (lag > 250) console.log(`** System is overloaded by ${lag.toLocaleString()} ms. **`);
-      // Each actual thunk execution is serialized: Each Node executes its OWN various refreshes and probes
-      // one at a time. This prevents a node from self-DoS'ing, but of course it does not coordinate across
-      // nodes. If the system is bogged down for any reason, then the timeout spacing will get smaller
-      // until finally the node is just running flat out.
-      // this.log('queue', statisticsKey, timerKey, timeout);
-      await this.queueWork(thunk);
+      await thunk();
     }, timeout));
   }
 }

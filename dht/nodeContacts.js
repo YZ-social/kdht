@@ -86,7 +86,7 @@ export class NodeContacts extends NodeTransports {
   }
   removeContact(contact) { // Removes from node entirely if present, from looseTransports or bucket as necessary, returning bucket if that's where it was, else null.
     return this.queueRoutingTableChange(() => {
-      delete this.contactDictionary[contact.name]; // fixme examine this
+      delete this.contactDictionary[contact.name];
       const key = contact.key;
       if (this.removeLooseTransport(key)) return null;
       const bucketIndex = this.getBucketIndex(key);
@@ -110,7 +110,7 @@ export class NodeContacts extends NodeTransports {
       const added = await bucket.addContact(contact);
       if (added !== 'present') { // Not already tracked in bucket.
 	this.removeLooseTransport(contact.key); // Can't be in two places.
-	this.queueWork(() => this.replicateCloserStorage(contact));
+	this.replicateCloserStorage(contact); // Asynchronous, but don't wait for it here.
       }
       return added;
     });
