@@ -123,7 +123,7 @@ export class Contact {
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
   // RPC
-  static maxPingMs = 330; // Not including connect time. These are single-hop WebRTC data channels.
+  static maxPingMS = 330; // Not including connect time. These are single-hop WebRTC data channels.
   serializeRequest(...rest) { // Return the composite datum suitable for transport over the wire.
     return rest; // Non-simulation subclases must override.
   }
@@ -140,7 +140,7 @@ export class Contact {
     let hops = 15; // recursive calls
     if (method === 'signals') hops = 2;
     else if (['ping', 'findNodes', 'findValue', 'store'].includes(method)) hops = 1;
-    return Node.delay(hops * this.constructor.maxPingMs, null);
+    return Node.delay(hops * this.constructor.maxPingMS, null);
   }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
@@ -208,6 +208,7 @@ export class Contact {
   }
 
   // Signaling
+  static forwardingTimeoutMS = 3/2 * this.maxPingMS - 0.2 * this.maxPingMS;
   async messageSignals(signals) { // send signals through the network, promising the response signals.
     // If contact cannot be reached, remove it and promise [].
     if (this.host.isStopped()) return [];
@@ -235,14 +236,15 @@ export class Contact {
 
     if (this.host.isStopped()) return [];
     if (this.node.isRunning)
-      this.host.ilog('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.');
+      this.host.log('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.');
 
     const start = Date.now();
-    const {forwardingExclusions, result} = (await this.host.recursiveSignals(this.key, payload, [], Date.now + this.constructor.forwardingTimeoutMS, this.name)) || {};
+    const response = await this.host.recursiveSignals(this.key, payload, [], Date.now + this.constructor.forwardingTimeoutMS, this.name);
+    const {forwardingExclusions, result} = response || {};
     const elapsed = Date.now() - start;
     if (!!this.isRunning !== !!result) // Of course, only simulations can really know isRunning to be false.
-      this.host.ilog('Recursive response', !!result, 'to', this.isRunning ? 'running' : 'disconnected', this.sname,
-		     'in', forwardingExclusions?.length, 'steps over',
+      this.host.ilog('Recursive', response ? 'data from' : 'failure from', this.sname,
+		     'in', forwardingExclusions?.length || 'unknown', 'steps over',
 		     elapsed, 'ms, after trying',
 		     sponsors.length, 'sponsors.',
 		    );
@@ -263,8 +265,7 @@ export class Contact {
     //return `${this.connection ? '_' : ''}${this.sname}v${this.counter}${this.isRunning ? '' : '*'}`;
     return `${this.connection ? '_' : ''}${this.sname}${this.isRunning ? '' : '*'}`; // simpler version
   }
-  static forwardingTimeoutMS = 3 * this.maxPingMS / 2 - 0.2 * this.maxPingMS;
-  static pingTimeMS = 40; // ms
+  static pingTimeMS = 40; // ms to consume each RPC in simulations
   static async ensureTime(thunk, ms = this.pingTimeMS) { // Promise that thunk takes at least ms to execute.
     const start = Date.now();
     const result = await thunk();
