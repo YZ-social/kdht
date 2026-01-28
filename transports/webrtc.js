@@ -38,18 +38,18 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     //this.host.xlog('contact signals', senderSname, signals);
     let contact = await this.ensureRemoteContact(senderSname);
 
-    if (contact.webrtc) return await contact.webrtc.respond(signals);
+    if (contact.webrtc?.pc) return await contact.webrtc.respond(signals);
 
     this.host.noteContactForTransport(contact);
-    contact.ensureWebRTC();
+    contact.createWebRTC(false);
     return await contact.webrtc.respond(signals);
   }
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;
   }
 
-  ensureWebRTC(initiate = false, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
-    // If not already configured, sets up contact to have properties:
+  createWebRTC(initiate = false, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
+    // Sets up contact to have properties:
     // - connection - a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
     //   incomming messages are dispatched to receiveWebRTC(string)
@@ -125,9 +125,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // Anyone can connect to a server node using the server's connect endpoint.
     // Anyone in the DHT can connect to another DHT node through a sponsor.
     if (contact.connection) return contact.connection;
-    contact.ensureWebRTC(true);
-    await this.connection;
-    return this.connection;
+    contact.createWebRTC(true);
+    return await this.connection;
   }
 
   async send(message) { // Promise to send through previously opened connection promise.
