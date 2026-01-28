@@ -1,4 +1,5 @@
 import { NodeStorage } from './nodeStorage.js';
+import { WebRTC } from '@yz-social/webrtc';
 
 // Management of Contacts that have a limited number of connections that can transport messages.
 export class NodeTransports extends NodeStorage {
@@ -16,7 +17,7 @@ export class NodeTransports extends NodeStorage {
     }
     return false;
   }
-  static maxTransports = 62; // FIXME: try 124
+  static maxTransports = WebRTC.suggestedInstancesLimit;
   noteContactForTransport(contact) { // We're about to use this contact for a message, so keep track of it.
     // Requires: if we later addToRoutingTable successfully, it should be removed from looseTransports.
     // Requires: if we later remove contact because of a failed send, it should be removed from looseTransports.
@@ -36,7 +37,7 @@ export class NodeTransports extends NodeStorage {
       }
       let dropped = removeLast(this.looseTransports);
       if (dropped) {
-	this.ilog('dropping loose transport', dropped.name);
+	this.xlog('dropping loose transport', dropped.name);
       } else { // Find the bucket with the most connections.
 	let bestBucket = null, bestCount = 0;
 	this.forEachBucket(bucket => {
@@ -47,8 +48,8 @@ export class NodeTransports extends NodeStorage {
 	  return true;
 	});
 	dropped = removeLast(bestBucket.contacts);
-	if (!dropped) console.log('Unable to find something to drop in', this.report(null));
-	else this.ilog('dropping transport', dropped.name, 'in bucket', bestBucket.index, 'among', bestCount, 'contacts.');
+	if (!dropped) this.xlog('Unable to find something to drop in', this.report(null));
+	else this.xlog('dropping transport', dropped.name, 'in bucket', bestBucket.index, 'among', bestCount, 'contacts.');
       }
       dropped.disconnectTransport();
     }
