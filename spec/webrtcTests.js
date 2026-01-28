@@ -10,6 +10,7 @@ import path from 'path';
 
 describe("DHT write/read", function () {
   let contact, portalProcess, botProcess;
+  const botInfo = false;
   const verbose = false;
   const baseURL = 'http://localhost:3000/kdht';
   const logicalCores = availableParallelism();
@@ -35,7 +36,7 @@ describe("DHT write/read", function () {
     function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
 
     console.log(new Date(), 'starting', nPortals, 'portals over', portalSeconds, 'seconds');
-    portalProcess = spawn('node', [path.resolve(__dirname, 'portal.js'), '--nPortals', nPortals, '--verbose', verbose.toString()]);
+    portalProcess = spawn('node', [path.resolve(__dirname, 'portal.js'), '--nPortals', nPortals, '--info', botInfo, '--verbose', verbose.toString()]);
     if (showPortals) {
       portalProcess.stdout.on('data', echo);
       portalProcess.stderr.on('data', echo);
@@ -45,7 +46,7 @@ describe("DHT write/read", function () {
     if (nBots) {
       for (let launched = 0, round = Math.min(nBots, maxPerCluster); launched < nBots; round = Math.min(nBots - launched, maxPerCluster), launched += round) {
 	console.log(new Date(), 'starting', round, 'bots over', botsMilliseconds/1e3, 'seconds');
-	botProcess = spawn('node', [path.resolve(__dirname, 'bots.js'), '--nBots', round, '--thrash', thrash.toString(), '--verbose', verbose.toString()]);
+	botProcess = spawn('node', [path.resolve(__dirname, 'bots.js'), '--nBots', round, '--thrash', thrash.toString(), '--info', botInfo, '--verbose', verbose.toString()]);
 	if (showBots) {
 	  botProcess.stdout.on('data', echo);
 	  botProcess.stderr.on('data', echo);

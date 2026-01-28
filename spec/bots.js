@@ -37,9 +37,16 @@ const argv = yargs(hideBin(process.argv))
 	default: 0,
 	description: "The number of test writes to check."
       })
+      .option('info', {
+	alias: 'i',
+	type: 'boolean',
+	default: true,
+	description: "Run with info logging."
+      })
       .option('verbose', {
 	alias: 'v',
 	type: 'boolean',
+	default: false,
 	description: "Run with verbose logging."
       })
       .parse();
@@ -52,17 +59,20 @@ if (cluster.isPrimary) {
   for (let i = 1; i < argv.nBots; i++) { // The cluster primary becomes bot 0.
     cluster.fork();
   }
+  cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and restart them.
+    console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
+    cluster.fork();
+  });
   if (argv.nWrites) {
     console.log(new Date(), 'Waiting a refresh interval while bots get randomly created before write/read test');
     await Node.delay(2 * Node.refreshTimeIntervalMS);
     launchWriteRead(argv.nWrites, argv.baseURL, Node.refreshTimeIntervalMS, argv.verbose);
-  }
+  }  
 }
 
-const info = false;
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
 console.log(cluster.worker?.id || 0, host);
-let contact = await WebContact.create({name: host, info, debug: argv.verbose});
+let contact = await WebContact.create({name: host, info: argv.info, debug: argv.verbose});
 let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
 let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
 await contact.join(bootstrapContact);
@@ -80,7 +90,7 @@ while (argv.thrash) {
   await contact.disconnect();
   await Node.delay(1e3); // TODO: remove?
 
-  contact = await WebContact.create({name: next, info, debug: argv.verbose});
+  contact = await WebContact.create({name: next, info: argv.info, debug: argv.verbose});
   bootstrapName = await contact.fetchBootstrap(argv.baseURL);
   bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
   await contact.join(bootstrapContact);

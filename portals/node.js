@@ -3,14 +3,14 @@ import cluster from 'node:cluster';
 import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 
-export async function setup({baseURL, externalBaseURL = '', verbose, fixedSpacing, variableSpacing}) {
+export async function setup({baseURL, externalBaseURL = '', debug, fixedSpacing, info, variableSpacing}) {
   const hostName = uuidv4();
   process.title = 'kdht-portal-' + hostName;
   // For debugging:
   // process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
   // process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
 
-  const contact = await WebContact.create({name: hostName, isServerNode: true, info: false, debug: verbose});
+  const contact = await WebContact.create({name: hostName, isServerNode: true, info, debug});
   // Handle signaling that comes as a message from the server.
   process.on('message', async ([senderSname, ...incomingSignals]) => { // Signals from a sender through the server.
     const response = await contact.signals(senderSname, ...incomingSignals);

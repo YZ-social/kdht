@@ -5,8 +5,7 @@ import { Node } from '../index.js';
 export const router = express.Router();
 
 const portals = {}; // Maps worker sname => worker, for the full lifetime of the program. NOTE: MAY get filed in out of order from workers.
-const workers = Object.values(cluster.workers);
-for (const worker of workers) {
+function initWorker(worker) {
   worker.on('message', message => { // Message from a worker, in response to a POST.
     if (!worker.tag) {  // The very first message from a worker (during setup) will identify its tag.
       portals[message] = worker;
@@ -23,8 +22,11 @@ for (const worker of workers) {
     }
   });
 }
-cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers.
+Object.values(cluster.workers).forEach(initWorker);
+cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and restart them.
   console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
+  delete worker.tag;
+  initWorker(cluster.fork());
 });
 
 router.get('/name/:label', (req, res, next) => { // Answer the actual sname corresponding to label.

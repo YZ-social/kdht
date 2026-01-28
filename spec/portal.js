@@ -52,9 +52,16 @@ const argv = yargs(hideBin(process.argv))
 	default: '',
 	description: "The base URL of the some other portal server to which we should connect ours, if any."
       })
+      .option('info', {
+	alias: 'i',
+	type: 'boolean',
+	default: true,
+	description: "Run with info logging."
+      })
       .option('verbose', {
 	alias: 'v',
 	type: 'boolean',
+	default: false,
 	description: "Run with verbose logging."
       })
       .option('fixedSpacing', {
@@ -118,6 +125,6 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
 
 } else { // A portal node through which client's can connect.
   const portalNode = await import('../portals/node.js');
-  const {baseURL, externalBaseURL, fixedSpacing, variableSpacing, verbose} = argv;
-  await portalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, verbose});
+  const {baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, verbose} = argv;
+  await portalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, debug: verbose});
 }
