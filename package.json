@@ -1,6 +1,6 @@
 {
   "name": "@yz-social/kdht",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Pure Kademlia base, for testing variations.",
   "exports": {
     ".": "./index.js",
@@ -17,7 +17,7 @@
     "test": "npx jasmine && echo '-- SUCCESS --' || echo '**** FAIL ****'"
   },
   "dependencies": {
-    "@yz-social/webrtc": "^0.1.1",
+    "@yz-social/webrtc": "^0.1.2",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
