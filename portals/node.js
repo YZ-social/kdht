@@ -10,7 +10,7 @@ export async function setup({baseURL, externalBaseURL = '', verbose, fixedSpacin
   // process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
   // process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
 
-  const contact = await WebContact.create({name: hostName, isServerNode: true, debug: verbose});
+  const contact = await WebContact.create({name: hostName, isServerNode: true, info: false, debug: verbose});
   // Handle signaling that comes as a message from the server.
   process.on('message', async ([senderSname, ...incomingSignals]) => { // Signals from a sender through the server.
     const response = await contact.signals(senderSname, ...incomingSignals);

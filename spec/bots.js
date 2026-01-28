@@ -59,9 +59,10 @@ if (cluster.isPrimary) {
   }
 }
 
+const info = false;
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
 console.log(cluster.worker?.id || 0, host);
-let contact = await WebContact.create({name: host, debug: argv.verbose});
+let contact = await WebContact.create({name: host, info, debug: argv.verbose});
 let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
 let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
 await contact.join(bootstrapContact);
@@ -79,7 +80,7 @@ while (argv.thrash) {
   await contact.disconnect();
   await Node.delay(1e3); // TODO: remove?
 
-  contact = await WebContact.create({name: next, debug: argv.verbose});
+  contact = await WebContact.create({name: next, info, debug: argv.verbose});
   bootstrapName = await contact.fetchBootstrap(argv.baseURL);
   bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
   await contact.join(bootstrapContact);
