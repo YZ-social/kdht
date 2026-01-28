@@ -90,7 +90,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       clearTimeout(timeout);
       dataChannel.addEventListener('close', onclose);
       dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
-      await webrtc.reportConnection(true);
+      if (this.info || this.debug) await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) this.host.xlog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
       this.unsafeData = dataChannel;
       return dataChannel;
