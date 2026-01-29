@@ -124,7 +124,12 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   if (argv.nWrites) launchWriteRead(argv.nWrites, argv.baseURL, argv.nBots ? 2 * Node.refreshTimeIntervalMS : 0, argv.verbose);
 
 } else { // A portal node through which client's can connect.
-  const portalNode = await import('../portals/node.js');
+  const PortalNode = await import('../portals/node.js');
   const {baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, verbose} = argv;
-  await portalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, debug: verbose});
+  const contact = await PortalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, debug: verbose});
+  function report() {
+    contact.host.report();
+    setTimeout(report, 2 * Node.refreshTimeIntervalMS);
+  }
+  //report();
 }

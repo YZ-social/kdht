@@ -60,10 +60,13 @@ export class NodeMessages extends NodeContacts {
   async recursiveSignals(key, signals, forwardingExclusions, expiration, targetNameForDebugging) { // Forward recursively.
     // The target key may not be reachable from here (and might not even still be running).
     // So bound our branching.
-    if (Date.now() > expiration) return null;
     let remainingThisNode = this.constructor.alpha; // If it's good enough for probing, then it's good enough here.
+    if (Date.now() > expiration) {
+      this.xlog('abandoning recursive path towards', targetNameForDebugging, 'by timeout through', forwardingExclusions.join(', '));
+      return null;
+    }
     if (forwardingExclusions.length > this.constructor.maxTries) {
-      this.xlog('abandoning wandering path towards', targetNameForDebugging, 'through', forwardingExclusions.join(', '));
+      this.xlog('abandoning recursive path towards', targetNameForDebugging, 'wandering through', forwardingExclusions.join(', '));
       return {forwardingExclusions};
     }
     const helpers = this.findClosestHelpers(key);
@@ -85,6 +88,7 @@ export class NodeMessages extends NodeContacts {
 	forwardingExclusions.push(contact.name);
       }
     }
+    this.xlog('Unable to forward recursive signals to', targetNameForDebugging, 'among', contacts.filter(c => c.connection).length, 'available contacts.');
     return null;
   }
 

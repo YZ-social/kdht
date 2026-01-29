@@ -95,7 +95,7 @@ export class Contact {
     if (this.host.refreshTimeIntervalMS)
       this.host.ilog('disconnecting from network');
     if (!this.host.isStopped()) {
-      if (this.host.storage.size) this.host.log('Copying', this.host.storage.size, 'stored values');
+      if (this.host.storage.size) this.host.ilog('Copying', this.host.storage.size, 'stored values');
       await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
     }
     this.host.stopRefresh();
@@ -111,7 +111,7 @@ export class Contact {
     if (andNotify && await this.connection) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
   }
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
-    this.host.log('closing disconnected contact', this.sname);
+    this.host.ilog('closing disconnected contact', this.sname);
     this.disconnectTransport(false);
     this.host.removeLooseTransport(this.key); // If any.
   }
@@ -136,10 +136,9 @@ export class Contact {
   async deserializeResponse(result) { // Inverse of serializeResponse.
     return result;
   }
-  rpcTimeout(method) { // Promise to resolve to null at appriate timeout for RPC method
-    let hops = 15; // recursive calls
-    if (method === 'signals') hops = 2;
-    else if (['ping', 'findNodes', 'findValue', 'store'].includes(method)) hops = 1;
+  rpcTimeout(method, ...rest) { // Promise to resolve to null at appriate timeout for RPC method
+    let hops = 1;
+    if (method === 'signals') hops = rest[3] ? 15 : 2;
     return Node.delay(hops * this.constructor.maxPingMS, null);
   }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
@@ -208,7 +207,10 @@ export class Contact {
   }
 
   // Signaling
-  static forwardingTimeoutMS = 3/2 * this.maxPingMS - 0.2 * this.maxPingMS;
+  get forwardingTimeout() { // How long to wait for a recursive signals message to get halfway.
+    const roundTrip = this.rpcTimeout('signals', 0, 1, 2, []);
+    return roundTrip - this.maxPingMS;
+  }
   async messageSignals(signals) { // send signals through the network, promising the response signals.
     // If contact cannot be reached, remove it and promise [].
     if (this.host.isStopped()) return [];
@@ -226,29 +228,33 @@ export class Contact {
 	if (!sponsor.connection) continue;
 	const response = await sponsor.sendRPC('signals', this.key, payload);
 	//this.host.xlog('sponsor:', sponsor.sname, 'response:', response);
-	if (response) return response.result || [];
+	if (response) return response;
 	//this._sponsors.delete(sponsor.key); // FIXME: but it might be ok next time.
       }
       return null;
     };
     const try1 = await trySponsors();
-    if (try1) return try1;
+    if (try1) return try1.result || [];
+    await Node.delay(100); // TODO: Why is this necessary, and how long is enough?
+    const try2 = await trySponsors();
+    if (try2) { this.host.xlog('Sponsored result from', this.sname, 'on second try.'); return try2.result || []; } // TODO: why does this ever fire?
 
     if (this.host.isStopped()) return [];
-    if (this.node.isRunning)
-      this.host.log('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.');
 
+    const reportEmpty = this.isRunning; // Of course, this is only ever false in simulations.
+    if (reportEmpty) this.host.log('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.'); // No result yet to see if it is empty, but useful in debugging.
     const start = Date.now();
-    const response = await this.host.recursiveSignals(this.key, payload, [], Date.now + this.constructor.forwardingTimeoutMS, this.name);
+    const response = await this.host.recursiveSignals(this.key, payload, [], Date.now() + this.forwardingTimeout, this.sname);
+
+    if (!response && reportEmpty) {
+      this.host.xlog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      return this.checkSignals(null);
+    }
+    
     const {forwardingExclusions, result} = response || {};
-    const elapsed = Date.now() - start;
-    if (!!this.isRunning !== !!result) // Of course, only simulations can really know isRunning to be false.
-      this.host.ilog('Recursive', response ? 'data from' : 'failure from', this.sname,
-		     'in', forwardingExclusions?.length || 'unknown', 'steps over',
-		     elapsed, 'ms, after trying',
-		     sponsors.length, 'sponsors.',
-		    );
-    if (this.host.isStopped()) return [];
+    if (!result && reportEmpty) {
+      this.host.xlog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+    }
     return this.checkSignals(result);
   }
   async checkSignals(signals) {

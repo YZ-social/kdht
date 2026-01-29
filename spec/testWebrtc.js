@@ -17,7 +17,7 @@ describe("DHT write/read", function () {
   const logicalCores = availableParallelism();
   console.log(`Model description "${cpus()[0].model}", ${logicalCores} logical cores.`);
   const nPortals = Math.max(2, logicalCores - 1);
-  const thrash = false;
+  const thrash = true;
   const nBots = Math.max(2, (thrash ? 0.5 : 1) * logicalCores);
   const fixedSpacing  = 2; // Between portals.
   const variableSpacing = 5; // Additional random between portals.

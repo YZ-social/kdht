@@ -154,7 +154,7 @@ describe("DHT", function () {
 	  console.log(new Date(), 'writing');
 	  elapsed = await timed(async _ => nWritten = await serialWriteAll(), // Alt: serial/parallelWriteAll
 				elapsed => `Wrote ${nWritten} / ${elapsed} = ${Math.round(nWritten/elapsed)} nodes/second.`);
-	}, setupTimeMS + runtimeBeforeWriteMS + runtimeBeforeWriteMS + 5 * setupTimeMS);
+	}, 10 * setupTimeMS + 10/*6*/ * runtimeBeforeWriteMS); // Pretty arbitrary. Things slow down when limiting maxTransports.
 	afterAll(async function () {
 	  console.log(new Date(), 'start client shutdown');
 	  //await Node.reportAll();
@@ -175,38 +175,24 @@ describe("DHT", function () {
 	  await timed(async _ => nRead = await serialReadAll(), // alt: serial/parallelReadAll
 		      elapsed => `Read ${nRead} / ${elapsed} = ${Math.round(nRead/elapsed)} values/second.`);
 	  expect(nRead).toBe(nWritten);
-	}, 10 * setupTimeMS + 5 * runtimeBeforeReadMS);
+	}, 10 * setupTimeMS + 6 * runtimeBeforeReadMS);
       });
     });
   }
 
   // Each call here sets up a full suite of tests with the given parameters, which can be useful for development and debugging.
-  // For example:
-  test({maxClientNodes: 10, startThrashingBefore: 'never', runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0, notes: "Smoke"});
-  test({pingTimeMS: 0, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: "Runs flat out if probing and disconnects turned off."});
-  test({setupTimeMS: 1e3, pingTimeMS: 0, startThrashingBefore: 'never', notes: "Probing on, but no disconnects or network delay."});
-  test({pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small networks allow faster thrash smoke-testing."});
+  // For example, in the "small" cases, below, the number of nodes is capped such that everyone knows everyone else.
+
+  // Without disconnects (startThrashingBefore: 'never'):
+  test({maxClientNodes: 10, startThrashingBefore: 'never', runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0, notes: "Smoke: small stable."});
+  test({setupTimeMS: 50e3, startThrashingBefore: 'never', runtimeBeforeWriteMS: 5e3, notes: "Large stable."}); // On my machine, each node contects to less than the total.
+  test({maxTransports: 29, startThrashingBefore: 'never', runtimeBeforeWriteMS: 5e3, notes: "Limited connections on stable."}); // Meaningful maxTransports may depend on circumstances. Ensure "Dropping" logging in noteContactForTransport!
+
+  // With disconnects:
+  test({pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small-network thrashing."});
   test({notes: "Normal ops"});
-  test({setupTimeMS: 40e3, notes: "Bigger network overflowing bucket."});
-  
-  // test({maxClientNodes: 55, setupTimeMS: 240e3, pingTimeMS: 40, maxTransports: 62,
-  // 	//startThrashingBefore: 'never', runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0,
-  // 	notes: "Moderate transport-dropping for currently over-constricted contact limits."});
+  test({setupTimeMS: 40e3, notes: "Large-network thrashing."});
 
-
-  //test({maxTransports: 85, maxClientNodes: 90, pingTimeMS: 10, setupTimeMS: 20e3, notes: "Limit number of transports enough to exercise the reconnect logic."});
-  //test({maxClientNodes: 140, setupTimeMS: 60e3, pingTimeMS: 10, notes: "Relatively larger network size."});
-
-  //test({maxTransports: 95, maxClientNodes: 100, refreshTimeIntervalMS: 0, startThrashingBefore: 'never', notes: 'dev: no refresh, no thrashing'});
-  //test({maxTransports: 95, maxClientNodes: 100, startThrashingBefore: 'never', notes: 'dev: no thrashing'});
-
-  //test({maxClientNodes: 7, nServerNodes: 5, refreshTimeIntervalMS: 3e3, runtimeBeforeWriteMS: 0e3, runtimeBeforeReadMS: 0e3, startThrashingBefore: 'never'});
-  //test({maxClientNodes: 3, nServerNodes: 3, startThrashingBefore: 'never', refreshTimeIntervalMS: 3e3, runtimeBeforeWriteMS: 6e3, runtimeBeforeReadMS: 6e3});
-
-  
-  // TODO:
-  // Persistence Test that joins+writes one at a time until period, runs 3xperiod, then quits one a time until gone, then one node join and reads all
-  // collect and confirm data from each node on shutdown.
-  // pub/sub
-  // 1k nodes
+  // Not working reliably yet!
+  //test({maxTransports: 30, notes: "Limited connections on thrashing."}); // See comment for "Meansingful maxTransports, above.
 });

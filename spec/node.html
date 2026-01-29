@@ -30,13 +30,14 @@
 	const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
 	await contact.join(bootstrapContact);
 	update.onclick();
+	return contact;
       }
 
       update.onclick = () => {
         const report = contact.node.report(null);
         display.textContent = report;
       };
-      await connect();
+      window.contact = await connect();
 
       write.onclick = () => contact.storeValue(key.value, writeValue.value);
       read.onclick = () => contact.node.locateValue(key.value).then(value => readValue.value = value);
