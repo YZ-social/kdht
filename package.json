@@ -1,6 +1,6 @@
 {
   "name": "@yz-social/kdht",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Pure Kademlia base, for testing variations.",
   "exports": {
     ".": "./index.js",
@@ -14,11 +14,11 @@
     "background": "npm stop; (npm start 1>server.log 2>&1 &); sleep 1",
     "bots": "node spec/bots.js",
     "thrashbots": "node spec/bots.js --thrash",
-    "testWebrtc": "npx jasmine spec/webrtcTests.js",
+    "testWebrtc": "npx jasmine spec/testWebrtc.js",
     "test": "npx jasmine && npm run testWebrtc && echo '-- SUCCESS --' || echo '**** FAIL ****'"
   },
   "dependencies": {
-    "@yz-social/webrtc": "^0.1.2",
+    "@yz-social/webrtc": "^0.1.3",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

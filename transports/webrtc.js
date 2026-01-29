@@ -12,8 +12,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get isServerNode() { return this.node.isServerNode; } // It it reachable through a server.
 
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
-    if (!response) return;
-    if (!response.ok) throw new Error(`fetch ${response.url} failed ${response.status}: ${response.statusText}.`);
+    if (response?.ok) return true;
+    this.host.xlog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);
+    return false;
   }
   // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
   // https://github.com/nodejs/undici/issues/3492
@@ -21,7 +22,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // worker index or the string 'random' to an available sname to which we can connect().
     const url = `${baseURL}/name/${label}`;
     const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.xlog(e));
-    this.checkResponse(response);
+    if (!this.checkResponse(response)) return this.fetchBootstrap(baseURL, label);
     return await response.json();
   }
   async fetchSignals(url, signalsToSend) { 
@@ -30,7 +31,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
       body: JSON.stringify(signalsToSend)
     }).catch(e => this.host.xlog(e));
-    this.checkResponse(response);
+    if (!this.checkResponse(response)) return this.fetchSignals(url, signalsToSend);
     return this.checkSignals(await response?.json());
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
@@ -73,7 +74,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       this.webrtc = this.connection = this.unsafeData = null;
     };
     if (initiate) {
-      if (bootstrapHost/* || isServerNode*/) {
+      if (bootstrapHost && !host.connections.length) {
 	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${host.contact.sname}/${this.sname}`;
 	this.webrtc.transferSignals = signals => this.fetchSignals(url, signals);
       } else {
@@ -101,6 +102,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     }
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
+	if (this.host.isStopped()) return;
 	const now = Date.now();
 	this.host.ilog('Unable to connect to', this.sname);
 	// this.host.xlog('**** connection timeout', this.sname, now - start,

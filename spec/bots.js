@@ -17,7 +17,7 @@ const argv = yargs(hideBin(process.argv))
 	alias: 'n',
 	alias: 'nbots',
 	type: 'number',
-	default: Math.max(logicalCores / 2, 2),
+	default: logicalCores,
 	description: "The number of bots, which can only be reached through the network."
       })
       .option('baseURL', {
@@ -55,7 +55,7 @@ const host = uuidv4();
 process.title = 'kdht-bot-' + host;
 
 if (cluster.isPrimary) {
-  console.log(`${cpus()[0].model}, ${logicalCores} logical cores. Starting ${argv.nBots} over ${Node.refreshTimeIntervalMS/1000} seconds.`);
+  console.log(`${cpus()[0].model}, ${logicalCores} logical cores. Starting ${argv.nBots} ${argv.thrash ? 'thrashbots' : 'bots'} over ${Node.refreshTimeIntervalMS/1000} seconds.`);
   for (let i = 1; i < argv.nBots; i++) { // The cluster primary becomes bot 0.
     cluster.fork();
   }
