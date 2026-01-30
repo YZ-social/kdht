@@ -2,7 +2,6 @@
 import {cpus, availableParallelism } from 'node:os';
 import cluster from 'node:cluster';
 import process from 'node:process';
-import { launchWriteRead } from './writes.js';
 import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 import yargs from 'yargs';
@@ -30,13 +29,6 @@ const argv = yargs(hideBin(process.argv))
 	default: false,
 	description: "Do bots randomly disconnect and reconnect with no memory of previous data?"
       })
-      .option('nWrites', {
-	alias: 'w',
-	alias: "nwrites",
-	type: 'number',
-	default: 0,
-	description: "The number of test writes to check."
-      })
       .option('info', {
 	alias: 'i',
 	type: 'boolean',
@@ -63,11 +55,6 @@ if (cluster.isPrimary) {
     console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
     cluster.fork();
   });
-  if (argv.nWrites) {
-    console.log(new Date(), 'Waiting a refresh interval while bots get randomly created before write/read test');
-    await Node.delay(2 * Node.refreshTimeIntervalMS);
-    launchWriteRead(argv.nWrites, argv.baseURL, Node.refreshTimeIntervalMS, argv.verbose);
-  }  
 }
 
 await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));

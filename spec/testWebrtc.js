@@ -36,7 +36,7 @@ describe("DHT write/read", function () {
     function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
 
     console.log(new Date(), 'starting', nPortals, 'portals over', portalSeconds, 'seconds');
-    portalProcess = spawn('node', [path.resolve(__dirname, 'portal.js'), '--nPortals', nPortals, '--info', botInfo, '--verbose', verbose.toString()]);
+    portalProcess = spawn('node', [path.resolve(__dirname, '../scripts/portal.js'), '--nPortals', nPortals, '--info', botInfo, '--verbose', verbose.toString()]);
     if (showPortals) {
       portalProcess.stdout.on('data', echo);
       portalProcess.stderr.on('data', echo);
@@ -45,7 +45,7 @@ describe("DHT write/read", function () {
 
     if (nBots) {
       console.log(new Date(), 'starting', nBots, thrash ? 'thrashbots' : 'bots', 'over', botsMilliseconds/1e3, 'seconds');
-      botProcess = spawn('node', [path.resolve(__dirname, 'bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--info', botInfo, '--verbose', verbose.toString()]);
+      botProcess = spawn('node', [path.resolve(__dirname, '../scripts/bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--info', botInfo, '--verbose', verbose.toString()]);
       if (showBots) {
 	botProcess.stdout.on('data', echo);
 	botProcess.stderr.on('data', echo);

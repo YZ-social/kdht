@@ -9,12 +9,12 @@
   },
   "type": "module",
   "scripts": {
-    "start": "node spec/portal.js --externalBaseURL https://ki1r0y.com/kdht",
+    "start": "node scripts/portal.js --externalBaseURL https://ki1r0y.com/kdht",
     "stop": "pkill kdht",
     "background": "npm stop; (npm start 1>server.log 2>&1 &); sleep 1",
-    "withoutExternal": "node spec/portal.js",
-    "bots": "node spec/bots.js",
-    "thrashbots": "node spec/bots.js --thrash",
+    "withoutExternal": "node scripts/portal.js",
+    "bots": "node scripts/bots.js",
+    "thrashbots": "node scripts/bots.js --thrash",
     "testWebrtc": "npx jasmine spec/testWebrtc.js",
     "test": "npx jasmine && npm run testWebrtc && echo '-- SUCCESS --' || echo '**** FAIL ****'"
   },

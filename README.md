@@ -38,22 +38,20 @@ To form that initial connection to another node, a new unconnected node must go 
 
 ### Scripts
 
-The [NodeJS](https://nodejs.org/) script [`portals.js`](./scripts/portals.js) runs a little [ExpressJS](https://expressjs.com/) Web server and associated portal nodes. (See [Connecting](#connecting), above.). Each portal node is run its own NodeJS sub-process (using NodeJS's [`cluster`](https://nodejs.org/api/cluster.html) mechanism). By default, it runs one portal node for each CPU core but one, allowing one core for the Web server process. The portal nodes are started one at a time, with each after the first connecting to one of the previous portal nodes through the script's own Web server at `http://localhost:3000/kdht`. 
+The [NodeJS](https://nodejs.org/) script [`portal.js`](./scripts/portal.js) runs a little [ExpressJS](https://expressjs.com/) Web server and associated portal nodes. (See [Connecting](#connecting), above.). Each portal node is run its own NodeJS sub-process (using NodeJS's [`cluster`](https://nodejs.org/api/cluster.html) mechanism). By default, it runs one portal node for each CPU core but one, allowing one core for the Web server process. The portal nodes are started one at a time, with each after the first connecting to one of the previous portal nodes through the script's own Web server at `http://localhost:3000/kdht`. 
 - If an `externalBaseURL` is specified, the first portal node will connect to the compatible portal server running at the specified URL, forming one big network. Otherwise, the portal nodes and any other nodes that connect to it will be distinct. 
 - `npm start` runs the script to connect with ki1r0y.com/kdht, while `npm run withoutExternal` runs separately. 
-- The ExpressJS routing parts of `portals.js` is also available separately as `router.js`, so that it can be used as middleware within existing ExpressJS applications.
-- A very basic Web page is also servered at `http://localhost:3000/portal/node.html` that joins the same network.
+- The ExpressJS routing parts of `portal.js` is also available separately as `router.js`, so that it can be used as middleware within existing ExpressJS applications.
+- A very basic Web page is also servered at `http://localhost:3000/node.html` that joins the same network.
 
-Once one instance of `portals.js` is running, the script [`bots.js`](./scripts/bots.js) can be run any number of times, depending on what the computer can handle.
-
+Once one instance of `portal.js` is running, the script [`bots.js`](./scripts/bots.js) can be run any number of times (subject to what the computer can handle). Each invocation launches more nodes that connect through the local portal server. These bots can be stable, or they can be told to periodically disconnect and reconnect for testing. The default number of bots is half the number of logical cores on the computer. The script can be run with `npm run bots` and `npm run thrashbots`.
 
 
 ### Testing
 
-We use the [https://jasmine.github.io/](Jasmine) test framework.
-
+We use the [https://jasmine.github.io/](Jasmine) test framework:
 - `npx jasmine` runs all the test that use only simulated network connections. In particular, `npx jasmine spec/dhtSimulationsSpec.js` runs several customizable variations of network behavior.
-- `npx jasmine spec/testWebrtc.js` runs the portals and bots scripts, and creates a node that interacts with them.
+- `npx jasmine spec/testWebrtc.js` runs the portals and bots scripts, creates a node that interacts with them, and shuts down the portals and bots.
 - `npm test` runs all of these.
 
 

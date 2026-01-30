@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 import process from 'node:process';
 import cluster from 'node:cluster';
-import { spawn } from 'node:child_process'; // For optionally spawning bots.js
-import { launchWriteRead } from './writes.js';
 import express from 'express';
 import logger from 'morgan';
 import path from 'path';
@@ -23,24 +21,6 @@ const argv = yargs(hideBin(process.argv))
 	type: 'number',
 	default: Math.max(2, logicalCores - 1),
 	description: "The number of steady nodes that handle initial connections."
-      })
-      .option('nBots', {
-	alias: 'nbots',
-	alias: 'n',
-	type: 'number',
-	default: 0,
-	description: "If non-zero, spawns bots.js with the given nBots."
-      })
-      .option('thrash', {
-	type: 'boolean',
-	default: false,
-	description: "Do the nBots randomly disconnect and reconnect with no memory of previous data?"
-      })
-      .option('nWrites', {
-	alias: 'w',
-	type: 'number',
-	default: 0,
-	description: "The number of test writes to pass to bots.js."
       })
       .option('baseURL', {
 	type: 'string',
@@ -95,7 +75,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
     app.use(logger(':date[iso] :status :method :url :res[content-length] - :response-time ms'));
 
   for (let i = 0; i < argv.nPortals; i++) cluster.fork();
-  const portalServer = await import('../portals/router.js');
+  const portalServer = await import('./router.js');
   
   // Portal server
   app.set('port', parseInt((new URL(argv.baseURL)).port || '80'));
@@ -107,24 +87,9 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   app.listen(app.get('port'));
   const startupSeconds = argv.fixedSpacing * argv.nPortals + 1.5 * argv.variableSpacing;
   console.log(`Starting ${argv.nPortals} portals over ${startupSeconds} seconds.`);
-  if (argv.nBots || argv.nWrites) await Node.delay(startupSeconds * 1e3);
-  if (argv.nBots) {
-    const args = ['spec/bots.js', '--nBots', argv.nBots, '--baseURL', argv.baseURL, '--thrash', argv.thrash || false, '--verbose', argv.verbose || false];
-    if (argv.verbose) console.log('spawning node', args.join(' '));
-    const bots = spawn('node', args, {shell: process.platform === 'win32'});
-    // Slice off the trailing newline of data so that we don't have blank lines after our console adds one more.
-    function echo(data) { data = data.slice(0, -1); console.log(data.toString()); }
-    bots.stdout.on('data', echo);
-    bots.stderr.on('data', echo);
-    if (argv.nWrites) {
-      console.log(new Date(), 'Waiting a refresh interval while', argv.nBots, 'bots get randomly created before write/read test.');
-      await Node.delay(2 * Node.refreshTimeIntervalMS);
-    }
-  }
-  if (argv.nWrites) launchWriteRead(argv.nWrites, argv.baseURL, argv.nBots ? 2 * Node.refreshTimeIntervalMS : 0, argv.verbose);
 
 } else { // A portal node through which client's can connect.
-  const PortalNode = await import('../portals/node.js');
+  const PortalNode = await import('./node.js');
   const {baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, verbose} = argv;
   const contact = await PortalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, debug: verbose});
   function report() {
