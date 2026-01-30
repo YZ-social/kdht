@@ -3,7 +3,7 @@ import cluster from 'node:cluster';
 import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 
-export async function setup({baseURL, externalBaseURL = '', debug, fixedSpacing, info, variableSpacing}) {
+export async function setup({baseURL, externalBaseURL = '', info = true, debug, fixedSpacing, variableSpacing}) {
   const hostName = uuidv4();
   process.title = 'kdht-portal-' + hostName;
   // For debugging:

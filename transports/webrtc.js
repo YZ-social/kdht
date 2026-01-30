@@ -67,6 +67,14 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     this.closed = promise;
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
 					     debug: host.debug,
+					     configuration: {iceServers: [
+					       {urls: [
+						 'stun:stun1.l.google.com:19302',
+						 'stun:stun2.l.google.com:19302',
+						 'stun:stun3.l.google.com:19302',
+						 'stun:stun4.l.google.com:19302'
+					       ]},
+					     ]},
 					     polite: this.host.key < this.node.key});
     const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
