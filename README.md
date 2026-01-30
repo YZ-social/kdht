@@ -39,7 +39,7 @@ When a node initiates a WebRTC connection to another node, the second node might
 
 The number of open WebRTC connections is capped to a platform-specific number based on experimental findings. When that number has been exceeded in a node, the node finds a connection to drop from among its `looseContacts` and its `KBucket`s.
 
-The 
+In the original Kademlia, a `ping` RPC was sent to nodes during `KBucket` maintenance to see if they were still alive. In our case, we have a long-lived connection that closes. Further, browsers usually give us a chance to "clean up" when the page is closed, and so we have the opportunity to send an appropriate message when leaving. Thus we don't have to wait for WebRTC to time out. When we receive such closures, we delete the `Contact` `connection`, and we check for this rather than sending a `ping` RPC.
 
 ### Scripts
 
@@ -51,7 +51,6 @@ The [NodeJS](https://nodejs.org/) script [`portal.js`](./scripts/portal.js) runs
 
 Once one instance of `portal.js` is running, the script [`bots.js`](./scripts/bots.js) can be run any number of times (subject to what the computer can handle). Each invocation launches more nodes that connect through the local portal server. These bots can be stable, or they can be told to periodically disconnect and reconnect for testing. The default number of bots is half the number of logical cores on the computer. The script can be run with `npm run bots` and `npm run thrashbots`.
 
-
 ### Testing
 
 We use the [https://jasmine.github.io/](Jasmine) test framework:
@@ -59,4 +58,6 @@ We use the [https://jasmine.github.io/](Jasmine) test framework:
 - `npx jasmine spec/testWebrtc.js` runs the portals and bots scripts, creates a node that interacts with them, and shuts down the portals and bots.
 - `npm test` runs all of these.
 
+### Future Work
 
+We currently follow the original Kademlia, in which each node probes the network by iteratively connecting with nodes successively closer to a target key, and asking each for better information before contacting the next. Subsequent work (e.g., [R5N](https://grothoff.org/christian/nss2011.pdf)) uses recursive routing, where one node asks a connected contact for information, who asks another, etc., with the response _and_ information about the network comming back to the callers. This indirect connection mechanism is more private, like onion-routing, and we would like to move to this. We already have a weak form of this for passing signals to a target with which we want to connect.

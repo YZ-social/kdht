@@ -29,7 +29,7 @@ export class NodeMessages extends NodeContacts {
     // Handle an exchange of signals, with a response that may include {result, forwardingExclusions}. See code.
 
     if (!this.isRunning) { // In case it happens in simulations.
-      //this.xlog('\n*** not running ***');
+      //this.flog('\n*** not running ***');
       return null;  //{forwardingExclusions}; // FIXME
     }
 
@@ -53,7 +53,7 @@ export class NodeMessages extends NodeContacts {
     if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, Contact.forwardingTimeoutMS, targetNameForDebugging);
 
     // We were a sponsor but for a contact has since disconnected. We do not know if they are still connected to others.
-    //this.xlog('\n*** sponsored disconnected ***');
+    //this.flog('\n*** sponsored disconnected ***');
     return {forwardingExclusions}; // FIXME: Is this definitively right, or should we answer null here?
   }
   static maxTries = Math.pow(this.alpha, 3); // alpha tries at each of three deep, or equivalent.
@@ -62,11 +62,11 @@ export class NodeMessages extends NodeContacts {
     // So bound our branching.
     let remainingThisNode = this.constructor.alpha; // If it's good enough for probing, then it's good enough here.
     if (Date.now() > expiration) {
-      this.xlog('abandoning recursive path towards', targetNameForDebugging, 'by timeout through', forwardingExclusions.join(', '));
+      this.flog('abandoning recursive path towards', targetNameForDebugging, 'by timeout through', forwardingExclusions.join(', '));
       return null;
     }
     if (forwardingExclusions.length > this.constructor.maxTries) {
-      this.xlog('abandoning recursive path towards', targetNameForDebugging, 'wandering through', forwardingExclusions.join(', '));
+      this.flog('abandoning recursive path towards', targetNameForDebugging, 'wandering through', forwardingExclusions.join(', '));
       return {forwardingExclusions};
     }
     const helpers = this.findClosestHelpers(key);
@@ -79,12 +79,12 @@ export class NodeMessages extends NodeContacts {
       if (!contact.connection) continue;
       if (forwardingExclusions.includes(contact.name)) continue;
       this.constructor.assert(contact.key !== this.key, 'forwarding through self');
-      //this.xlog('forwarding through', contact.sname);
+      //this.flog('forwarding through', contact.sname);
       const response = await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
       if (response) {
 	return response;
       } else { // No response at all: continue with further calls that exclude contact.
-	//this.xlog('No forwarding response from', contact.sname, );
+	//this.flog('No forwarding response from', contact.sname, );
 	forwardingExclusions.push(contact.name);
       }
     }
@@ -99,7 +99,7 @@ export class NodeMessages extends NodeContacts {
     this.constructor.assert(sender.host.key === this.key, 'sender', sender.host.name, 'not on receiver', this.name);
     this.addToRoutingTable(sender); // sender exists, so add it to the routing table.
     if (!(method in this)) {
-      this.xlog('Does not handle method', method);
+      this.flog('Does not handle method', method);
       return null;
     }
     return this[method](...rest);

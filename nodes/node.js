@@ -58,7 +58,7 @@ export class Node extends NodeProbe {
 
     // Early exit if this node is no longer running (e.g., disconnected during scheduled replication)
     if (!this.isRunning) {
-      if (trace) this.xlog(`storeValue(${targetKey}, ${value}): aborted - node disconnected`);
+      if (trace) this.flog(`storeValue(${targetKey}, ${value}): aborted - node disconnected`);
       return 0;
     }
 
@@ -71,11 +71,11 @@ export class Node extends NodeProbe {
 
     // Check again after the async locateNodes call
     if (!this.isRunning) {
-      if (trace) this.xlog(`storeValue(${targetKey}, ${value}): aborted after locateNodes - node disconnected`);
+      if (trace) this.flog(`storeValue(${targetKey}, ${value}): aborted after locateNodes - node disconnected`);
       return 0;
     }
 
-    if (trace) this.xlog(`storeValue(${targetKey}): locateNodes found ${helpers.length} helpers`);
+    if (trace) this.flog(`storeValue(${targetKey}): locateNodes found ${helpers.length} helpers`);
     helpers = helpers.reverse(); // So we can save best-first by popping off the end.
     const storedTo = []; // Track where we stored for diagnostics
     // TODO: batches in parallel, if the client and network can handle it. (For now, better to spread it out.)
@@ -88,7 +88,7 @@ export class Node extends NodeProbe {
         storedTo.push(helper.name);
       } else if (!this.isRunning) {
         // Node disconnected mid-replication - no point continuing
-        if (trace) this.xlog(`storeValue(${targetKey}, ${value}): aborted mid-store - node disconnected`);
+        if (trace) this.flog(`storeValue(${targetKey}, ${value}): aborted mid-store - node disconnected`);
         return k - remaining;
       }
     }
@@ -101,7 +101,7 @@ export class Node extends NodeProbe {
       } else if (helpers.length === 0 && storedCount < k) {
         reason = ' (insufficient nodes found)';
       }
-      this.xlog(`storeValue(${targetKey}, ${value}): stored to ${storedCount}/${k} nodes${storedTo.length ? ': ' + storedTo.join(', ') : ''}${reason}`);
+      this.flog(`storeValue(${targetKey}, ${value}): stored to ${storedCount}/${k} nodes${storedTo.length ? ': ' + storedTo.join(', ') : ''}${reason}`);
     }
     return k - remaining;
   }

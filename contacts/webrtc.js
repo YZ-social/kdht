@@ -13,7 +13,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (response?.ok) return true;
-    this.host.xlog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);
+    this.host.flog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);
     return false;
   }
   // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
@@ -21,7 +21,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async fetchBootstrap(baseURL, label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
     // worker index or the string 'random' to an available sname to which we can connect().
     const url = `${baseURL}/name/${label}`;
-    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.xlog(e));
+    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.flog(e));
     if (!this.checkResponse(response)) return this.fetchBootstrap(baseURL, label);
     return await response.json();
   }
@@ -30,13 +30,13 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
       body: JSON.stringify(signalsToSend)
-    }).catch(e => this.host.xlog(e));
+    }).catch(e => this.host.flog(e));
     if (!this.checkResponse(response)) return this.fetchSignals(url, signalsToSend);
     return this.checkSignals(await response?.json());
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
     // new contact on host to receive them, and promising a response.
-    //this.host.xlog('contact signals', senderSname, signals);
+    //this.host.flog('contact signals', senderSname, signals);
     let contact = await this.ensureRemoteContact(senderSname);
 
     if (contact.webrtc?.pc) return await contact.webrtc.respond(signals);
@@ -100,7 +100,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       dataChannel.addEventListener('close', onclose);
       dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
       if (this.info || this.debug) await webrtc.reportConnection(true);
-      if (webrtc.statsElapsed > 500) this.host.xlog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
+      if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
       this.unsafeData = dataChannel;
       return dataChannel;
     });
@@ -113,12 +113,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	if (this.host.isStopped()) return;
 	const now = Date.now();
 	this.host.ilog('Unable to connect to', this.sname);
-	// this.host.xlog('**** connection timeout', this.sname, now - start,
-	// 	       'status:', webrtc.pc.connectionState, 'signaling:', webrtc.pc.signalingState,
-	// 	       'last signal:', now - webrtc.lastOutboundSignal,
-	// 	       'last send:', now - webrtc.lastOutboundSend,
-	// 	       'last response:', now - webrtc.lastResponse,
-	// 	       '****');
 	onclose();
 	this.host.removeContact(this); // fixme?
 	expired(null);
@@ -129,7 +123,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Creates a connected WebRTC instance.
     const contact = this.host.noteContactForTransport(this);
-    ///if (contact.connection) contact.host.xlog('connect existing', contact.sname, contact.counter);
+    ///if (contact.connection) contact.host.flog('connect existing', contact.sname, contact.counter);
 
     const { host, node, isServerNode, bootstrapHost } = contact;
     // Anyone can connect to a server node using the server's connect endpoint.

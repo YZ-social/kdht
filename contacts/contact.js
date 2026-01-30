@@ -147,7 +147,7 @@ export class Contact {
     if (!sender.isRunning) return null; // sender closed before call.
     if (sender.key === this.key) { // self-send short-circuit
       const result = this.host.receiveRPC(method, sender, ...rest);
-      if (!result) this.host.xlog('no local result');
+      if (!result) this.host.flog('no local result');
       return result;
     }
     if (!await this.connect()) return null;
@@ -178,7 +178,7 @@ export class Contact {
       this.disconnectTransport();
       // Kludge: In testing, it is possible for a disconnecting node to send a request that will respond to a new session of the same id.
     } else if (typeof(data[0]) !== 'string' || data[0] === 'pong') {
-      ; //this.host.xlog(this.counter, 'received result without responder', messageTag, data, 'at', this.sname);
+      ; //this.host.flog(this.counter, 'received result without responder', messageTag, data, 'at', this.sname);
     } else if (data[0] === 'close') {
       this.close();
     } else if (data[0] === 'bye') {
@@ -222,12 +222,12 @@ export class Contact {
     
     // Try sponsors first. (Just two round trips if connected.)
     const sponsors = Array.from(this._sponsors.values());
-    //this.host.xlog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
+    //this.host.flog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
     const trySponsors = async () => {
       for (const sponsor of sponsors) {
 	if (!sponsor.connection) continue;
 	const response = await sponsor.sendRPC('signals', this.key, payload);
-	//this.host.xlog('sponsor:', sponsor.sname, 'response:', response);
+	//this.host.flog('sponsor:', sponsor.sname, 'response:', response);
 	if (response) return response;
 	//this._sponsors.delete(sponsor.key); // FIXME: but it might be ok next time.
       }
@@ -237,7 +237,7 @@ export class Contact {
     if (try1) return try1.result || [];
     await Node.delay(100); // TODO: Why is this necessary, and how long is enough?
     const try2 = await trySponsors();
-    if (try2) { this.host.xlog('Sponsored result from', this.sname, 'on second try.'); return try2.result || []; } // TODO: why does this ever fire?
+    if (try2) { this.host.flog('Sponsored result from', this.sname, 'on second try.'); return try2.result || []; } // TODO: why does this ever fire?
 
     if (this.host.isStopped()) return [];
 
@@ -247,13 +247,13 @@ export class Contact {
     const response = await this.host.recursiveSignals(this.key, payload, [], Date.now() + this.forwardingTimeout, this.sname);
 
     if (!response && reportEmpty) {
-      this.host.xlog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
       return this.checkSignals(null);
     }
     
     const {forwardingExclusions, result} = response || {};
     if (!result && reportEmpty) {
-      this.host.xlog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
     }
     return this.checkSignals(result);
   }

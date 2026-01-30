@@ -41,7 +41,7 @@ export class NodeConnections extends NodeStorage {
       }
       let dropped = removeLast(this.looseContacts);
       if (dropped) {
-	this.xlog('dropping loose transport', dropped.name);
+	this.flog('dropping loose transport', dropped.name);
       } else { // Find the bucket with the most connections.
 	let bestBucket = null, bestCount = 0;
 	this.forEachBucket(bucket => {
@@ -52,8 +52,8 @@ export class NodeConnections extends NodeStorage {
 	  return true;
 	});
 	dropped = removeLast(bestBucket.contacts);
-	if (!dropped) this.xlog('Unable to find something to drop in', this.report(null));
-	else this.xlog('dropping transport', dropped.name, 'in bucket', bestBucket.index, 'among', bestCount, 'contacts.');
+	if (!dropped) this.flog('Unable to find something to drop in', this.report(null));
+	else this.flog('dropping transport', dropped.name, 'in bucket', bestBucket.index, 'among', bestCount, 'contacts.');
       }
       dropped.disconnectTransport();
     }

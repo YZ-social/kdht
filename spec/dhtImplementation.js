@@ -77,12 +77,12 @@ export async function read1(contact, key) {
     if (retrieved === undefined) {
       const now = Date.now();
       const lifetime = now - promised.creationTimestamp;
-      promised.host.xlog('could not locate the value at key', key, 'from node joined', lifetime/1e3, 'seconds ago, and having', promised.host.contacts.length, 'contacts, Refreshing buckets and trying again.');
+      promised.host.flog('could not locate the value at key', key, 'from node joined', lifetime/1e3, 'seconds ago, and having', promised.host.contacts.length, 'contacts, Refreshing buckets and trying again.');
       for (const bucket of promised.host.routingTable.values()) { // Alas, forEachBucket does not await calls on bucket.
 	await bucket.refresh();
       }
       retrieved = await promised.node.locateValue(key);
-      if (retrieved === undefined) promised.host.xlog('still unable to locate the value at', key);
+      if (retrieved === undefined) promised.host.flog('still unable to locate the value at', key);
     }
     return promised;
   });
