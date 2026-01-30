@@ -88,7 +88,7 @@ export class NodeMessages extends NodeContacts {
 	forwardingExclusions.push(contact.name);
       }
     }
-    this.xlog('Unable to forward recursive signals to', targetNameForDebugging, 'among', contacts.filter(c => c.connection).length, 'available contacts.');
+    this.log('Unable to forward recursive signals to', targetNameForDebugging, 'among', contacts.filter(c => c.connection).length, 'available contacts.');
     return null;
   }
 

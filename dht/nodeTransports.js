@@ -29,8 +29,11 @@ export class NodeTransports extends NodeStorage {
     
     if (this.nTransports >= this.constructor.maxTransports) { // Determine if we have to drop one first, and do so.
       //console.log(this.name, 'needs to drop a transport');
-      function removeLast(list) { // Remove and return the last element of list that has connction and is NOT sponsor.
-	const index = list.findLastIndex(element => element.connection && !contact.hasSponsor(element.key));
+      function removeLast(list) { // Remove and return the last element of list that has connection and is NOT sponsor.
+	// I have observed cases where a bunch of nodes run over as someone joins, and they all then try to remove the same
+	// most-recently added contact. So here instead of taking the last valid contact from the last, we take the last but [0..3].
+	let randomizer = Math.floor(Math.random() * 4);
+	const index = list.findLastIndex(element => element.connection && !contact.hasSponsor(element.key) && randomizer-- <= 0 );
 	if (index < 0) return null;
 	const sub = list.splice(index, 1);
 	return sub[0];
