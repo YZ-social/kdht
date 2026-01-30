@@ -2,7 +2,7 @@ import { NodeStorage } from './nodeStorage.js';
 import { WebRTC } from '@yz-social/webrtc';
 
 // Management of Contacts that have a limited number of connections that can transport messages.
-export class NodeTransports extends NodeStorage {
+export class NodeConnections extends NodeStorage {
   looseContacts = [];
   get nConnections() {
     // Extra work, just in case looseContacts has a dead connection somehow.

@@ -1,10 +1,10 @@
-import { NodeTransports } from './nodeTransports.js';
+import { NodeConnections } from './nodeConnections.js';
 import { Helper } from './helper.js';
 import { KBucket } from './kbucket.js';
 const { BigInt } = globalThis; // For linters.
 
 // Management of Contacts (but see nodeTransports, too)
-export class NodeContacts extends NodeTransports {
+export class NodeContacts extends NodeConnections {
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static commonPrefixLength(distance) { // Number of leading zeros of distance (within fixed keySize).
     if (distance === this.zero) return this.keySize; // I.e., zero distance => our own Node => 128 (i.e., one past the farthest bucket).
