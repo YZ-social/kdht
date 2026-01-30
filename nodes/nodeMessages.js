@@ -1,5 +1,5 @@
 import { NodeContacts } from './nodeContacts.js';
-import { Contact } from '../transports/contact.js';
+import { Contact } from '../contacts/contact.js';
 
 // The four methods we recevieve through RPCs.
 // These are not directly invoked by a Node on itself, but rather on other nodes
