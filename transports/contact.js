@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Node } from '../dht/node.js';
+import { Node } from '../nodes/node.js';
 
 export class Contact {
   // Represents an abstract contact from a host (a Node) to another node.

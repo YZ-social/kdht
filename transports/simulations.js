@@ -1,4 +1,4 @@
-import { Node } from '../dht/node.js';
+import { Node } from '../nodes/node.js';
 import { Contact } from './contact.js';
 
 export class SimulatedContact extends Contact {

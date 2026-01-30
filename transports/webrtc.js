@@ -1,7 +1,7 @@
 const { BigInt } = globalThis; // For linters.
 import { v4 as uuidv4 } from 'uuid';
-import { Node } from '../dht/node.js';
-import { Helper } from '../dht/helper.js';
+import { Node } from '../nodes/node.js';
+import { Helper } from '../nodes/helper.js';
 import { Contact } from './contact.js';
 import { WebRTC } from '@yz-social/webrtc';
 
