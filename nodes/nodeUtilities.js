@@ -60,14 +60,14 @@ export class NodeUtilities {
     stat.elapsed += Date.now() - startTimeMS;
   }
   report(logger = console.log) { // return logger( a string description of node )
-    let report = `Node: ${this.contact?.report || this.name}, ${this.nTransports} transports`;
+    let report = `Node: ${this.contact?.report || this.name}, ${this.nConnections} connections`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
 	Array.from(this.storage.entries()).map(([k, v]) => `${k}n: ${JSON.stringify(v)}`).join(', ');
     }
-    if (this.looseTransports.length) {
-      report += `\n  transports ${this.looseTransports.map(contact => contact.report).join(', ')}`;
+    if (this.looseContacts.length) {
+      report += `\n  transports ${this.looseContacts.map(contact => contact.report).join(', ')}`;
     }
     for (let index = 0; index < this.constructor.keySize; index++) {
       const bucket = this.routingTable.get(index);

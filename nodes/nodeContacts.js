@@ -58,25 +58,25 @@ export class NodeContacts extends NodeTransports {
   }
   get connections() {
     return this.contacts.filter(contact => contact.connection)
-      .concat(this.looseTransports.filter(contact => contact.connection));
+      .concat(this.looseContacts.filter(contact => contact.connection));
   }
   contactDictionary = {}; // maps name => contact for lifetime of Node instance until removeContact.
-  existingContact(name) { // Returns contact with the given name for this node, without searching buckets or looseTransports.
+  existingContact(name) { // Returns contact with the given name for this node, without searching buckets or looseContacts.
     return this.contactDictionary[name];
   }
   addExistingContact(contact) { // Adds to set of contactDictionary.
     this.contactDictionary[contact.name] = contact;
   }
-  findContact(match) { // Answer the contact for which match predicate is true, if any, whether in buckets or looseTransports. Does not remove it.
-    let contact = this.looseTransports.find(match);
+  findContact(match) { // Answer the contact for which match predicate is true, if any, whether in buckets or looseContacts. Does not remove it.
+    let contact = this.looseContacts.find(match);
     if (contact) return contact;
     this.forEachBucket(bucket => !(contact = bucket.contacts.find(match))); // Or we could compute index and look just there.
     return contact;
   }
-  findContactByKey(key) { // findContact matching the specified key. To be found, contact must be in routingTable or looseTransports (which is different from existingContact()).
+  findContactByKey(key) { // findContact matching the specified key. To be found, contact must be in routingTable or looseContacts (which is different from existingContact()).
     return this.findContact(contact => contact.key === key);
   }
-  ensureContact(contact, sponsor) { // Return existing contact, if any (including looseTransports), else clone a new one for this host. Set sponsor.
+  ensureContact(contact, sponsor) { // Return existing contact, if any (including looseContacts), else clone a new one for this host. Set sponsor.
     // I.e., a Contact with node: contact.node and host: this.
     // Subtle: Contact clone uses existingContact (above) to reuse an existing contact on the host, if possible.
     // This is vital for bookkeeping through connections and sponsorship.
@@ -84,10 +84,10 @@ export class NodeContacts extends NodeTransports {
     if (sponsor) contact.noteSponsor(sponsor);
     return contact;
   }
-  removeContact(contact) { // Removes from node entirely if present, from looseTransports or bucket as necessary, returning bucket if that's where it was, else null.
+  removeContact(contact) { // Removes from node entirely if present, from looseContacts or bucket as necessary, returning bucket if that's where it was, else null.
     delete this.contactDictionary[contact.name];
     const key = contact.key;
-    if (this.removeLooseTransport(key)) return null;
+    if (this.removeLooseContact(key)) return null;
     const bucketIndex = this.getBucketIndex(key);
     const bucket = this.routingTable.get(bucketIndex);
     // Host might not yet have added node or anyone else as contact for that bucket yet, so maybe no bucket.
@@ -106,7 +106,7 @@ export class NodeContacts extends NodeTransports {
     // Try to add to bucket
     const added = bucket.addContact(contact);
     if (added !== 'present') { // Not already tracked in bucket.
-      this.removeLooseTransport(contact.key); // Can't be in two places.
+      this.removeLooseContact(contact.key); // Can't be in two places.
       this.replicateCloserStorage(contact); // Asynchronous, but don't wait for it here.
     }
     return added;

@@ -50,7 +50,7 @@ describe("DHT internals", function () {
       });
       it("includes name, routing names and stored items by bigInt key.", function () {
 	let report = example.report(string => string); // No op for what to do with the report. Just return it.
-	expect(report).toBe(`Node: 0, 0 transports
+	expect(report).toBe(`Node: 0, 0 connections
   storing 2: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
   90 (2): 1n, 2n`);
       });
@@ -168,7 +168,7 @@ describe("DHT internals", function () {
       });
       it("reports name and bucket contents.", function () {
 	let report = node.report(string => string);
-	let expected = `Node: ${node.name}, 0 transports
+	let expected = `Node: ${node.name}, 0 connections
   0 (1): ${node.routingTable.get(0).contacts.map(c => c.key.toString() + 'n').join(', ')}
   10 (1): ${node.routingTable.get(10).contacts.map(c => c.key.toString() + 'n').join(', ')}
   60 (1): ${node.routingTable.get(60).contacts.map(c => c.key.toString() + 'n').join(', ')}

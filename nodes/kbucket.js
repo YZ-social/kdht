@@ -21,7 +21,7 @@ export class KBucket {
   get isFull() {  // Are we at capacity?
     return this.length >= this.node.constructor.k;
   }
-  get nTransports() { // How many of our contacts have their own transport connection?
+  get nConnections() { // How many of our contacts have their own transport connection?
     return this.contacts.reduce((accumulator, contact) => contact.connection ? accumulator + 1 : accumulator, 0);
   }
   get randomTarget() { // Return a key for which this.getBucketIndex will be the given bucketIndex.
@@ -64,13 +64,13 @@ export class KBucket {
     let added = this.removeKey(contact.key, false) || 'added';
     //this.node.log('addContact', contact.name, this.index, added, this.isFull ? 'full' : '');
     if (this.isFull) {
-      if (added === 'present') this.node.looseTransports.push(contact); // So no findContact will fail during ping. Should we instead serialize findContact?
+      if (added === 'present') this.node.looseContacts.push(contact); // So no findContact will fail during ping. Should we instead serialize findContact?
       const head = this.contacts[0];
       if (head.connection) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back, below.
       }
-      if (added === 'present') this.node.removeLooseTransport(contact.key);
+      if (added === 'present') this.node.removeLooseContact(contact.key);
       // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
       // Subtle: Don't remove before waiting for the ping, as there can be overlap with other activity that could
       // think there's room and thus add it twice.

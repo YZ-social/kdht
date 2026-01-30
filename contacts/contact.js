@@ -19,7 +19,7 @@ export class Contact {
     // Every Node caches a contact property for that Node as it's own host, and from which Contacts for other hosts may be cloned.
     node.contact ||= contact;
     contact.node = node;
-    contact.host = host; // In whose buckets (or looseTransports) does this contact live?
+    contact.host = host; // In whose buckets (or looseContacts) does this contact live?
     contact.counter = this.counter++;
     host.addExistingContact(contact); // After contact.node (and thus contact.namem) is set.
     return contact;
@@ -113,7 +113,7 @@ export class Contact {
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
     this.host.ilog('closing disconnected contact', this.sname);
     this.disconnectTransport(false);
-    this.host.removeLooseTransport(this.key); // If any.
+    this.host.removeLooseContact(this.key); // If any.
   }
   bye() { // The sender is disconnecting from the network
     this.host.ilog('removing disconnected contact', this.sname);

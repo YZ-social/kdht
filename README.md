@@ -35,6 +35,11 @@ When a node A needs to directly connect to another node B, A sends signals to B,
 
 To form that initial connection to another node, a new unconnected node must go through a "portal" server. This consists of an ordinary Web server that handles a GET request that answers the `name` of one of the nodes that are run by that server and with which the server can directly communicate. The joining node then makes a POST to that same server, specifying its own name and that of the portal's node, as well as the signals. The server passes those signals to the specified portal node, and responds with that portal node's answering signals.  As long as the joined node remains connected to any other node in the network, it will connect to other nodes by passing the signals through the network itsef, rather than the portal web server, even if connecting to a node that happens to be on the portal server.
 
+When a node initiates a WebRTC connection to another node, the second node might not have a `Contact` for the incoming node, and the receiving node should not make one until the connection is established. Further, the appopriate `KBucket` might already be full, and yet we still need to keep this new `Contact`. For these reasons, a `Node` maintains a list of `Contacts` for which a `connection` has been or is being made, called `looseContacts`. (This is somewhat similar to the "replacement cache" used in some DHT, but we do not yet use it for that specific purpose.)
+
+The number of open WebRTC connections is capped to a platform-specific number based on experimental findings. When that number has been exceeded in a node, the node finds a connection to drop from among its `looseContacts` and its `KBucket`s.
+
+The 
 
 ### Scripts
 
