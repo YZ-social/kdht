@@ -192,7 +192,7 @@ describe("DHT", function () {
   // With disconnects:
   test({pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small-network thrashing"});
   test({notes: "Normal ops"});
-  //test({setupTimeMS: 40e3, notes: "Large-network thrashing"});
+  test({setupTimeMS: 40e3, notes: "Large-network thrashing"});
 
   // Not working reliably yet!
   //test({maxTransports: 30, notes: "Limited connections on thrashing."}); // See comment for "Meansingful maxTransports, above.
