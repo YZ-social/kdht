@@ -5,7 +5,8 @@ import { WebRTC } from '@yz-social/webrtc';
 export class NodeTransports extends NodeStorage {
   looseContacts = [];
   get nConnections() {
-    let count = this.looseContacts.length;
+    // Extra work, just in case looseContacts has a dead connection somehow.
+    let count = this.looseContacts.reduce((accumulator, contact) => contact.connection ? accumulator + 1 : accumulator, 0);
     this.forEachBucket(bucket => (count += bucket.nConnections, true));
     return count;
   }

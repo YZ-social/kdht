@@ -78,8 +78,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 					     polite: this.host.key < this.node.key});
     const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
-      resolve(null); // closed promise
       this.webrtc = this.connection = this.unsafeData = null;
+      resolve(null); // closed promise
     };
     if (initiate) {
       if (bootstrapHost && !host.connections.length) {
@@ -200,7 +200,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     super.disconnectTransport(andNotify);
     Node.delay(100).then(() => { // Allow time for super to send close/bye message.
       this.webrtc?.close();
-      this.connection = this.webrtc = this.initiating = null;
+      this.connection = this.webrtc = null;
     });
   }
 }
