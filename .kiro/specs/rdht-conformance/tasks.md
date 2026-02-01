@@ -18,8 +18,8 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Property 1: RequestContext Round-Trip Serialization**
     - **Validates: Requirements 2.5, 2.6**
 
-- [ ] 2. Create DedupCache for message deduplication
-  - [ ] 2.1 Create dht/dedupCache.js with DedupCache class
+- [x] 2. Create DedupCache for message deduplication
+  - [x] 2.1 Create dht/dedupCache.js with DedupCache class
     - Implement constructor with maxSize and ttlMs parameters
     - Implement has() method with TTL checking
     - Implement add() method with size limit enforcement
@@ -27,7 +27,7 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - Implement evictStale() method
     - _Requirements: 3.1, 3.6_
   
-  - [ ] 2.2 Write property test for DedupCache TTL eviction
+  - [x] 2.2 Write property test for DedupCache TTL eviction
     - **Property 4: Deduplication Cache TTL Eviction**
     - **Validates: Requirements 3.1**
 
