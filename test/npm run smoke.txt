@@ -1,0 +1,72 @@
+$ npm run smoke
+
+> @yz-social/kdht@0.0.1 smoke
+> node spec/portal.js --nPortals 5 --nBots 5 --nWrites 100
+
+0 S85d9e897-f1f3-487c-98df-52af0b1c0304
+1 S3c6a4212-a3a0-48af-990f-f20fc2968108
+@S85d9e897-f1f3-487c-98df-52af0b1c0304 ==> S3c6a4212-a3a0-48af-990f-f20fc2968108 connected udp host 0.1
+@S3c6a4212-a3a0-48af-990f-f20fc2968108 ==> S85d9e897-f1f3-487c-98df-52af0b1c0304 connected udp host 0.1
+2 S7e617ad2-9ef7-475e-b93c-9477ad6924bd
+@S7e617ad2-9ef7-475e-b93c-9477ad6924bd ==> S3c6a4212-a3a0-48af-990f-f20fc2968108 connected udp host 0.0
+@S3c6a4212-a3a0-48af-990f-f20fc2968108 ==> S7e617ad2-9ef7-475e-b93c-9477ad6924bd connected udp host 0.0
+3 S8afe7fed-6f23-450c-9237-18fca39992af
+@S7e617ad2-9ef7-475e-b93c-9477ad6924bd ==> S8afe7fed-6f23-450c-9237-18fca39992af connected udp host 0.0
+@S8afe7fed-6f23-450c-9237-18fca39992af ==> S7e617ad2-9ef7-475e-b93c-9477ad6924bd connected udp host 0.0
+spawning node spec/bots.js --nBots 5 --thrash false --nWrites 100 --verbose false
+(node:5696) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+2025-12-19T15:09:00.021Z Waiting a refresh interval while bots get randomly created before write/read test
+4 Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a
+@Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a ==> S8afe7fed-6f23-450c-9237-18fca39992af connected udp prflx 0.0
+@S8afe7fed-6f23-450c-9237-18fca39992af ==> Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a connected udp host 0.0
+@Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a ==> S7e617ad2-9ef7-475e-b93c-9477ad6924bd connected udp host 0.0
+@S7e617ad2-9ef7-475e-b93c-9477ad6924bd ==> Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a connected udp host 0.0
+@00240a2c-c17b-4717-905d-ee6bfa6ea545 ==> S8afe7fed-6f23-450c-9237-18fca39992af connected udp host 0.0
+@S8afe7fed-6f23-450c-9237-18fca39992af ==> 00240a2c-c17b-4717-905d-ee6bfa6ea545 connected udp host 0.0
+@Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a ==> 00240a2c-c17b-4717-905d-ee6bfa6ea545 connected udp host 0.0
+@00240a2c-c17b-4717-905d-ee6bfa6ea545 ==> Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a connected udp prflx 0.0
+@S7e617ad2-9ef7-475e-b93c-9477ad6924bd ==> 00240a2c-c17b-4717-905d-ee6bfa6ea545 connected udp host 0.0
+@00240a2c-c17b-4717-905d-ee6bfa6ea545 ==> S7e617ad2-9ef7-475e-b93c-9477ad6924bd connected udp prflx 0.0
+@S85d9e897-f1f3-487c-98df-52af0b1c0304 ==> 9a6def9a-3485-41de-8ecb-d5102445ad14 connected udp prflx 0.0
+@9a6def9a-3485-41de-8ecb-d5102445ad14 ==> S85d9e897-f1f3-487c-98df-52af0b1c0304 connected udp host 0.0
+@S3c6a4212-a3a0-48af-990f-f20fc2968108 ==> 9a6def9a-3485-41de-8ecb-d5102445ad14 connected udp host 0.0
+@9a6def9a-3485-41de-8ecb-d5102445ad14 ==> S3c6a4212-a3a0-48af-990f-f20fc2968108 connected udp prflx 0.0
+@S7e617ad2-9ef7-475e-b93c-9477ad6924bd ==> 2c19b18d-b790-4b4c-9f94-4a706eddcc12 connected udp host 0.0
+@2c19b18d-b790-4b4c-9f94-4a706eddcc12 ==> S7e617ad2-9ef7-475e-b93c-9477ad6924bd connected udp prflx 0.0
+@2c19b18d-b790-4b4c-9f94-4a706eddcc12 ==> 00240a2c-c17b-4717-905d-ee6bfa6ea545 connected udp host 0.0
+@00240a2c-c17b-4717-905d-ee6bfa6ea545 ==> 2c19b18d-b790-4b4c-9f94-4a706eddcc12 connected udp host 0.0
+@2c19b18d-b790-4b4c-9f94-4a706eddcc12 ==> S8afe7fed-6f23-450c-9237-18fca39992af connected udp prflx 0.0
+@S8afe7fed-6f23-450c-9237-18fca39992af ==> 2c19b18d-b790-4b4c-9f94-4a706eddcc12 connected udp host 0.0
+@Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a ==> 2c19b18d-b790-4b4c-9f94-4a706eddcc12 connected udp host 0.0
+@2c19b18d-b790-4b4c-9f94-4a706eddcc12 ==> Sbd1bd342-00a7-40cd-9db4-2cdb59a1f05a connected udp host 0.0
+@S3c6a4212-a3a0-48af-990f-f20fc2968108 ==> 2be2354e-753f-4fb6-adcc-a450b75ec9bd connected udp prflx 0.0
+@2be2354e-753f-4fb6-adcc-a450b75ec9bd ==> S3c6a4212-a3a0-48af-990f-f20fc2968108 connected udp host 0.0
+@9a6def9a-3485-41de-8ecb-d5102445ad14 ==> 2be2354e-753f-4fb6-adcc-a450b75ec9bd connected udp host 0.0
+@2be2354e-753f-4fb6-adcc-a450b75ec9bd ==> 9a6def9a-3485-41de-8ecb-d5102445ad14 connected udp host 0.0
+@S7e617ad2-9ef7-475e-b93c-9477ad6924bd ==> b5a3b9eb-c302-4f2a-85c2-328c22a50f88 connected udp host 0.0
+@b5a3b9eb-c302-4f2a-85c2-328c22a50f88 ==> S7e617ad2-9ef7-475e-b93c-9477ad6924bd connected udp host 0.0
+@2c19b18d-b790-4b4c-9f94-4a706eddcc12 ==> b5a3b9eb-c302-4f2a-85c2-328c22a50f88 connected udp host 0.0
+@b5a3b9eb-c302-4f2a-85c2-328c22a50f88 ==> 2c19b18d-b790-4b4c-9f94-4a706eddcc12 connected udp prflx 0.0
+@b5a3b9eb-c302-4f2a-85c2-328c22a50f88 ==> 00240a2c-c17b-4717-905d-ee6bfa6ea545 connected udp host 0.0
+@00240a2c-c17b-4717-905d-ee6bfa6ea545 ==> b5a3b9eb-c302-4f2a-85c2-328c22a50f88 connected udp host 0.0
+2025-12-19T15:09:30.046Z spawning npx jasmine spec/dhtWriteRead.js -- --nWrites 100 --verbose false
+(node:11608) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Randomized with seed 93957
+
+Started
+
+2025-12-19T15:09:30.916Z 15fe4006-96fc-45a6-a324-36af848729ae joining S8afe7fed-6f23-450c-9237-18fca39992af
+
+@S8afe7fed-6f23-450c-9237-18fca39992af ==> 15fe4006-96fc-45a6-a324-36af848729ae connected udp host 0.0
+@15fe4006-96fc-45a6-a324-36af848729ae ==> S8afe7fed-6f23-450c-9237-18fca39992af connected udp host 0.0
+
+@15fe4006-96fc-45a6-a324-36af848729ae ==> S7e617ad2-9ef7-475e-b93c-9477ad6924bd connected udp host 0.0
+
+@S7e617ad2-9ef7-475e-b93c-9477ad6924bd ==> 15fe4006-96fc-45a6-a324-36af848729ae connected udp host 0.0
+@15fe4006-96fc-45a6-a324-36af848729ae ==> 2c19b18d-b790-4b4c-9f94-4a706eddcc12 connected udp host 0.0
+
+@2c19b18d-b790-4b4c-9f94-4a706eddcc12 ==> 15fe4006-96fc-45a6-a324-36af848729ae connected udp host 0.0
+@00240a2c-c17b-4717-905d-ee6bfa6ea545 ==> 15fe4006-96fc-45a6-a324-36af848729ae connected udp host 0.0
+@15fe4006-96fc-45a6-a324-36af848729ae ==> 00240a2c-c17b-4717-905d-ee6bfa6ea545 connected udp host 0.0

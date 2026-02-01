@@ -6,15 +6,15 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
 
 ## Tasks
 
-- [ ] 1. Create RequestContext for source routing metadata
-  - [ ] 1.1 Create dht/requestContext.js with RequestContext class
+- [x] 1. Create RequestContext for source routing metadata
+  - [x] 1.1 Create dht/requestContext.js with RequestContext class
     - Implement constructor with lookupId, originId, targetId, ttl, tracePath
     - Implement forward() method to create forwarded context
     - Implement hasVisited() for loop detection
     - Implement serialize() and static deserialize() methods
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
   
-  - [ ] 1.2 Write property test for RequestContext round-trip serialization
+  - [x] 1.2 Write property test for RequestContext round-trip serialization
     - **Property 1: RequestContext Round-Trip Serialization**
     - **Validates: Requirements 2.5, 2.6**
 

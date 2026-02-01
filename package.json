@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "express": "^5.2.1",
+    "fast-check": "^4.5.3",
     "jasmine": "^5.12.0",
     "morgan": "^1.10.1",
     "yargs": "^18.0.0"
