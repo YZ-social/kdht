@@ -45,8 +45,8 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Property 8: RTT Measurement During RPC**
     - **Validates: Requirements 5.1, 5.3**
 
-- [ ] 5. Add R/Kademlia configuration options to Node
-  - [ ] 5.1 Add static configuration properties to Node class
+- [x] 5. Add R/Kademlia configuration options to Node
+  - [x] 5.1 Add static configuration properties to Node class
     - Add recursiveRoutingEnabled (default: false)
     - Add proximityRoutingEnabled (default: true)
     - Add pnsEnabled (default: false)
@@ -56,13 +56,13 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - Add proximityWeight (default: 0.1)
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6_
   
-  - [ ] 5.2 Write unit tests for configuration defaults
+  - [x] 5.2 Write unit tests for configuration defaults
     - Verify proximityRoutingEnabled defaults to true
     - Verify pnsEnabled defaults to false
     - Verify recursiveRoutingEnabled defaults to false
     - _Requirements: 5.6, 6.6, 11.1, 11.2_
 
-- [ ] 6. Checkpoint - Verify configuration and RTT tracking
+- [x] 6. Checkpoint - Verify configuration and RTT tracking
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 7. Create NodeRecursive mixin for recursive routing

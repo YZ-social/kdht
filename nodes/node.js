@@ -13,6 +13,15 @@ export class Node extends NodeProbe {
 
   static diagnosticTrace = false; // Set to true for detailed store/read logging
 
+  // R/Kademlia configuration options (Requirement 11)
+  static recursiveRoutingEnabled = false; // Enable recursive routing mode (default: iterative)
+  static proximityRoutingEnabled = true;  // Enable RTT-based next-hop selection (default: enabled)
+  static pnsEnabled = false;              // Enable Proximity Neighbor Selection (default: disabled)
+  static defaultTTL = 20;                 // Maximum hops for recursive lookups
+  static dedupCacheSize = 1000;           // Maximum entries in deduplication cache
+  static dedupCacheTTL = 10000;           // Deduplication cache entry TTL in ms
+  static proximityWeight = 0.1;           // RTT influence factor for proximity routing
+
   async locateNodes(targetKey, number = this.constructor.k, includeSelf = false) { // Promise up to k best Contacts for targetKey (sorted closest first).
     // Side effect is to discover other nodes (and they us).
     // includeSelf: If true, the local node is included as a candidate (useful for finding storage locations).
