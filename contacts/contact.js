@@ -6,6 +6,16 @@ export class Contact {
   // The host calls aContact.sendRpc(...messageParameters) to send the message to node and promises the response.
   // This could be by wire, by passing the message through some overlay network, or for just calling a method directly on node in a simulation.
 
+  // RTT tracking for proximity routing (R/Kademlia)
+  rtt = null;           // Last measured RTT in milliseconds
+  rttUpdatedAt = null;  // Timestamp of last RTT measurement
+
+  // Update RTT after successful RPC
+  updateRTT(rttMs) {
+    this.rtt = rttMs;
+    this.rttUpdatedAt = Date.now();
+  }
+
   // Creation
   // host should be a dht Node.
   // node is the far end of the contact, and could be Node (for in-process simulation) or a serialization of a key.
@@ -160,6 +170,10 @@ export class Contact {
     return this.transmitRPC(...message)
       .then(result => {
 	if (!sender.isRunning) return null; // Sender closed after call.
+	// Update RTT on successful RPC (R/Kademlia proximity routing)
+	if (result !== null) {
+	  this.updateRTT(Date.now() - start);
+	}
 	return result;
       })
       .finally(() => Node.noteStatistic(start, 'rpc'));

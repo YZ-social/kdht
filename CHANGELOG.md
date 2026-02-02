@@ -6,6 +6,28 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Task 4: RTT Tracking for Proximity Routing
+
+- **What**: Extended `Contact` class with RTT (Round-Trip Time) measurement capabilities
+- **Why**: R/Kademlia's Proximity Routing (PR) uses RTT as a secondary criterion for next-hop selection. This enables:
+  - Lower latency lookups by preferring faster peers among XOR-valid candidates
+  - Opportunistic RTT measurement during normal RPCs without additional probing traffic
+- **Changes**:
+  - Added `rtt` property (last measured RTT in milliseconds)
+  - Added `rttUpdatedAt` property (timestamp of last measurement)
+  - Added `updateRTT(rttMs)` method
+  - Modified `sendRPC()` to automatically measure and record RTT on successful calls
+- **Configuration**: None required - RTT tracking is automatic
+- **Lessons Learned**:
+  - RTT is only updated on successful RPCs (non-null result) to avoid recording timeouts as valid measurements
+  - The measurement is taken from the start of `transmitRPC()` to when the result is received, capturing actual network latency
+
+#### Tests
+
+- Created `spec/rdht/contactRttSpec.js` with:
+  - Property test for RTT measurement during RPC (validates Requirements 5.1, 5.3)
+  - Unit tests for updateRTT(), RTT property initialization, and multi-call RTT updates
+
 #### R/Kademlia Conformance - Task 1: RequestContext for Source Routing
 
 - **What**: Created `dht/requestContext.js` with `RequestContext` class for carrying source routing metadata through recursive lookups

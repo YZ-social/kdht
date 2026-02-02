@@ -31,17 +31,17 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Property 4: Deduplication Cache TTL Eviction**
     - **Validates: Requirements 3.1**
 
-- [ ] 3. Checkpoint - Verify foundation components
+- [x] 3. Checkpoint - Verify foundation components
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Add RTT tracking to Contact class
-  - [ ] 4.1 Extend Contact with RTT measurement
+- [x] 4. Add RTT tracking to Contact class
+  - [x] 4.1 Extend Contact with RTT measurement
     - Add rtt and rttUpdatedAt properties to Contact class
     - Add updateRTT() method
     - Modify sendRPC() to measure and record RTT on successful calls
     - _Requirements: 5.1, 5.3_
   
-  - [ ] 4.2 Write property test for RTT measurement during RPC
+  - [x] 4.2 Write property test for RTT measurement during RPC
     - **Property 8: RTT Measurement During RPC**
     - **Validates: Requirements 5.1, 5.3**
 
