@@ -96,7 +96,7 @@ export class Contact {
       this.host.ilog('disconnecting from network');
     if (!this.host.isStopped()) {
       if (this.host.storage.size) this.host.ilog('Copying', this.host.storage.size, 'stored values');
-      await Promise.all([...this.host.storage.entries()].map(([key, value]) => this.storeValue(key, value)));
+      await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
     }
     this.host.stopRefresh();
     for (const contact of this.host.connections) {
