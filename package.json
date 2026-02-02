@@ -1,11 +1,11 @@
 {
   "name": "@yz-social/kdht",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Pure Kademlia base, for testing variations.",
   "exports": {
     ".": "./index.js",
-    "./router": "./portals/router.js",
-    "./portal": "./portals/node.js"
+    "./router": "./scripts/router.js",
+    "./portal": "./scripts/node.js"
   },
   "type": "module",
   "scripts": {
