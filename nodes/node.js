@@ -67,7 +67,8 @@ export class Node extends NodeProbe {
     let remaining = k;
     // Ask for more, than needed, and then store to each, one at a time, until we
     // have replicated k times.
-    let helpers = await this.locateNodes(targetKey, remaining * 2, true); // includeSelf: we're a valid storage location
+    let contacts = (await this.locateNodes(targetKey, remaining * 2, true)) // includeSelf: we're a valid storage location
+	.map(helper => helper.contact);
 
     // Check again after the async locateNodes call
     if (!this.isRunning) {
@@ -75,17 +76,26 @@ export class Node extends NodeProbe {
       return 0;
     }
 
-    if (trace) this.flog(`storeValue(${targetKey}): locateNodes found ${helpers.length} helpers`);
-    helpers = helpers.reverse(); // So we can save best-first by popping off the end.
+    if (trace) this.flog(`storeValue(${targetKey}): locateNodes found ${contacts.length} contacts`);
     const storedTo = []; // Track where we stored for diagnostics
-    // TODO: batches in parallel, if the client and network can handle it. (For now, better to spread it out.)
-    while (helpers.length && remaining) {
-      const helper = helpers.pop();
-      const contact = helper.contact;
+
+    // Do what we can in parallel right away. This might not all be the very closest, but those stored will take care of migrating.
+    const connected = contacts.filter(contact => contact.connection).slice(k);
+    await Promise.all(connected.map(async contact => {
+      await contact.store(targetKey, value);
+      storedTo.push(contact);
+      remaining--;
+    }));
+    if (remaining) {
+      this.ilog("initial parallel store produced", connected.length, "results.");
+      contacts = contacts.filter(contact => !connected.includes(contact)).reverse(); // So we can save best-first by popping off the end.
+    }
+    while (contacts.length && remaining) {
+      const contact = contacts.pop();
       const stored = await contact.store(targetKey, value);
       if (stored) {
         remaining--;
-        storedTo.push(helper.name);
+        storedTo.push(contact.name);
       } else if (!this.isRunning) {
         // Node disconnected mid-replication - no point continuing
         if (trace) this.flog(`storeValue(${targetKey}, ${value}): aborted mid-store - node disconnected`);
@@ -98,7 +108,7 @@ export class Node extends NodeProbe {
       let reason = '';
       if (!this.isRunning) {
         reason = ' (node disconnected)';
-      } else if (helpers.length === 0 && storedCount < k) {
+      } else if (contacts.length === 0 && storedCount < k) {
         reason = ' (insufficient nodes found)';
       }
       this.flog(`storeValue(${targetKey}, ${value}): stored to ${storedCount}/${k} nodes${storedTo.length ? ': ' + storedTo.join(', ') : ''}${reason}`);
