@@ -259,7 +259,7 @@ export class Contact {
   }
   async checkSignals(signals) {
     if (!signals) {
-      this.host.removeContact(this);
+      this.host.removeContact(this, false);
       return [];
     }
     return signals;
