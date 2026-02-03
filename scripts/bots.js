@@ -74,6 +74,7 @@ while (argv.thrash) {
   await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
   const old = contact;
   const next = uuidv4();
+  console.log('disconnecting', old.sname);
   await contact.disconnect();
   await Node.delay(1e3); // TODO: remove?
 
