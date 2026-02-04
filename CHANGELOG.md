@@ -6,6 +6,38 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Task 7: NodeRecursive Mixin for Recursive Routing
+
+- **What**: Created `dht/nodeRecursive.js` with `NodeRecursive` class that adds recursive routing capability to the DHT
+- **Why**: R/Kademlia requires recursive routing where intermediate nodes forward requests. This mixin provides:
+  - Recursive FIND_NODE RPC handler (`recursiveFindNodes`)
+  - Message deduplication via DedupCache integration
+  - Proximity-aware next-hop selection (`selectProximityAware`)
+  - Trace path learning for routing table updates (`updateFromTracePath`)
+  - Loop detection and TTL enforcement
+- **Changes**:
+  - Created `NodeRecursive` class extending `NodeMessages`
+  - Lazy initialization of `dedupCache` using configured size and TTL
+  - `createLookupContext()` for initiating recursive lookups
+  - `recursiveFindNodes()` RPC handler with duplicate detection, loop detection, TTL enforcement
+  - `selectProximityAware()` filters candidates for XOR-distance progress and applies RTT-based scoring
+  - `updateFromTracePath()` learns from trace path to accelerate routing table convergence
+- **Configuration**: Uses existing Node configuration properties (dedupCacheSize, dedupCacheTTL, defaultTTL, proximityRoutingEnabled, proximityWeight)
+- **Lessons Learned**:
+  - The mixin pattern allows adding recursive routing without modifying existing iterative routing
+  - XOR-distance progress must be strictly enforced (< not <=) to guarantee termination
+  - Proximity scoring combines XOR distance with RTT penalty: `score = distance * (1 + weight * rtt / 1000)`
+  - Testing NodeRecursive before inheritance chain integration requires creating test subclasses
+
+#### Tests
+
+- Created `spec/rdht/nodeRecursiveSpec.js` with:
+  - Property 5: Duplicate Detection (validates Requirements 3.2, 3.3, 3.4)
+  - Property 7: XOR-Distance Progress (validates Requirements 4.5, 10.1)
+  - Property 2: Trace Path Growth on Forward (validates Requirements 2.2, 4.2)
+  - Property 3: TTL Enforcement (validates Requirements 2.4, 4.3)
+  - Unit tests for dedupCache initialization, createLookupContext, selectProximityAware, updateFromTracePath, recursiveFindNodes
+
 #### R/Kademlia Conformance - Task 4: RTT Tracking for Proximity Routing
 
 - **What**: Extended `Contact` class with RTT (Round-Trip Time) measurement capabilities

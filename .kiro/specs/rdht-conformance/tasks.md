@@ -65,8 +65,8 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
 - [x] 6. Checkpoint - Verify configuration and RTT tracking
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Create NodeRecursive mixin for recursive routing
-  - [ ] 7.1 Create dht/nodeRecursive.js with recursive routing logic
+- [x] 7. Create NodeRecursive mixin for recursive routing
+  - [x] 7.1 Create dht/nodeRecursive.js with recursive routing logic
     - Create NodeRecursive class extending NodeMessages
     - Initialize dedupCache in constructor
     - Implement recursiveFindNodes() RPC handler
@@ -74,19 +74,19 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - Implement updateFromTracePath() for routing table learning
     - _Requirements: 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 4.5, 5.2, 5.4_
   
-  - [ ] 7.2 Write property test for duplicate detection
+  - [x] 7.2 Write property test for duplicate detection
     - **Property 5: Duplicate Detection**
     - **Validates: Requirements 3.2, 3.3, 3.4**
   
-  - [ ] 7.3 Write property test for XOR-distance progress
+  - [x] 7.3 Write property test for XOR-distance progress
     - **Property 7: XOR-Distance Progress**
     - **Validates: Requirements 4.5, 10.1**
   
-  - [ ] 7.4 Write property test for trace path growth
+  - [x] 7.4 Write property test for trace path growth
     - **Property 2: Trace Path Growth on Forward**
     - **Validates: Requirements 2.2, 4.2**
   
-  - [ ] 7.5 Write property test for TTL enforcement
+  - [x] 7.5 Write property test for TTL enforcement
     - **Property 3: TTL Enforcement**
     - **Validates: Requirements 2.4, 4.3**
 
