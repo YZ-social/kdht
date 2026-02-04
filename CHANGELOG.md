@@ -6,6 +6,30 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Task 13: Maintenance Lifecycle Compliance Verification
+
+- **What**: Added verification tests confirming existing KDHT implementation conforms to R/Kademlia maintenance lifecycle requirements
+- **Why**: R/Kademlia specifies maintenance lifecycle behaviors (T0: Join, T1: Refresh, T2: Liveness). These tests verify the existing implementation already meets these requirements without modification.
+- **Changes**:
+  - Created `spec/rdht/maintenanceLifecycleSpec.js` with verification tests
+  - Task 13.1: Verified `join()` calls `locateNodes(this.key)` for self-lookup and seeds buckets with discovered neighbors (Requirements 7.1, 7.2, 7.4)
+  - Task 13.2: Verified `KBucket.randomTarget` generates keys in correct bucket range and `refresh()` calls `locateNodes` with random target (Requirements 8.1, 8.4)
+  - Task 13.3: Verified `addContact()` checks `head.connection` for liveness before eviction (Requirements 9.4, 9.5)
+  - Task 13.4: Added Property 16 (Liveness-Based Eviction) - validates that unresponsive heads are evicted while responsive heads are preserved (Requirements 9.1, 9.2, 9.3, 9.4)
+- **Lessons Learned**:
+  - The existing KDHT implementation already follows R/Kademlia maintenance patterns
+  - Liveness check uses `head.connection` truthiness - truthy means alive, falsy means dead
+  - When bucket is full and head is alive, new contact is rejected and head is moved to tail (LRU behavior)
+  - Property tests need unique keys per iteration - bucket indices 0-9 have small key spaces that can cause collisions
+
+#### Tests
+
+- Created `spec/rdht/maintenanceLifecycleSpec.js` with:
+  - T0 Node Join Self-Lookup tests (3 tests)
+  - T1 Periodic Bucket Refresh tests (4 tests)
+  - T2 Liveness-Based Eviction tests (4 unit tests)
+  - Property 16: Liveness-Based Eviction (2 property tests, validates Requirements 9.1-9.4)
+
 #### R/Kademlia Conformance - Task 11: Alternate Path Selection on Duplicate
 
 - **What**: Added alternate path handling to recursive routing - when a DUPLICATE response is received, the system now selects the next XOR-valid candidate that hasn't been tried

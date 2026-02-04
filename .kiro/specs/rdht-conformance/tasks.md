@@ -113,7 +113,7 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Property 9: Proximity-Aware Selection Preserves Correctness**
     - **Validates: Requirements 5.2, 5.4**
 
-- [ ] 11. Implement alternate path selection on duplicate
+- [x] 11. Implement alternate path selection on duplicate
   - [x] 11.1 Add alternate path handling to recursive routing
     - Track tried paths in forwarding context
     - On DUPLICATE response, select next XOR-valid candidate
@@ -123,26 +123,26 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Property 6: Alternate Path Selection on Duplicate**
     - **Validates: Requirements 3.5**
 
-- [ ] 12. Checkpoint - Verify proximity routing
+- [x] 12. Checkpoint - Verify proximity routing
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. Verify existing maintenance lifecycle compliance
-  - [ ] 13.1 Add verification tests for join self-lookup
+- [x] 13. Verify existing maintenance lifecycle compliance
+  - [x] 13.1 Add verification tests for join self-lookup
     - Verify join() calls locateNodes(this.key)
     - Verify buckets are seeded after join
     - _Requirements: 7.1, 7.2, 7.4_
   
-  - [ ] 13.2 Add verification tests for bucket refresh
+  - [x] 13.2 Add verification tests for bucket refresh
     - Verify refresh() uses random key in bucket range
     - Verify locateNodes is called during refresh
     - _Requirements: 8.1, 8.4_
   
-  - [ ] 13.3 Add verification tests for liveness-based eviction
+  - [x] 13.3 Add verification tests for liveness-based eviction
     - Verify addContact() checks connection before eviction
     - Verify live nodes are not evicted for dead nodes
     - _Requirements: 9.4, 9.5_
   
-  - [ ] 13.4 Write property test for liveness-based eviction
+  - [x] 13.4 Write property test for liveness-based eviction
     - **Property 16: Liveness-Based Eviction**
     - **Validates: Requirements 9.1, 9.2, 9.3, 9.4**
 
