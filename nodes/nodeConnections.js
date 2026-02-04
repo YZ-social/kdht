@@ -30,11 +30,12 @@ export class NodeConnections extends NodeStorage {
     
     if (this.nConnections >= this.constructor.maxTransports) { // Determine if we have to drop one first, and do so.
       //console.log(this.name, 'needs to drop a transport');
-      function removeLast(list) { // Remove and return the last element of list that has connection and is NOT sponsor.
+      const k = this.constructor.k/2;
+      function removeLast(list, allowSponsor = false) { // Remove and return the last element of list that has connection and is NOT sponsor.
 	// I have observed cases where a bunch of nodes run over as someone joins, and they all then try to remove the same
 	// most-recently added contact. So here instead of taking the last valid contact from the last, we take the last but [0..3].
-	let randomizer = Math.floor(Math.random() * 4);
-	const index = list.findLastIndex(element => element.connection && !contact.hasSponsor(element.key) && randomizer-- <= 0 );
+	let randomizer = Math.floor(Math.random() * Math.min(k, list.length - 1));
+	const index = list.findLastIndex(element => element.connection && (allowSponsor || !contact.hasSponsor(element.key)) && randomizer-- <= 0 );
 	if (index < 0) return null;
 	const sub = list.splice(index, 1);
 	return sub[0];
@@ -51,8 +52,8 @@ export class NodeConnections extends NodeStorage {
 	  bestCount = count;
 	  return true;
 	});
-	dropped = removeLast(bestBucket.contacts);
-	if (!dropped) this.flog('Unable to find something to drop in', this.report(null));
+	dropped = removeLast(bestBucket.contacts) || removeLast(bestBucket.contact, true);
+	if (!dropped) this.flog('Unable to find something to drop among', bestBucket.index, 'in', this.report(null));
 	else this.flog('dropping transport', dropped.name, 'in bucket', bestBucket.index, 'among', bestCount, 'contacts.');
       }
       dropped.disconnectTransport();

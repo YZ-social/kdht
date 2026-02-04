@@ -29,14 +29,11 @@ cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and
   initWorker(cluster.fork());
 });
 
-router.get('/name/:label', (req, res, next) => { // Answer the actual sname corresponding to label.
-  const label = req.params.label;
-  // label can be a worker id, which alas starts from 1.
-  const isRandom = label === 'random';
-  let list = isRandom ? Object.values(portals) : workers;
-  const index = isRandom ? Node.randomInteger(list.length) : label - 1;
+router.get('/name/random', (req, res, next) => { // Answer the actual sname corresponding to label.
+  let list = Object.values(portals);
+  const index = Node.randomInteger(list.length);
   const worker =  list[index];
-  if (!worker) return res.sendStatus(isRandom ? 403 : 404);
+  if (!worker) return res.sendStatus(403);
   return res.json(worker.tag);
 });
 

@@ -21,8 +21,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async fetchBootstrap(baseURL, label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
     // worker index or the string 'random' to an available sname to which we can connect().
     const url = `${baseURL}/name/${label}`;
-    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.flog(e));
-    if (!this.checkResponse(response)) return this.fetchBootstrap(baseURL, label);
+    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.flog(url, e));
+    if (!this.checkResponse(response)) { // The portal webserver is not available. Stop trying to reach this node.
+      // TODO: maintain a well-known list of portal servers to try, but even then, do not try to reach nodes that are on an unreachable server.
+      this.host.removeContact(this);
+      return '';
+    }
     return await response.json();
   }
   async fetchSignals(url, signalsToSend) { 
@@ -78,6 +82,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 					     polite: this.host.key < this.node.key});
     const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
+      if (this.webrtc && !this.host.isStopped()) {
+	this.host.ilog('connection to', this.sname, 'was not politely closed. Dropping contact.');
+	this.host.removeContact(this, false);
+      }
       this.webrtc = this.connection = this.unsafeData = null;
       resolve(null); // closed promise
     };
@@ -192,9 +200,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async disconnectTransport(andNotify = true) {
     if (!this.connection) return;
     super.disconnectTransport(andNotify);
-    Node.delay(100).then(() => { // Allow time for super to send close/bye message.
-      this.webrtc?.close();
-      this.connection = this.webrtc = null;
-    });
+    const webrtc = this.webrtc;
+    this.connection = this.webrtc = null;
+    webrtc?.close();
   }
 }

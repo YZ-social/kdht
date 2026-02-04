@@ -122,12 +122,13 @@ export class Contact {
   }
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
     this.host.ilog('closing disconnected contact', this.sname);
-    this.disconnectTransport(false);
     this.host.removeLooseContact(this.key); // If any.
+    this.disconnectTransport(false);
   }
   bye() { // The sender is disconnecting from the network
     this.host.ilog('removing disconnected contact', this.sname);
     const bucket = this.host.removeContact(this);
+    this.disconnectTransport(false);
     bucket?.refresh(); // Accelerate the bucket refresh
   }
   distance(key) { return this.host.constructor.distance(this.key, key); }
@@ -273,7 +274,7 @@ export class Contact {
   }
   async checkSignals(signals) {
     if (!signals) {
-      this.host.removeContact(this);
+      this.host.removeContact(this, false);
       return [];
     }
     return signals;
