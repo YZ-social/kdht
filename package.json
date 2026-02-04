@@ -2,6 +2,9 @@
   "name": "@yz-social/kdht",
   "version": "0.1.16",
   "description": "Pure Kademlia base, for testing variations.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "exports": {
     ".": "./index.js",
     "./router": "./scripts/router.js",
