@@ -100,16 +100,16 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - Export RequestContext and DedupCache if useful for consumers
     - _Requirements: 12.3_
 
-- [ ] 9. Checkpoint - Verify recursive routing integration
+- [x] 9. Checkpoint - Verify recursive routing integration
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Add proximity-aware selection to Helper
-  - [ ] 10.1 Extend Helper with proximity scoring
+- [x] 10. Add proximity-aware selection to Helper
+  - [x] 10.1 Extend Helper with proximity scoring
     - Add proximityScore() method considering RTT and XOR distance
     - Add static compareWithProximity() for sorting with PR
     - _Requirements: 5.2, 5.4_
   
-  - [ ] 10.2 Write property test for proximity-aware selection correctness
+  - [x] 10.2 Write property test for proximity-aware selection correctness
     - **Property 9: Proximity-Aware Selection Preserves Correctness**
     - **Validates: Requirements 5.2, 5.4**
 
