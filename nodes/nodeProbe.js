@@ -1,8 +1,10 @@
 import { Helper } from  './helper.js';
-import { NodeMessages } from './nodeMessages.js';
+import { NodeRecursive } from '../dht/nodeRecursive.js';
 
 // Probe the network
-export class NodeProbe extends NodeMessages {
+// Inheritance chain: NodeMessages -> NodeRecursive -> NodeProbe -> Node
+// NodeRecursive adds optional recursive routing capability (R/Kademlia conformance)
+export class NodeProbe extends NodeRecursive {
   // There are only three kinds of rpc results: 'pong', [...helper], {value: something}
   static isValueResult(rpcResult) {
     return rpcResult && rpcResult !== 'pong' && 'value' in rpcResult;

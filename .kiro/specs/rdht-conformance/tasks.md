@@ -90,13 +90,13 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Property 3: TTL Enforcement**
     - **Validates: Requirements 2.4, 4.3**
 
-- [ ] 8. Integrate NodeRecursive into inheritance chain
-  - [ ] 8.1 Update nodeProbe.js to extend NodeRecursive
+- [x] 8. Integrate NodeRecursive into inheritance chain
+  - [x] 8.1 Update nodeProbe.js to extend NodeRecursive
     - Change NodeProbe to extend NodeRecursive instead of NodeMessages
     - Ensure existing iterate() method unchanged
     - _Requirements: 12.1, 12.2_
   
-  - [ ] 8.2 Update index.js exports if needed
+  - [x] 8.2 Update index.js exports if needed
     - Export RequestContext and DedupCache if useful for consumers
     - _Requirements: 12.3_
 

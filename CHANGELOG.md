@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Task 8: NodeRecursive Integration into Inheritance Chain
+
+- **What**: Integrated `NodeRecursive` into the Node inheritance chain and exported new R/Kademlia components
+- **Why**: To make recursive routing capabilities available to all Node instances while maintaining backward compatibility
+- **Changes**:
+  - Updated `nodes/nodeProbe.js` to extend `NodeRecursive` instead of `NodeMessages`
+  - New inheritance chain: `NodeMessages` → `NodeRecursive` → `NodeProbe` → `Node`
+  - Updated `index.js` to export `RequestContext` and `DedupCache` for consumers
+- **Backward Compatibility**: All 255 existing tests pass without modification. The recursive routing features are disabled by default (`recursiveRoutingEnabled = false`), so existing behavior is unchanged.
+- **Lessons Learned**:
+  - The mixin pattern allows seamless insertion of new functionality into the inheritance chain
+  - Exporting foundation classes enables consumers to build custom recursive routing logic if needed
+
 #### R/Kademlia Conformance - Task 7: NodeRecursive Mixin for Recursive Routing
 
 - **What**: Created `dht/nodeRecursive.js` with `NodeRecursive` class that adds recursive routing capability to the DHT
