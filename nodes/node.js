@@ -80,7 +80,7 @@ export class Node extends NodeProbe {
     const storedTo = []; // Track where we stored for diagnostics
 
     // Do what we can in parallel right away. This might not all be the very closest, but those stored will take care of migrating.
-    const connected = contacts.filter(contact => contact.connection).slice(k);
+    const connected = contacts.filter(contact => contact.connection).slice(0, k);
     await Promise.all(connected.map(async contact => {
       await contact.store(targetKey, value);
       storedTo.push(contact);
