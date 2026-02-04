@@ -148,6 +148,224 @@ describe('NodeRecursive', function () {
     });
   });
 
+  describe('Property 6: Alternate Path Selection on Duplicate', function () {
+    /**
+     * **Validates: Requirements 3.5**
+     * 
+     * For any DUPLICATE response received during recursive routing, the upstream
+     * node SHALL attempt to forward to an alternate XOR-valid next hop that was
+     * not previously tried.
+     */
+    it('selectProximityAware excludes nodes marked as tried', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          arbNodeKey,
+          fc.array(arbNodeKey, { minLength: 2, maxLength: 10 }),
+          async (targetId, candidateKeys) => {
+            // Create a node
+            const contact = await TestSimulatedContact.create({ name: `alt-path-${uuidv4().slice(0, 8)}` });
+            const node = contact.node;
+
+            const myDistance = node.distance(targetId);
+
+            // Create mock helpers with various distances
+            const helpers = [];
+            for (const key of candidateKeys) {
+              if (key === node.key) continue; // Skip self
+              const mockContact = {
+                key: key,
+                rtt: null,
+                name: `mock-${key.toString().slice(0, 8)}`
+              };
+              const distance = Node.distance(key, targetId);
+              helpers.push({
+                key: key,
+                contact: mockContact,
+                distance: distance,
+                name: mockContact.name
+              });
+            }
+
+            // Sort by distance (as findClosestHelpers would)
+            helpers.sort((a, b) => {
+              if (a.distance < b.distance) return -1;
+              if (a.distance > b.distance) return 1;
+              return 0;
+            });
+
+            // Filter to only valid candidates (those that make XOR progress)
+            const validHelpers = helpers.filter(h => h.distance < myDistance);
+            if (validHelpers.length < 2) return; // Need at least 2 valid candidates for this test
+
+            // Create a context with the first valid candidate marked as tried
+            const firstCandidate = validHelpers[0];
+            const ctx = new RequestContext({
+              lookupId: uuidv4(),
+              originId: 123n,
+              targetId: targetId,
+              ttl: 20,
+              tracePath: [],
+              triedPaths: [firstCandidate.key], // Mark first candidate as tried
+            });
+
+            // Call selectProximityAware
+            const selected = node.selectProximityAware(helpers, ctx);
+
+            // Should NOT select the tried candidate
+            if (selected !== null) {
+              expect(selected.key).not.toBe(firstCandidate.key);
+              // Should still make XOR progress
+              expect(selected.distance).toBeLessThan(myDistance);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    it('markTried adds node to triedPaths without modifying original context', function () {
+      fc.assert(
+        fc.property(arbNodeKey, arbNodeKey, (targetId, triedNodeKey) => {
+          const original = new RequestContext({
+            lookupId: uuidv4(),
+            originId: 123n,
+            targetId: targetId,
+            ttl: 20,
+            tracePath: [],
+            triedPaths: [],
+          });
+
+          const marked = original.markTried(triedNodeKey);
+
+          // Original should be unchanged
+          expect(original.triedPaths.length).toBe(0);
+
+          // Marked context should have the tried node
+          expect(marked.triedPaths.length).toBe(1);
+          expect(marked.triedPaths[0]).toBe(triedNodeKey);
+
+          // Other fields should be preserved
+          expect(marked.lookupId).toBe(original.lookupId);
+          expect(marked.originId).toBe(original.originId);
+          expect(marked.targetId).toBe(original.targetId);
+          expect(marked.ttl).toBe(original.ttl);
+          expect(marked.tracePath).toEqual(original.tracePath);
+        }),
+        { numRuns: 100 }
+      );
+    });
+
+    it('hasTried returns true for nodes in triedPaths', function () {
+      fc.assert(
+        fc.property(
+          fc.array(arbNodeKey, { minLength: 1, maxLength: 10 }),
+          arbNodeKey,
+          (triedNodes, targetId) => {
+            const ctx = new RequestContext({
+              lookupId: uuidv4(),
+              originId: 123n,
+              targetId: targetId,
+              ttl: 20,
+              tracePath: [],
+              triedPaths: triedNodes,
+            });
+
+            // All nodes in triedPaths should return true
+            for (const nodeId of triedNodes) {
+              expect(ctx.hasTried(nodeId)).toBe(true);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    it('hasTried returns false for nodes not in triedPaths', function () {
+      fc.assert(
+        fc.property(
+          fc.array(arbNodeKey, { minLength: 0, maxLength: 10 }),
+          arbNodeKey,
+          arbNodeKey,
+          (triedNodes, targetId, queryNode) => {
+            // Ensure queryNode is not in triedNodes
+            const filteredTriedNodes = triedNodes.filter(n => n !== queryNode);
+
+            const ctx = new RequestContext({
+              lookupId: uuidv4(),
+              originId: 123n,
+              targetId: targetId,
+              ttl: 20,
+              tracePath: [],
+              triedPaths: filteredTriedNodes,
+            });
+
+            // queryNode should not be found
+            expect(ctx.hasTried(queryNode)).toBe(false);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    it('triedPaths is preserved through serialization round-trip', function () {
+      fc.assert(
+        fc.property(
+          fc.array(arbNodeKey, { minLength: 0, maxLength: 10 }),
+          arbNodeKey,
+          (triedNodes, targetId) => {
+            const original = new RequestContext({
+              lookupId: uuidv4(),
+              originId: 123n,
+              targetId: targetId,
+              ttl: 20,
+              tracePath: [456n, 789n],
+              triedPaths: triedNodes,
+            });
+
+            const serialized = original.serialize();
+            const deserialized = RequestContext.deserialize(serialized);
+
+            // triedPaths should be preserved
+            expect(deserialized.triedPaths.length).toBe(original.triedPaths.length);
+            for (let i = 0; i < original.triedPaths.length; i++) {
+              expect(deserialized.triedPaths[i]).toBe(original.triedPaths[i]);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    it('forward preserves triedPaths', function () {
+      fc.assert(
+        fc.property(
+          fc.array(arbNodeKey, { minLength: 1, maxLength: 5 }),
+          arbNodeKey,
+          arbNodeKey,
+          (triedNodes, targetId, forwardingNode) => {
+            const original = new RequestContext({
+              lookupId: uuidv4(),
+              originId: 123n,
+              targetId: targetId,
+              ttl: 20,
+              tracePath: [],
+              triedPaths: triedNodes,
+            });
+
+            const forwarded = original.forward(forwardingNode);
+
+            // triedPaths should be preserved
+            expect(forwarded.triedPaths.length).toBe(original.triedPaths.length);
+            for (let i = 0; i < original.triedPaths.length; i++) {
+              expect(forwarded.triedPaths[i]).toBe(original.triedPaths[i]);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
   describe('Property 7: XOR-Distance Progress', function () {
     /**
      * **Validates: Requirements 4.5, 10.1**

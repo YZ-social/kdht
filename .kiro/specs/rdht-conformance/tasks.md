@@ -114,12 +114,12 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Validates: Requirements 5.2, 5.4**
 
 - [ ] 11. Implement alternate path selection on duplicate
-  - [ ] 11.1 Add alternate path handling to recursive routing
+  - [x] 11.1 Add alternate path handling to recursive routing
     - Track tried paths in forwarding context
     - On DUPLICATE response, select next XOR-valid candidate
     - _Requirements: 3.5_
   
-  - [ ] 11.2 Write property test for alternate path selection
+  - [x] 11.2 Write property test for alternate path selection
     - **Property 6: Alternate Path Selection on Duplicate**
     - **Validates: Requirements 3.5**
 

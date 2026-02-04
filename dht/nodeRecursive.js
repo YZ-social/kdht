@@ -64,11 +64,12 @@ export class NodeRecursive extends NodeMessages {
    * 2. Recording the lookup in the dedup cache
    * 3. Learning from the trace path
    * 4. Forwarding to the next hop or returning results
+   * 5. On DUPLICATE response, selecting alternate XOR-valid path
    * 
    * @param {Object} ctxData - Serialized RequestContext
    * @returns {Object} Result with status, nodes, and tracePath
    * 
-   * Requirements: 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4, 4.5
+   * Requirements: 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5
    */
   async recursiveFindNodes(ctxData) {
     // Deserialize context
@@ -124,44 +125,66 @@ export class NodeRecursive extends NodeMessages {
       };
     }
 
-    // Select next hop with proximity awareness (Requirements 4.1, 4.5, 5.2)
-    const nextHop = this.selectProximityAware(helpers, ctx);
+    // Try forwarding with alternate path selection on DUPLICATE (Requirement 3.5)
+    return await this.forwardWithAlternatePaths(helpers, ctx, serializedNodes);
+  }
 
-    if (!nextHop) {
-      return {
-        status: 'NO_CLOSER',
-        nodes: serializedNodes,
-        tracePath: ctx.tracePath.map(String),
-      };
-    }
+  /**
+   * Forward a recursive lookup, trying alternate paths on DUPLICATE responses.
+   * 
+   * @param {Helper[]} helpers - Available helpers sorted by XOR distance
+   * @param {RequestContext} ctx - Current request context
+   * @param {Object[]} serializedNodes - Pre-serialized nodes for response
+   * @returns {Object} Result with status, nodes, and tracePath
+   * 
+   * Requirement: 3.5
+   */
+  async forwardWithAlternatePaths(helpers, ctx, serializedNodes) {
+    let currentCtx = ctx;
 
-    // Forward recursively (Requirement 4.2)
-    const forwardCtx = ctx.forward(this.key);
-    this.dedupCache.markForwarded(ctx.lookupId);
+    // Try candidates until we get a non-DUPLICATE response or run out of options
+    while (true) {
+      // Select next hop with proximity awareness, excluding tried paths (Requirements 3.5, 4.1, 4.5, 5.2)
+      const nextHop = this.selectProximityAware(helpers, currentCtx);
 
-    try {
-      const result = await nextHop.contact.sendRPC(
-        'recursiveFindNodes',
-        forwardCtx.serialize()
-      );
-
-      // Handle forwarding failure
-      if (!result) {
+      if (!nextHop) {
         return {
-          status: 'FORWARD_FAILED',
+          status: 'NO_CLOSER',
           nodes: serializedNodes,
           tracePath: ctx.tracePath.map(String),
         };
       }
 
-      return result;
-    } catch (error) {
-      return {
-        status: 'FORWARD_FAILED',
-        nodes: serializedNodes,
-        tracePath: ctx.tracePath.map(String),
-        error: error.message
-      };
+      // Forward recursively (Requirement 4.2)
+      const forwardCtx = currentCtx.forward(this.key);
+      this.dedupCache.markForwarded(ctx.lookupId);
+
+      try {
+        const result = await nextHop.contact.sendRPC(
+          'recursiveFindNodes',
+          forwardCtx.serialize()
+        );
+
+        // Handle forwarding failure
+        if (!result) {
+          // Mark this path as tried and continue to next candidate
+          currentCtx = currentCtx.markTried(nextHop.key);
+          continue;
+        }
+
+        // On DUPLICATE response, select alternate XOR-valid next hop (Requirement 3.5)
+        if (result.status === 'DUPLICATE') {
+          currentCtx = currentCtx.markTried(nextHop.key);
+          continue;
+        }
+
+        // Non-DUPLICATE response - return it
+        return result;
+      } catch (error) {
+        // Mark this path as tried and continue to next candidate
+        currentCtx = currentCtx.markTried(nextHop.key);
+        continue;
+      }
     }
   }
 
@@ -169,22 +192,25 @@ export class NodeRecursive extends NodeMessages {
    * Select the next hop for forwarding, considering proximity if enabled.
    * 
    * This method filters candidates to ensure XOR-distance progress and
-   * optionally applies RTT-based proximity scoring.
+   * optionally applies RTT-based proximity scoring. It also excludes
+   * nodes that have been tried (returned DUPLICATE) for alternate path selection.
    * 
    * @param {Helper[]} candidates - Helpers sorted by XOR distance
    * @param {RequestContext} ctx - Current request context
    * @returns {Helper|null} The selected next hop, or null if none valid
    * 
-   * Requirements: 4.5, 5.2, 5.4
+   * Requirements: 3.5, 4.5, 5.2, 5.4
    */
   selectProximityAware(candidates, ctx) {
     const myDistance = this.distance(ctx.targetId);
 
-    // Filter out visited nodes, self, and nodes that don't make XOR progress
+    // Filter out visited nodes, self, tried nodes, and nodes that don't make XOR progress
     // Requirement 4.5: Must make strict XOR-distance progress
+    // Requirement 3.5: Exclude nodes that returned DUPLICATE (tried paths)
     const valid = candidates.filter(h => 
       h.key !== this.key && 
       !ctx.hasVisited(h.key) &&
+      !ctx.hasTried(h.key) &&
       h.distance < myDistance // Must make progress
     );
 
@@ -242,9 +268,12 @@ export class NodeRecursive extends NodeMessages {
    * Initiate a recursive lookup for the given target key.
    * 
    * This is the entry point for recursive routing when enabled.
+   * Handles DUPLICATE responses by selecting alternate paths.
    * 
    * @param {BigInt} targetKey - The key to look up
    * @returns {Object} Result with status and nodes
+   * 
+   * Requirement: 3.5
    */
   async initiateRecursiveLookup(targetKey) {
     const ctx = this.createLookupContext(targetKey);
@@ -260,57 +289,58 @@ export class NodeRecursive extends NodeMessages {
       };
     }
 
-    // Select first hop
-    const firstHop = this.selectProximityAware(helpers, ctx);
-    
-    if (!firstHop) {
-      // We might be the closest node
-      return {
-        status: 'NO_CLOSER',
-        nodes: helpers.map(h => ({
-          key: String(h.key),
-          distance: String(h.distance),
-          name: h.name
-        })),
-        tracePath: [],
-      };
-    }
-
-    // Forward to first hop
-    const forwardCtx = ctx.forward(this.key);
+    // Add to dedup cache
     this.dedupCache.add(ctx.lookupId);
-    this.dedupCache.markForwarded(ctx.lookupId);
 
-    try {
-      const result = await firstHop.contact.sendRPC(
-        'recursiveFindNodes',
-        forwardCtx.serialize()
-      );
+    let currentCtx = ctx;
 
-      if (!result) {
+    // Try candidates until we get a non-DUPLICATE response or run out of options
+    while (true) {
+      // Select first hop
+      const firstHop = this.selectProximityAware(helpers, currentCtx);
+      
+      if (!firstHop) {
+        // We might be the closest node or all paths exhausted
         return {
-          status: 'FORWARD_FAILED',
+          status: 'NO_CLOSER',
           nodes: helpers.map(h => ({
             key: String(h.key),
             distance: String(h.distance),
             name: h.name
           })),
-          tracePath: [String(this.key)],
+          tracePath: [],
         };
       }
 
-      return result;
-    } catch (error) {
-      return {
-        status: 'FORWARD_FAILED',
-        nodes: helpers.map(h => ({
-          key: String(h.key),
-          distance: String(h.distance),
-          name: h.name
-        })),
-        tracePath: [String(this.key)],
-        error: error.message
-      };
+      // Forward to first hop
+      const forwardCtx = currentCtx.forward(this.key);
+      this.dedupCache.markForwarded(ctx.lookupId);
+
+      try {
+        const result = await firstHop.contact.sendRPC(
+          'recursiveFindNodes',
+          forwardCtx.serialize()
+        );
+
+        if (!result) {
+          // Mark this path as tried and continue to next candidate
+          currentCtx = currentCtx.markTried(firstHop.key);
+          continue;
+        }
+
+        // On DUPLICATE response, select alternate XOR-valid next hop (Requirement 3.5)
+        if (result.status === 'DUPLICATE') {
+          currentCtx = currentCtx.markTried(firstHop.key);
+          continue;
+        }
+
+        // Non-DUPLICATE response - return it
+        return result;
+      } catch (error) {
+        // Mark this path as tried and continue to next candidate
+        currentCtx = currentCtx.markTried(firstHop.key);
+        continue;
+      }
     }
   }
 }

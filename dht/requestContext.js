@@ -8,8 +8,9 @@ const { BigInt } = globalThis; // For linters.
  * - Trace path for reverse routing of replies
  * - TTL enforcement to prevent unbounded recursion
  * - Loop detection via trace path inspection
+ * - Tracking tried paths for alternate path selection on duplicate
  * 
- * Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6
+ * Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 3.5
  */
 export class RequestContext {
   /**
@@ -19,13 +20,15 @@ export class RequestContext {
    * @param {BigInt} params.targetId - Key being looked up
    * @param {number} params.ttl - Remaining hops allowed
    * @param {BigInt[]} [params.tracePath] - Array of node keys visited
+   * @param {BigInt[]} [params.triedPaths] - Array of node keys that returned DUPLICATE (for alternate path selection)
    */
-  constructor({ lookupId, originId, targetId, ttl, tracePath }) {
+  constructor({ lookupId, originId, targetId, ttl, tracePath, triedPaths }) {
     this.lookupId = lookupId;
     this.originId = originId;
     this.targetId = targetId;
     this.ttl = ttl;
     this.tracePath = tracePath || [];
+    this.triedPaths = triedPaths || [];
   }
 
   /**
@@ -42,7 +45,39 @@ export class RequestContext {
       targetId: this.targetId,
       ttl: this.ttl - 1,
       tracePath: [...this.tracePath, nodeId],
+      triedPaths: [...this.triedPaths],
     });
+  }
+
+  /**
+   * Mark a node as tried (returned DUPLICATE) for alternate path selection.
+   * 
+   * @param {BigInt} nodeId - The node key that returned DUPLICATE
+   * @returns {RequestContext} A new context with the node marked as tried
+   * 
+   * Requirement: 3.5
+   */
+  markTried(nodeId) {
+    return new RequestContext({
+      lookupId: this.lookupId,
+      originId: this.originId,
+      targetId: this.targetId,
+      ttl: this.ttl,
+      tracePath: [...this.tracePath],
+      triedPaths: [...this.triedPaths, nodeId],
+    });
+  }
+
+  /**
+   * Check if a node has been tried (returned DUPLICATE).
+   * 
+   * @param {BigInt} nodeId - The node key to check
+   * @returns {boolean} True if the node has been tried
+   * 
+   * Requirement: 3.5
+   */
+  hasTried(nodeId) {
+    return this.triedPaths.some(id => id === nodeId);
   }
 
   /**
@@ -68,6 +103,7 @@ export class RequestContext {
       targetId: String(this.targetId),
       ttl: this.ttl,
       tracePath: this.tracePath.map(String),
+      triedPaths: this.triedPaths.map(String),
     };
   }
 
@@ -85,6 +121,7 @@ export class RequestContext {
       targetId: BigInt(data.targetId),
       ttl: data.ttl,
       tracePath: data.tracePath.map(id => BigInt(id)),
+      triedPaths: (data.triedPaths || []).map(id => BigInt(id)),
     });
   }
 }

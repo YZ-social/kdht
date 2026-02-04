@@ -6,6 +6,35 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Task 11: Alternate Path Selection on Duplicate
+
+- **What**: Added alternate path handling to recursive routing - when a DUPLICATE response is received, the system now selects the next XOR-valid candidate that hasn't been tried
+- **Why**: R/Kademlia requires that on DUPLICATE response, the upstream node SHALL select an alternate XOR-valid next hop (Requirement 3.5). This prevents routing failures when the first-choice path has already seen the lookup.
+- **Changes**:
+  - Extended `RequestContext` with `triedPaths` array to track nodes that returned DUPLICATE
+  - Added `markTried(nodeId)` method to create a new context with a node marked as tried
+  - Added `hasTried(nodeId)` method to check if a node has been tried
+  - Updated `serialize()` and `deserialize()` to include `triedPaths`
+  - Updated `forward()` to preserve `triedPaths`
+  - Modified `selectProximityAware()` to exclude nodes in `triedPaths`
+  - Added `forwardWithAlternatePaths()` method that loops through candidates on DUPLICATE responses
+  - Updated `recursiveFindNodes()` to use the new alternate path handling
+  - Updated `initiateRecursiveLookup()` to handle DUPLICATE responses with alternate paths
+- **Lessons Learned**:
+  - The `triedPaths` array is separate from `tracePath` - tracePath tracks the actual route taken, while triedPaths tracks failed attempts
+  - The while loop in `forwardWithAlternatePaths()` continues until either a non-DUPLICATE response is received or all candidates are exhausted
+  - Immutable context updates (via `markTried()`) prevent accidental state corruption
+
+#### Tests
+
+- Added to `spec/rdht/nodeRecursiveSpec.js`:
+  - Property 6: Alternate Path Selection on Duplicate (validates Requirement 3.5)
+  - Tests for `selectProximityAware` excluding tried nodes
+  - Tests for `markTried()` creating new context without modifying original
+  - Tests for `hasTried()` returning correct values
+  - Tests for `triedPaths` serialization round-trip
+  - Tests for `forward()` preserving `triedPaths`
+
 #### R/Kademlia Conformance - Task 8: NodeRecursive Integration into Inheritance Chain
 
 - **What**: Integrated `NodeRecursive` into the Node inheritance chain and exported new R/Kademlia components
