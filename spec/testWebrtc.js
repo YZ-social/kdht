@@ -68,7 +68,7 @@ describe("DHT write/read", function () {
       await Node.delay(waitBeforeRead);
     }
     console.log(new Date(), 'Reading');
-  }, 5e3 * nWrites + (1 + nBots) * Node.refreshTimeIntervalMS);
+  }, waitBeforeRead + 5e3 * nWrites + (1 + nBots) * Node.refreshTimeIntervalMS);
   afterAll(async function () {
     contact.disconnect();
     console.log(new Date(), 'killing portals and bots');
