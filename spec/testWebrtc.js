@@ -8,7 +8,7 @@ import { WebContact, Node } from '../index.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
-describe("DHT write/read", function () {
+describe("DHT webrtc write/read", function () {
   let contact, portalProcess, botProcess;
   const botInfo = false;
   const verbose = false;
@@ -68,7 +68,7 @@ describe("DHT write/read", function () {
       await Node.delay(waitBeforeRead);
     }
     console.log(new Date(), 'Reading');
-  }, waitBeforeRead + 5e3 * nWrites + (1 + nBots) * Node.refreshTimeIntervalMS);
+  }, portalSeconds * 1e3 + botsMilliseconds + 5e3 * nWrites + waitBeforeRead );
   afterAll(async function () {
     contact.disconnect();
     console.log(new Date(), 'killing portals and bots');
