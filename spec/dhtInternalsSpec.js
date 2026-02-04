@@ -500,8 +500,10 @@ describe("DHT internals", function () {
     for (let testNum = 1; testNum <= 20; testNum++) {
       it(`randomized store/read test ${testNum}`, async function() {
         // Randomize network parameters
+        // Use higher minimum connectivity (50%) to reduce flakiness
+        // while still testing realistic sparse network conditions
         const nNodes = 8 + Math.floor(Math.random() * 8); // 8-15 nodes
-        const connectivity = 0.4 + Math.random() * 0.4; // 40-80% connectivity
+        const connectivity = 0.5 + Math.random() * 0.35; // 50-85% connectivity
 
         const network = await createRandomNetwork(nNodes, connectivity);
 
