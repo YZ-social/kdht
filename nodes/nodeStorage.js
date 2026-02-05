@@ -1,26 +1,31 @@
 import { NodeRefresh } from './nodeRefresh.js';
+import { StorageBag } from './storageBag.js';
 
 // Keeping application data.
 export class NodeStorage extends NodeRefresh {
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
   // TODO: store across sessions
+
+  // These two accept and produce a list of StorageItems.
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
-    const hadValue = this.storage.has(key);
+    let existingValue = this.storage.get(key);
+
     this.storage.set(key, value);
     if (this.constructor.diagnosticTrace) {
-      this.log(`storeLocally(${key}, ${value}) - ${hadValue ? 'updated' : 'NEW'}`);
+      this.log(`storeLocally(${key}, ${value}) - ${existingValue ? 'updated' : 'NEW'}`);
     }
     // TODO: The paper says this can be optimized.
     // Claude.ai suggests just writing to the next in line, but that doesn't work.
     this.schedule(key, 'storage', () => {
       this.ilog('refresh value', value, 'at key', key);
       // IF storeValue determines we are one of the nodes to store, then it will get scheduled again.
-      this.storeValue(key, value);
+      this.storeValue(key, this.retrieveLocally(key));
     });
   }
   retrieveLocally(key) {     // Retrieve from memory.
     return this.storage.get(key);
   }
+
   async replicateCloserStorage(contact) { // Replicate to new contact any of our data for which contact is closer than us.
     for (const key in this.storage.keys()) {
       if (contact.connection && (contact.distance(key) <= this.distance(key))) {

@@ -51,7 +51,7 @@ describe("DHT internals", function () {
       it("includes name, routing names and stored items by bigInt key.", function () {
 	let report = example.report(string => string); // No op for what to do with the report. Just return it.
 	expect(report).toBe(`Node: 0, 0 connections
-  storing 2: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: "baz"
+  storing 2: 58686998438798322974467776505749455156n: 17, 336119020696479164089214630533760195420n: baz
   90 (2): 1n, 2n`);
       });
     });

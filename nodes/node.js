@@ -87,7 +87,7 @@ export class Node extends NodeProbe {
       remaining--;
     }));
     if (remaining) {
-      this.ilog("initial parallel store produced", connected.length, "results.");
+      this.log("initial parallel store produced", connected.length, "results.");
       contacts = contacts.filter(contact => !connected.includes(contact)).reverse(); // So we can save best-first by popping off the end.
     }
     while (contacts.length && remaining) {

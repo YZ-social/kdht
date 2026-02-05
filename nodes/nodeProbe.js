@@ -3,13 +3,16 @@ import { NodeMessages } from './nodeMessages.js';
 
 // Probe the network
 export class NodeProbe extends NodeMessages {
-  // There are only three kinds of rpc results: 'pong', [...helper], {value: something}
-  static isValueResult(rpcResult) {
+
+  // There are only four kinds of rpc results: 'pong', [...helper], {value: something}, or {result, forwardingExclusions}.
+  static isValueResult(rpcResult) { // Is it specifically a value? i.e., {value: something}
     return rpcResult && rpcResult !== 'pong' && 'value' in rpcResult;
   }
-  static isContactsResult(rpcResult) {
+  static isContactsResult(rpcResult) { // Not one of the other kinds.
+    // I.e., might be [Helper, ...] or [[name, distance], ...] depending on whether is coming or going.
     return Array.isArray(rpcResult);
   }
+
   async step(targetKey, finder, helper, keysSeen, trace) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     const contact = helper.contact;

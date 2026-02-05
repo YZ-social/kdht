@@ -157,6 +157,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     }
   }
   serializeRequest(messageTag, method, sender, targetKey, ...rest) { // Stringify sender and targetKey.
+    // Note that this answers a stringifiable array, not a string.
     Node.assert(sender instanceof Contact, 'no sender', sender);
     return [messageTag, method, sender.sname, targetKey.toString(), ...rest];
   }
@@ -170,13 +171,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     if (('description' in first) || ('candidate' in first)) return true;
     return false;
   }
-  serializeResponse(response) {
+  serializeResponse(response) { // Of a response that we are about to send back from an RPC.
     if (!this.host.constructor.isContactsResult(response)) return response;
     if (this.isSignalResponse(response)) return response;
     return response.map(helper => [helper.contact.sname, helper.distance.toString()]);
   }
-  async deserializeResponse(result) {
-    let response;
+  async deserializeResponse(result) { // Of a value returned from an RPC.
     if (!Node.isContactsResult(result)) return result;
     if (!result.length) return result;
     if (this.isSignalResponse(result)) return result;
