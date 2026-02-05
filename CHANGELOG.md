@@ -6,6 +6,38 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Task 14: Safety Invariant Tests
+
+- **What**: Added property-based tests verifying Kademlia's safety invariants are preserved
+- **Why**: R/Kademlia requires that bucket structure and XOR-distance correctness are never violated, even with proximity optimizations. These tests ensure:
+  - Bucket index assignment is deterministic based on XOR prefix (Requirement 10.2)
+  - Contacts are always placed in the correct bucket for their XOR prefix range (Requirements 6.4, 10.3)
+  - Buckets are never merged or reshaped during operations (Requirements 6.4, 10.2)
+  - XOR-closer contacts are never replaced by XOR-farther contacts (Requirements 6.5, 10.4)
+  - Proximity metrics (RTT) cannot override XOR correctness (Requirement 10.4)
+- **Changes**:
+  - Created `spec/rdht/safetyInvariantsSpec.js` with property tests
+  - Property 12: Bucket Structure Preservation (4 property tests)
+  - Property 13: No XOR-Worse Replacement (3 property tests)
+- **Lessons Learned**:
+  - The `getBucketIndex()` function is deterministic - same key always maps to same bucket
+  - `KBucket.randomTarget` generates keys that correctly map back to the bucket's index
+  - When bucket is full with live contacts, new contacts are rejected regardless of RTT
+  - Dead contacts (no connection) can be evicted, but replacements must be valid for the bucket
+
+#### Tests
+
+- Created `spec/rdht/safetyInvariantsSpec.js` with:
+  - Property 12: Bucket Structure Preservation (validates Requirements 6.4, 10.2, 10.3)
+    - Bucket index assignment is deterministic based on XOR prefix
+    - Contacts in bucket have keys within correct XOR prefix range
+    - Buckets are not merged or reshaped during operations
+    - XOR prefix determines bucket uniquely
+  - Property 13: No XOR-Worse Replacement (validates Requirements 6.5, 10.4)
+    - XOR-closer contacts are never replaced by XOR-farther contacts
+    - Proximity metrics do not override XOR correctness
+    - Dead contacts can be replaced but only by valid bucket members
+
 #### R/Kademlia Conformance - Task 13: Maintenance Lifecycle Compliance Verification
 
 - **What**: Added verification tests confirming existing KDHT implementation conforms to R/Kademlia maintenance lifecycle requirements

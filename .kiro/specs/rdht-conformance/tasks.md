@@ -146,16 +146,16 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Property 16: Liveness-Based Eviction**
     - **Validates: Requirements 9.1, 9.2, 9.3, 9.4**
 
-- [ ] 14. Add safety invariant tests
-  - [ ] 14.1 Write property test for bucket structure preservation
+- [x] 14. Add safety invariant tests
+  - [x] 14.1 Write property test for bucket structure preservation
     - **Property 12: Bucket Structure Preservation**
     - **Validates: Requirements 6.4, 10.2, 10.3**
   
-  - [ ] 14.2 Write property test for no XOR-worse replacement
+  - [x] 14.2 Write property test for no XOR-worse replacement
     - **Property 13: No XOR-Worse Replacement**
     - **Validates: Requirements 6.5, 10.4**
 
-- [ ] 15. Checkpoint - Verify safety invariants
+- [x] 15. Checkpoint - Verify safety invariants
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 16. Add optional PNS support
