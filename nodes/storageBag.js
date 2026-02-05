@@ -31,10 +31,12 @@
 export class StorageBag {
 
   types = {}; // {[type]: {[subject]: storageItem, ...}, ...}
+  items = null; // caches [{type, subject, issuedTime, payload}, ...]
 
   // Recall that toJSON() does not return a string, but rather a replacement object to be further stringified.
   toJSON() { // Answer [ pojo, ...], where each pojo are the properties of a StorageItem
-    let list = [];
+    if (this.items) return this.items;
+    let list = this.items = [];
     Object.values(this.types).forEach(typeStorageItems => 
       Object.values(typeStorageItems).forEach(storageItem => storageItem.isCancelled || list.push(storageItem.toJSON())));
     return list;
@@ -50,7 +52,7 @@ export class StorageBag {
     for (const storageItem of storageItems) {
       const proposed = StorageItem.create(storageItem);
       const subjects = this.types[proposed.type] ||= {};
-      proposed.merge1(subjects, now, this, node, key);
+      if (!proposed.merge1(subjects, now, this, node, key)) this.items = null;
     }
     return this;
   }

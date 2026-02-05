@@ -36,7 +36,7 @@ describe("DHT storageBag", function () {
     beforeAll(function () {
       newer = Date.now();
       let expiration = StorageItem.expiration;
-      StorageItem.expiration = 1e3;
+      StorageItem.expiration = 2e3;
       storageBag.merge([{type:"raw", subject:"foo", issuedTime:newer, payload:"nextFoo"},
 			{type:"raw", subject:"bar", issuedTime:now-3, payload:"priorBar"}]);
       // node and key can be left off of merge if there are no side effects.
@@ -51,7 +51,7 @@ describe("DHT storageBag", function () {
       expect(payload).toBe('bar2');
     });
     afterAll(async function () { // Get things back to state before this suite, so that tests can run in any order.
-      await Node.delay(2e3); // expiration in beforeAll.
+      await Node.delay(4e3); // expiration in beforeAll.
       storageBag.merge([{type:"raw", subject:"foo", issuedTime:now-1, payload:"foo1"}]); // Older than the one added in this su
       expect(storageBag.types.raw.foo.payload).toBe('foo1');
       expect(storageBag.types.raw.bar.payload).toBe('bar2');
