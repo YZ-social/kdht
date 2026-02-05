@@ -6,6 +6,79 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Summary
+
+This release adds optional R/Kademlia conformance features to KDHT, enabling recursive routing, proximity-aware peer selection, and message deduplication while maintaining full backward compatibility with existing iterative routing.
+
+**What Changed:**
+- Added `RequestContext` class for source routing metadata (lookup ID, trace path, TTL)
+- Added `DedupCache` class for message deduplication with TTL-based eviction
+- Added `NodeRecursive` mixin providing recursive FIND_NODE RPC handler
+- Extended `Contact` class with RTT measurement during normal RPCs
+- Extended `Helper` class with proximity scoring for next-hop selection
+- Extended `KBucket` class with optional PNS (Proximity Neighbor Selection) reordering
+- Added comprehensive property-based tests validating 17 correctness properties
+
+**Why Changed:**
+R/Kademlia is an extension to the Kademlia DHT protocol that improves lookup latency through:
+1. Recursive routing - intermediate nodes forward requests, reducing round trips
+2. Proximity routing - RTT-aware next-hop selection among XOR-valid candidates
+3. Source routing - trace paths enable reverse routing and loop detection
+4. Message deduplication - prevents amplification in recursive forwarding
+
+These changes align KDHT with academic R/Kademlia recommendations while preserving the existing iterative routing as the default behavior.
+
+**Configuration Options (Requirement 11):**
+
+All options are static properties on the `Node` class:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `recursiveRoutingEnabled` | boolean | `false` | Enable recursive routing mode (iterative when false) |
+| `proximityRoutingEnabled` | boolean | `true` | Enable RTT-based next-hop selection |
+| `pnsEnabled` | boolean | `false` | Enable Proximity Neighbor Selection bucket reordering |
+| `defaultTTL` | number | `20` | Maximum hops for recursive lookups |
+| `dedupCacheSize` | number | `1000` | Maximum entries in deduplication cache |
+| `dedupCacheTTL` | number | `10000` | Deduplication cache entry TTL in milliseconds |
+| `proximityWeight` | number | `0.1` | RTT influence factor for proximity scoring |
+
+PNS-specific options (when `pnsEnabled = true`):
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `pnsProbeRateLimit` | number | `10` | Maximum RTT probes per rate limit window |
+| `pnsProbeWindowMs` | number | `60000` | Rate limit window duration in milliseconds |
+| `pnsMinProbeIntervalMs` | number | `100` | Minimum time between consecutive probes |
+
+**Usage Example:**
+```javascript
+import { Node } from '@yz-social/kdht';
+
+// Enable recursive routing with proximity awareness
+Node.recursiveRoutingEnabled = true;
+Node.proximityRoutingEnabled = true;
+
+// Optionally enable PNS for stable networks
+Node.pnsEnabled = true;
+
+// Tune parameters as needed
+Node.defaultTTL = 15;
+Node.proximityWeight = 0.2;
+```
+
+**Backward Compatibility (Requirement 12):**
+- All features are disabled by default except `proximityRoutingEnabled`
+- With `recursiveRoutingEnabled = false`, behavior is identical to pre-modification
+- All 255+ existing tests pass without modification
+- New exports (`RequestContext`, `DedupCache`) are additive
+
+**New Exports:**
+```javascript
+import { Node, Contact, KBucket, Helper, RequestContext, DedupCache } from '@yz-social/kdht';
+```
+
+---
+
 #### R/Kademlia Conformance - Task 17: Backward Compatibility Tests
 
 - **What**: Added comprehensive backward compatibility test suite verifying that with R/Kademlia features disabled, the system behaves identically to the pre-modification implementation
