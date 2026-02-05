@@ -1,6 +1,9 @@
-export { Contact } from './contacts/contact.js';
-export { SimulatedContact, SimulatedConnectionContact } from './contacts/simulations.js';
-export { WebContact } from './contacts/webrtc.js';
-export { Helper } from './nodes/helper.js';
-export { KBucket } from './nodes/kbucket.js';
-export { Node } from './nodes/node.js';
+import { Contact } from './contacts/contact.js';
+import { SimulatedContact, SimulatedConnectionContact } from './contacts/simulations.js';
+import { WebContact } from './contacts/webrtc.js';
+import { Helper } from './nodes/helper.js';
+import { KBucket } from './nodes/kbucket.js';
+import { StorageBag, StorageItem } from './nodes/storageBag.js';
+import { Node } from './nodes/node.js';
+export { Contact, SimulatedContact, SimulatedConnectionContact, WebContact, Helper, KBucket, StorageBag, StorageItem, Node };
+export default { Contact, SimulatedContact, SimulatedConnectionContact, WebContact, Helper, KBucket, StorageBag, StorageItem, Node };

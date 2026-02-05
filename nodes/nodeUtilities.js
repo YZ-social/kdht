@@ -64,7 +64,7 @@ export class NodeUtilities {
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
     if (this.storage.size) {
       report += `\n  storing ${this.storage.size}: ` +
-	Array.from(this.storage.entries()).map(([k, v]) => `${k}n: ${JSON.stringify(v)}`).join(', ');
+	Array.from(this.storage.entries()).map(([k, v]) => `${k}n: ${v.toString()}`).join(', ');
     }
     if (this.looseContacts.length) {
       report += `\n  transports ${this.looseContacts.map(contact => contact.report).join(', ')}`;

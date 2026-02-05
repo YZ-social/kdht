@@ -25,7 +25,7 @@ describe("DHT internals", function () {
 	let value = 17;
 	example.storeLocally(key, value);
 	let retrieved = example.retrieveLocally(key);
-	expect(retrieved).toBe(value);
+	expect(retrieved[0]?.payload || retrieved).toBe(value); // Whether StorageItem array or not.
       });
       it("retrieves undefined if not set.", async function () {
 	let key = await Node.key("not seen");
