@@ -173,13 +173,13 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
     - **Property 11: PNS Rate Limiting**
     - **Validates: Requirements 6.3**
 
-- [ ] 17. Add backward compatibility tests
-  - [ ] 17.1 Create backward compatibility test suite
+- [x] 17. Add backward compatibility tests
+  - [x] 17.1 Create backward compatibility test suite
     - Run existing dhtAcceptanceSpec with features disabled
     - Verify identical behavior to pre-modification
     - _Requirements: 12.1, 12.2_
   
-  - [ ] 17.2 Write property test for backward compatibility
+  - [x] 17.2 Write property test for backward compatibility
     - **Property 17: Backward Compatibility**
     - **Validates: Requirements 12.1**
 

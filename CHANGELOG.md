@@ -6,6 +6,33 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Task 17: Backward Compatibility Tests
+
+- **What**: Added comprehensive backward compatibility test suite verifying that with R/Kademlia features disabled, the system behaves identically to the pre-modification implementation
+- **Why**: R/Kademlia conformance changes must not break existing functionality. These tests ensure:
+  - `locateNodes`, `locateValue`, `storeValue`, and `join` operations work correctly with features disabled
+  - Existing test suite continues to pass without modification
+  - XOR distance calculations, bucket placement, and routing table operations are unchanged
+- **Changes**:
+  - Created `spec/rdht/backwardCompatibilitySpec.js` with:
+    - Task 17.1: Backward compatibility test suite
+      - Tests for `locateNodes` behavior (iterative routing, k closest nodes, discovery)
+      - Tests for `locateValue` behavior (store/retrieve, undefined for missing keys, local lookup)
+      - Tests for `storeValue` behavior (k replication, multi-node storage)
+      - Tests for `join` behavior (self-lookup, bucket seeding)
+      - Tests for existing internal operations (bucket placement, XOR distance, Helper comparison)
+    - Task 17.2: Property 17 - Backward Compatibility (validates Requirement 12.1)
+      - Property test: `locateNodes` returns sorted Helpers by XOR distance
+      - Property test: stored values can be retrieved from any node
+      - Property test: `iterate` uses iterative routing pattern
+      - Property test: `addToRoutingTable` places contacts in correct buckets
+      - Property tests: XOR distance is symmetric, zero to self, satisfies triangle inequality
+- **Configuration**: Tests run with all R/Kademlia features disabled (`recursiveRoutingEnabled = false`, `proximityRoutingEnabled = false`, `pnsEnabled = false`)
+- **Lessons Learned**:
+  - Jasmine uses `toBeDefined()` instead of Jest's `toHaveProperty()` for property existence checks
+  - Network setup overhead requires reduced property test iterations (10 runs vs 100)
+  - XOR metric satisfies a weaker form of triangle inequality: `d(a,c) <= d(a,b) + d(b,c)`
+
 #### R/Kademlia Conformance - Task 16: Optional PNS Support
 
 - **What**: Added optional Proximity Neighbor Selection (PNS) support to KBucket
