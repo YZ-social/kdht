@@ -21,14 +21,16 @@ export class RequestContext {
    * @param {number} params.ttl - Remaining hops allowed
    * @param {BigInt[]} [params.tracePath] - Array of node keys visited
    * @param {BigInt[]} [params.triedPaths] - Array of node keys that returned DUPLICATE (for alternate path selection)
+   * @param {Object} [params.payload] - Optional payload data (e.g., signals for WebRTC)
    */
-  constructor({ lookupId, originId, targetId, ttl, tracePath, triedPaths }) {
+  constructor({ lookupId, originId, targetId, ttl, tracePath, triedPaths, payload }) {
     this.lookupId = lookupId;
     this.originId = originId;
     this.targetId = targetId;
     this.ttl = ttl;
     this.tracePath = tracePath || [];
     this.triedPaths = triedPaths || [];
+    this.payload = payload || null;
   }
 
   /**
@@ -46,6 +48,7 @@ export class RequestContext {
       ttl: this.ttl - 1,
       tracePath: [...this.tracePath, nodeId],
       triedPaths: [...this.triedPaths],
+      payload: this.payload,
     });
   }
 
@@ -65,6 +68,7 @@ export class RequestContext {
       ttl: this.ttl,
       tracePath: [...this.tracePath],
       triedPaths: [...this.triedPaths, nodeId],
+      payload: this.payload,
     });
   }
 
@@ -104,6 +108,7 @@ export class RequestContext {
       ttl: this.ttl,
       tracePath: this.tracePath.map(String),
       triedPaths: this.triedPaths.map(String),
+      payload: this.payload,
     };
   }
 
@@ -122,6 +127,7 @@ export class RequestContext {
       ttl: data.ttl,
       tracePath: data.tracePath.map(id => BigInt(id)),
       triedPaths: (data.triedPaths || []).map(id => BigInt(id)),
+      payload: data.payload || null,
     });
   }
 }

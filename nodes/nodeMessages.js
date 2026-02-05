@@ -49,49 +49,15 @@ export class NodeMessages extends NodeContacts {
       return {forwardingExclusions}; // Subtle: If it fails, return a definitive failure instead of just null.
     }
 
-    // Forward recursively.
-    if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, Contact.forwardingTimeoutMS, targetNameForDebugging);
+    // Forward recursively using R/Kademlia routing (if forwardingExclusions provided)
+    if (forwardingExclusions) {
+      return await this.initiateRecursiveSignals(key, signals, forwardingExclusions, Date.now() + Contact.forwardingTimeoutMS, targetNameForDebugging);
+    }
 
     // We were a sponsor but for a contact has since disconnected. We do not know if they are still connected to others.
     //this.flog('\n*** sponsored disconnected ***');
     return {forwardingExclusions}; // FIXME: Is this definitively right, or should we answer null here?
   }
-  static maxTries = Math.pow(this.alpha, 3); // alpha tries at each of three deep, or equivalent.
-  async recursiveSignals(key, signals, forwardingExclusions, expiration, targetNameForDebugging) { // Forward recursively.
-    // The target key may not be reachable from here (and might not even still be running).
-    // So bound our branching.
-    let remainingThisNode = this.constructor.alpha; // If it's good enough for probing, then it's good enough here.
-    if (Date.now() > expiration) {
-      this.flog('abandoning recursive path towards', targetNameForDebugging, 'by timeout through', forwardingExclusions.join(', '));
-      return null;
-    }
-    if (forwardingExclusions.length > this.constructor.maxTries) {
-      this.flog('abandoning recursive path towards', targetNameForDebugging, 'wandering through', forwardingExclusions.join(', '));
-      return {forwardingExclusions};
-    }
-    const helpers = this.findClosestHelpers(key);
-    const contacts = helpers.map(helper => helper.contact);
-    forwardingExclusions.push(this.name);
-
-    for (const contact of contacts) {
-      if (!remainingThisNode--) break;
-      if (!contact.isRunning) continue;
-      if (!contact.connection) continue;
-      if (forwardingExclusions.includes(contact.name)) continue;
-      this.constructor.assert(contact.key !== this.key, 'forwarding through self');
-      //this.flog('forwarding through', contact.sname);
-      const response = await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
-      if (response) {
-	return response;
-      } else { // No response at all: continue with further calls that exclude contact.
-	//this.flog('No forwarding response from', contact.sname, );
-	forwardingExclusions.push(contact.name);
-      }
-    }
-    this.log('Unable to forward recursive signals to', targetNameForDebugging, 'among', contacts.filter(c => c.connection).length, 'available contacts.');
-    return null;
-  }
-
   messageResolvers = new Map(); // maps outgoing message tag => promise resolver being waited on.
   receiveRPC(method, sender, ...rest) { // Process a deserialized RPC request, dispatching it to one of the above.
     this.constructor.assert(typeof(method)==='string', 'no method', method, sender, rest);

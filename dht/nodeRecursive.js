@@ -343,4 +343,266 @@ export class NodeRecursive extends NodeMessages {
       }
     }
   }
+
+  // ============================================================
+  // Recursive Signals - WebRTC signaling using R/Kademlia routing
+  // ============================================================
+
+  /**
+   * RPC handler for recursive signals forwarding.
+   * 
+   * This replaces the old recursiveSignals in NodeMessages with proper
+   * R/Kademlia routing: deduplication, TTL, trace path, and proximity-aware
+   * next-hop selection.
+   * 
+   * @param {Object} ctxData - Serialized RequestContext with signals payload
+   * @returns {Object} Result with status, result (signals), and forwardingExclusions
+   */
+  async recursiveSignals(ctxData) {
+    // Deserialize context
+    const ctx = RequestContext.deserialize(ctxData);
+    const { signals, targetNameForDebugging } = ctx.payload || {};
+
+    // Build forwardingExclusions from trace path for backward compatibility
+    const forwardingExclusions = ctx.tracePath.map(id => {
+      const contact = this.findContactByKey(id);
+      return contact?.name || String(id);
+    });
+
+    // Deduplication check
+    if (this.dedupCache.has(ctx.lookupId)) {
+      return { 
+        status: 'DUPLICATE', 
+        result: null,
+        forwardingExclusions,
+        reason: 'lookup_id_seen'
+      };
+    }
+
+    // Loop detection
+    if (ctx.hasVisited(this.key)) {
+      return { 
+        status: 'DUPLICATE', 
+        result: null,
+        forwardingExclusions,
+        reason: 'loop_detected'
+      };
+    }
+
+    // Record in dedup cache
+    this.dedupCache.add(ctx.lookupId);
+
+    // Update routing table from trace path
+    this.updateFromTracePath(ctx.tracePath);
+
+    // Add ourselves to forwardingExclusions
+    forwardingExclusions.push(this.name);
+
+    // Check if we are the target - pass signals to our home contact
+    if (this.key === ctx.targetId) {
+      const result = await this.contact.signals(...signals);
+      return {
+        status: 'FOUND',
+        result,
+        forwardingExclusions,
+      };
+    }
+
+    // Check if we have a direct connection to the target
+    const directContact = this.findContactByKey(ctx.targetId);
+    if (directContact && directContact.connection) {
+      const response = await directContact.sendRPC('signals', ctx.targetId, signals, forwardingExclusions, targetNameForDebugging);
+      if (response) {
+        return {
+          status: 'FOUND',
+          result: response.result,
+          forwardingExclusions: response.forwardingExclusions || forwardingExclusions,
+        };
+      }
+      // Direct connection failed, fall through to recursive forwarding
+    }
+
+    // Check TTL
+    if (ctx.ttl <= 0) {
+      this.log('TTL expired for recursive signals to', targetNameForDebugging);
+      return {
+        status: 'TTL_EXPIRED',
+        result: null,
+        forwardingExclusions,
+      };
+    }
+
+    // Forward recursively with alternate path selection
+    return await this.forwardSignalsWithAlternatePaths(ctx, signals, forwardingExclusions, targetNameForDebugging);
+  }
+
+  /**
+   * Forward signals recursively, trying alternate paths on failure.
+   * 
+   * @param {RequestContext} ctx - Current request context
+   * @param {Array} signals - The WebRTC signals payload
+   * @param {Array} forwardingExclusions - Names of nodes already tried
+   * @param {string} targetNameForDebugging - Target name for logging
+   * @returns {Object} Result with status, result, and forwardingExclusions
+   */
+  async forwardSignalsWithAlternatePaths(ctx, signals, forwardingExclusions, targetNameForDebugging) {
+    const helpers = this.findClosestHelpers(ctx.targetId);
+    let currentCtx = ctx;
+
+    // Try candidates until we get a successful response or run out of options
+    while (true) {
+      const nextHop = this.selectProximityAware(helpers, currentCtx);
+
+      if (!nextHop) {
+        this.log('No closer node for recursive signals to', targetNameForDebugging);
+        return {
+          status: 'NO_CLOSER',
+          result: null,
+          forwardingExclusions,
+        };
+      }
+
+      // Skip if no connection
+      if (!nextHop.contact.connection) {
+        currentCtx = currentCtx.markTried(nextHop.key);
+        continue;
+      }
+
+      // Skip if already in forwardingExclusions (for backward compat with old signals)
+      if (forwardingExclusions.includes(nextHop.contact.name)) {
+        currentCtx = currentCtx.markTried(nextHop.key);
+        continue;
+      }
+
+      // Forward recursively
+      const forwardCtx = currentCtx.forward(this.key);
+      // Include signals payload in the forwarded context
+      forwardCtx.payload = { signals, targetNameForDebugging };
+      this.dedupCache.markForwarded(ctx.lookupId);
+
+      try {
+        const result = await nextHop.contact.sendRPC(
+          'recursiveSignals',
+          forwardCtx.serialize()
+        );
+
+        // Handle forwarding failure
+        if (!result) {
+          forwardingExclusions.push(nextHop.contact.name);
+          currentCtx = currentCtx.markTried(nextHop.key);
+          continue;
+        }
+
+        // On DUPLICATE response, try alternate path
+        if (result.status === 'DUPLICATE') {
+          currentCtx = currentCtx.markTried(nextHop.key);
+          continue;
+        }
+
+        // Success or terminal failure - return it
+        return result;
+      } catch (error) {
+        forwardingExclusions.push(nextHop.contact.name);
+        currentCtx = currentCtx.markTried(nextHop.key);
+        continue;
+      }
+    }
+  }
+
+  /**
+   * Initiate recursive signals forwarding to a target key.
+   * 
+   * This is the entry point that replaces the old recursiveSignals call
+   * in NodeMessages.signals(). It uses R/Kademlia routing with proper
+   * deduplication, TTL, and proximity-aware forwarding.
+   * 
+   * @param {BigInt} key - Target node key
+   * @param {Array} signals - WebRTC signals payload [senderSname, ...signals]
+   * @param {Array} forwardingExclusions - Names already tried (for backward compat)
+   * @param {number} expiration - Timeout timestamp (ignored, we use TTL instead)
+   * @param {string} targetNameForDebugging - Target name for logging
+   * @returns {Object} Result with {result, forwardingExclusions} or null
+   */
+  async initiateRecursiveSignals(key, signals, forwardingExclusions = [], expiration, targetNameForDebugging) {
+    const ctx = this.createLookupContext(key);
+    // Store signals in payload
+    ctx.payload = { signals, targetNameForDebugging };
+
+    // Add ourselves to dedup cache
+    this.dedupCache.add(ctx.lookupId);
+
+    // Initialize forwardingExclusions with ourselves
+    forwardingExclusions.push(this.name);
+
+    const helpers = this.findClosestHelpers(key);
+    
+    if (helpers.length === 0) {
+      return {
+        result: null,
+        forwardingExclusions,
+      };
+    }
+
+    let currentCtx = ctx;
+
+    // Try candidates until we get a successful response or run out of options
+    while (true) {
+      const firstHop = this.selectProximityAware(helpers, currentCtx);
+      
+      if (!firstHop) {
+        this.log('Unable to forward recursive signals to', targetNameForDebugging, 
+          'among', helpers.filter(h => h.contact.connection).length, 'available contacts.');
+        return {
+          result: null,
+          forwardingExclusions,
+        };
+      }
+
+      // Skip if no connection
+      if (!firstHop.contact.connection) {
+        currentCtx = currentCtx.markTried(firstHop.key);
+        continue;
+      }
+
+      // Skip if already tried
+      if (forwardingExclusions.includes(firstHop.contact.name)) {
+        currentCtx = currentCtx.markTried(firstHop.key);
+        continue;
+      }
+
+      // Forward to first hop
+      const forwardCtx = currentCtx.forward(this.key);
+      forwardCtx.payload = { signals, targetNameForDebugging };
+      this.dedupCache.markForwarded(ctx.lookupId);
+
+      try {
+        const result = await firstHop.contact.sendRPC(
+          'recursiveSignals',
+          forwardCtx.serialize()
+        );
+
+        if (!result) {
+          forwardingExclusions.push(firstHop.contact.name);
+          currentCtx = currentCtx.markTried(firstHop.key);
+          continue;
+        }
+
+        // On DUPLICATE, try alternate path
+        if (result.status === 'DUPLICATE') {
+          currentCtx = currentCtx.markTried(firstHop.key);
+          continue;
+        }
+
+        // Return the result in the expected format
+        return {
+          result: result.result,
+          forwardingExclusions: result.forwardingExclusions || forwardingExclusions,
+        };
+      } catch (error) {
+        forwardingExclusions.push(firstHop.contact.name);
+        currentCtx = currentCtx.markTried(firstHop.key);
+        continue;
+      }
+    }
+  }
 }
