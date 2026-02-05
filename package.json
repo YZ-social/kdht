@@ -9,7 +9,7 @@
   },
   "type": "module",
   "scripts": {
-    "start": "node scripts/portal.js --externalBaseURL https://ki1r0y.com/kdht",
+    "start": "node scripts/portal.js --externalBaseURL https://hyperaccurate-nonevanescently-perry.ngrok-free.dev/kdht",
     "stop": "pkill kdht",
     "background": "npm stop; (npm start 1>server.log 2>&1 &); sleep 1",
     "withoutExternal": "node scripts/portal.js",
