@@ -19,7 +19,14 @@ export class Node extends NodeProbe {
     targetKey = await this.ensureKey(targetKey);
     return await this.iterate(targetKey, 'findNodes', number, false, false, includeSelf);
   }
-  async locateValue(targetKey, additionalTries = 1) { // Promise value stored for targetKey, or undefined.
+  async locateValue(targetKey, additionalTries = 1) { // Same as locateStorageValue, but in the case of a single raw value payload, return that.
+    const storageItems = await this.locateStorageValue(targetKey, additionalTries);
+    if (storageItems?.length !== 1) return storageItems;
+    const storageItem = storageItems[0];
+    if (storageItem.type !== 'raw') return storageItems;
+    return storageItem.payload;
+  }
+  async locateStorageValue(targetKey, additionalTries = 1) { // Promise list of StorageItems stored for targetKey, or undefined.
     // Side effect is to discover other nodes (and they us).
     targetKey = await this.ensureKey(targetKey);
     const trace = this.constructor.diagnosticTrace;

@@ -158,7 +158,7 @@ export class NodeProbe extends NodeMessages {
           const sortedResponders = [...queryResponders].sort(Helper.compare);
           for (const h of sortedResponders) {
             if (h.key !== helper.key) { // Skip the one that returned the value
-              h.contact.store(targetKey, result.value);
+              h.contact.store(targetKey, this.constructor.transportValue(result.value));
               break;
             }
           }
