@@ -30,9 +30,10 @@ export class NodeStorage extends NodeRefresh {
     // TODO: The paper says this can be optimized.
     // Claude.ai suggests just writing to the next in line, but that doesn't work.
     this.schedule(key, 'storage', () => {
-      this.ilog('refresh value', value, 'at key', key);
+      const found = this.retrieveLocally(key);
+      this.ilog('refresh value', key, found);
       // IF storeValue determines we are one of the nodes to store, then it will get scheduled again.
-      this.storeValue(key, this.retrieveLocally(key));
+      this.storeValue(key, found);
     });
   }
   retrieveLocally(key) {     // Retrieve from memory.
