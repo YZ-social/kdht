@@ -158,18 +158,18 @@ This plan implements minimal, surgical changes to align KDHT with R/Kademlia rec
 - [x] 15. Checkpoint - Verify safety invariants
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 16. Add optional PNS support
-  - [ ] 16.1 Extend KBucket with PNS reordering
+- [x] 16. Add optional PNS support
+  - [x] 16.1 Extend KBucket with PNS reordering
     - Add reorderByProximity() method (only when pnsEnabled)
     - Implement rate-limited RTT probing
     - Ensure bucket structure is preserved
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
   
-  - [ ] 16.2 Write property test for PNS bucket ordering
+  - [x] 16.2 Write property test for PNS bucket ordering
     - **Property 10: PNS Bucket Ordering**
     - **Validates: Requirements 6.1**
   
-  - [ ] 16.3 Write property test for PNS rate limiting
+  - [x] 16.3 Write property test for PNS rate limiting
     - **Property 11: PNS Rate Limiting**
     - **Validates: Requirements 6.3**
 

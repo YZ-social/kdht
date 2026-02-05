@@ -6,6 +6,47 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### R/Kademlia Conformance - Task 16: Optional PNS Support
+
+- **What**: Added optional Proximity Neighbor Selection (PNS) support to KBucket
+- **Why**: R/Kademlia's PNS feature allows bucket entries to be ranked by RTT (proximity) within XOR-equivalent peers, optimizing lookup latency in stable networks. This is an optional feature disabled by default.
+- **Changes**:
+  - Extended `KBucket` class with PNS methods:
+    - `reorderByProximity()` - sorts contacts by RTT (lowest first) while preserving bucket structure
+    - `probeForRTT(maxProbes)` - performs rate-limited RTT probing on contacts without measurements
+    - `updateProximityOrder()` - convenience method combining probing and reordering
+    - `canProbe()` / `recordProbe()` - rate limiting helpers
+    - `probeCount` getter - tracks probes in current window
+    - `pnsEnabled` getter - reflects node configuration
+  - Added PNS rate limiting configuration:
+    - `pnsProbeRateLimit` (default: 10) - max probes per window
+    - `pnsProbeWindowMs` (default: 60000) - rate limit window (1 minute)
+    - `pnsMinProbeIntervalMs` (default: 100) - minimum time between probes
+- **Configuration**: PNS is disabled by default (`Node.pnsEnabled = false`). Enable via `Node.pnsEnabled = true`.
+- **Safety Guarantees** (Requirements 6.4, 6.5):
+  - Bucket structure is preserved - no contacts are added or removed during reordering
+  - Buckets are not merged or reshaped
+  - XOR-valid contacts are never replaced with XOR-invalid ones
+- **Lessons Learned**:
+  - PNS reordering only affects the order of contacts within a bucket, not which contacts are present
+  - Contacts with null RTT are sorted to the end (treated as high RTT) to encourage probing
+  - Rate limiting prevents excessive probing traffic that could degrade network performance
+
+#### Tests
+
+- Created `spec/rdht/pnsSpec.js` with:
+  - Property 10: PNS Bucket Ordering (validates Requirement 6.1)
+    - Contacts sorted by RTT (lowest first)
+    - All original contacts preserved (bucket structure)
+    - Null RTT contacts placed at end
+    - No reordering when PNS disabled
+  - Property 11: PNS Rate Limiting (validates Requirement 6.3)
+    - Rate limit respected within window
+    - Rate limit resets after window expires
+    - Probe count tracking
+    - Minimum probe interval enforcement
+  - Unit tests for reorderByProximity, probeForRTT, updateProximityOrder, pnsEnabled getter
+
 #### R/Kademlia Conformance - Task 14: Safety Invariant Tests
 
 - **What**: Added property-based tests verifying Kademlia's safety invariants are preserved
