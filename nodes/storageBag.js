@@ -43,7 +43,7 @@ export class StorageBag {
   }
   toString() {
     const rawSubjects = Object.values(this.types.raw);
-    if (rawSubjects.length === 1) return JSON.stringify(rawSubjects[0].payload);
+    if (rawSubjects?.length === 1) return JSON.stringify(rawSubjects[0].payload);
     return super.toString();
   }
   merge(storageItems, node, key) { // Add each allowed storageItem of serialized to the organized types if allowed, including any side-effects.
@@ -51,10 +51,17 @@ export class StorageBag {
     const now = Date.now();
     for (const storageItem of storageItems) {
       const proposed = StorageItem.create(storageItem);
-      const subjects = this.types[proposed.type] ||= {};
-      if (!proposed.merge1(subjects, now, this, node, key)) this.items = null;
+      if (!proposed.merge1(now, this, node, key)) this.items = null;
     }
     return this;
+  }
+  delete(node, key, type, subject) { // Delete this.types[type][subject], and any empty parents through node.storage.
+    const subjects = this.types[type];
+    delete subjects[subject];
+    if (Object.keys(subjects).length) return;
+    delete this.types[type];
+    if (!node || Object.keys(this.types).length) return;
+    node.storage.delete(key);
   }
 }
 
@@ -93,18 +100,19 @@ export class StorageItem {
     const {type, subject, issuedTime, payload} = this;
     return {type, subject, issuedTime, payload};
   }
-  merge1(subjects, now) { // Add this into subjects if allowed and return this, else null.
-    // where subjects is: subjectName => storageItem
+  merge1(now, bag, node, key) { // Add this into subjects if allowed and return this, else null.
 
-    const {type, subject, payload, issuedTime, expiration} = this;
-    let {issuedTime:existingTime = 0, timer} = subjects[subject] || {};
+    const {type, subject, payload, issuedTime, expiration, debug} = this;
+    let {issuedTime:existingTime = 0, timer} = bag.types[type]?.[subject] || {};
 
+    if (debug) console.log('merging', {type, subject, existingTime, issuedTime, now, expiration});
     if (!this.allowedTime(existingTime, now, issuedTime)) return null;
         
     const timeout = issuedTime + expiration - now;
     clearTimeout(timer);
-    this.timer = setTimeout(() => delete subjects[subject], timeout);
+    this.timer = setTimeout(() => this.delete(bag, node, key, type, subject), timeout);
 
+    const subjects = bag.types[type] ||= {};
     subjects[subject] = this;
     return this;
   }
@@ -112,6 +120,9 @@ export class StorageItem {
     if (issuedTime > now) return false; // Cannot stake out the future. TODO: allow some clock skew.
     if (issuedTime <= existingTime) return false;
     return true;
+  }
+  delete(bag, node, key, type, subject) {
+    bag.delete(node, key, type, subject);
   }
 }
 StorageItem.register();

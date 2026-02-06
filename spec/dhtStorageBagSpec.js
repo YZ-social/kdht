@@ -1,6 +1,7 @@
 import { Node, StorageBag, StorageItem } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
+
 describe("DHT storageBag", function () {  
   let storageBag = new StorageBag();
   let now = Date.now();
@@ -48,15 +49,27 @@ describe("DHT storageBag", function () {
       expect(payload).toBe('bar2');
     });
     afterAll(async function () { // Get things back to state before this suite, so that tests can run in any order.
-      let expiration = StorageItem.expiration;
-      StorageItem.expiration = 20;
+      await Node.delay(1); // Just in case we are still at the previous merge's clock tick.
+      const expiration = StorageItem.expiration;
+      StorageItem.expiration = 200; // Enough time to add the null payload and confirm that it is there, even while under load.
       storageBag.merge([{type:"raw", subject:"foo", payload:null}]);
       StorageItem.expiration = expiration;
       expect(storageBag.types.raw.foo.payload).toBe(null);
-      await Node.delay(2e3); // wait for that to expire
+      await Node.delay(1e3); // wait for the new payload to expire, so that we can add the original time back.
       storageBag.merge([{type:"raw", subject:"foo", issuedTime:now-1, payload:"foo1"}]); // Older than the one was added+deleted in this suite.
       expect(storageBag.types.raw.foo.payload).toBe('foo1');
       expect(storageBag.types.raw.bar.payload).toBe('bar2');
     });
+  });
+  afterAll(async function () { // Remove all and confirm that bag goes away.
+    let node = {storage: new Map()};
+    let key = 42;
+    node.storage.set(key, storageBag);
+    const expiration = StorageItem.expiration;
+    StorageItem.expiration = 20;
+    storageBag.merge([{type:"raw", payload:'foo'}, {type:"raw", payload:'bar'}], node, key);
+    StorageItem.expiration = expiration;
+    await Node.delay(1e3); // wait for that to expire
+    expect(node.storage.size).toBe(0);
   });
 });
