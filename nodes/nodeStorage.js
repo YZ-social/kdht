@@ -31,6 +31,10 @@ export class NodeStorage extends NodeRefresh {
     // Claude.ai suggests just writing to the next in line, but that doesn't work.
     this.schedule(key, 'storage', () => {
       const found = this.retrieveLocally(key);
+      if (found === undefined) {
+	this.flog('undefined (expired?) value for refresh, was', value);
+	return; // expired
+      }
       this.ilog('refresh value', key, found);
       // IF storeValue determines we are one of the nodes to store, then it will get scheduled again.
       this.storeValue(key, found);

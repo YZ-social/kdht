@@ -96,7 +96,10 @@ export class Contact {
       this.host.ilog('disconnecting from network');
     if (!this.host.isStopped()) {
       if (this.host.storage.size) this.host.ilog('Copying', this.host.storage.size, 'stored values');
-      await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, Node.transportValue(value))));
+      await Promise.all(this.host.storage.entries().map(([key, value]) => {
+	Node.assert(value !== undefined, 'disconnect/copy of undefined stored value');
+	return this.storeValue(key, Node.transportValue(value));
+      }));
     }
     this.host.stopRefresh();
     for (const contact of this.host.connections) {

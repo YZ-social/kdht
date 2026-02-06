@@ -31,13 +31,6 @@ export class Node extends NodeProbe {
     targetKey = await this.ensureKey(targetKey);
     const trace = this.constructor.diagnosticTrace;
 
-    // Optimization: should still work without this, but then there are more RPCs.
-    const found = this.retrieveLocally(targetKey);
-    if (found !== undefined) {
-      if (trace) this.log(`locateValue(${targetKey}): found locally =>`, found);
-      return found;
-    }
-
     const result = await this.iterate(targetKey, 'findValue');
     if (Node.isValueResult(result)) {
       if (trace) {
@@ -84,13 +77,13 @@ export class Node extends NodeProbe {
     }
 
     if (trace) this.flog(`storeValue(${targetKey}): locateNodes found ${contacts.length} contacts`);
-    const storedTo = []; // Track where we stored for diagnostics
+    const storedTo = []; // Track where we stored for diagnostics, and for seeing if we no longer need to store.
 
     // Do what we can in parallel right away. This might not all be the very closest, but those stored will take care of migrating.
     const connected = contacts.filter(contact => contact.connection).slice(0, k);
     await Promise.all(connected.map(async contact => {
       await contact.store(targetKey, value);
-      storedTo.push(contact);
+      storedTo.push(contact.name);
       remaining--;
     }));
     if (remaining) {
@@ -119,6 +112,10 @@ export class Node extends NodeProbe {
         reason = ' (insufficient nodes found)';
       }
       this.flog(`storeValue(${targetKey}, ${value}): stored to ${storedCount}/${k} nodes${storedTo.length ? ': ' + storedTo.join(', ') : ''}${reason}`);
+    }
+    if (!storedTo.includes(this.name) && this.storage.has(targetKey)) {
+      this.ilog('is now too distant from', targetKey, 'to store', value[0].payload || value);
+      this.storage.delete(targetKey);
     }
     return k - remaining;
   }

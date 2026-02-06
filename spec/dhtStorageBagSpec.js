@@ -2,20 +2,24 @@ import { Node, StorageBag, StorageItem } from '../index.js';
 const { describe, it, expect, beforeAll, afterAll, BigInt} = globalThis; // For linters.
 
 
-describe("DHT storageBag", function () {  
-  let storageBag = new StorageBag();
-  let now = Date.now();
-  let initialStorageItems = [ // Initial data, in sorted form
-    {type:'raw', subject:'foo', issuedTime:now-1, payload:'foo1'},
-    {type:'raw', subject:'bar', issuedTime:now-2, payload:'bar2'}
-  ];
-  storageBag.merge(initialStorageItems);
+describe("DHT storageBag", function () {
   // The order of storageItem is NOT defined. When we compare storageItems we will sort by type and then by subject.
   function sort(storageItems) {
     return storageItems.sort(({type:typeA, subject:subjectA}, {type:typeB, subject:subjectB}) =>
       typeA.localeCompare(typeB) || subjectA.localeCompare(subjectB));
   }
-  const sortedStorageItems = sort(initialStorageItems);
+  let storageBag, initialStorageItems, sortedStorageItems, now;
+  beforeAll(function () {
+    // Even though this synchronous, it cannot be at load time, because there might be StorageItem.expiration tests before running.
+    storageBag = new StorageBag();
+    now = Date.now();
+    initialStorageItems = [ // Initial data, in sorted form
+      {type:'raw', subject:'foo', issuedTime:now-1, payload:'foo1'},
+      {type:'raw', subject:'bar', issuedTime:now-2, payload:'bar2'}
+    ];
+    storageBag.merge(initialStorageItems);
+    sortedStorageItems = sort(initialStorageItems);
+  });
 
   it("has internal data for subject.", function () {
     const inputStorageItem = initialStorageItems.find(storageItem => storageItem.type === 'raw' && storageItem.subject === 'foo');
@@ -51,7 +55,7 @@ describe("DHT storageBag", function () {
     afterAll(async function () { // Get things back to state before this suite, so that tests can run in any order.
       await Node.delay(1); // Just in case we are still at the previous merge's clock tick.
       const expiration = StorageItem.expiration;
-      StorageItem.expiration = 200; // Enough time to add the null payload and confirm that it is there, even while under load.
+      StorageItem.expiration = 300; // Enough time to add the null payload and confirm that it is there, even while under load.
       storageBag.merge([{type:"raw", subject:"foo", payload:null}]);
       StorageItem.expiration = expiration;
       expect(storageBag.types.raw.foo.payload).toBe(null);
