@@ -36,7 +36,7 @@
       update.onclick = () => display.textContent = contact.node.report(null);
       write.onclick = () => contact.storeValue(key.value, [{subject: 'replaceable', payload: writeValue.value}]);
       read.onclick = () => contact.node.locateStorageValue(key.value)
-        .then(value => readValue.value = `${value[0]?.payload} @${new Date(value[0]?.issuedTime).toLocaleTimeString()}`);
+        .then(value => readValue.value = `${value?.[0]?.payload} @${value ? new Date(value[0]?.issuedTime).toLocaleTimeString() : '-'}`);
       document.addEventListener("visibilitychange", () => {
 	if (document.hidden) {
 	  contact.disconnect();
