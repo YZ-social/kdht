@@ -24,13 +24,19 @@
     "bots": "node scripts/bots.js",
     "thrashbots": "node scripts/bots.js --thrash",
     "testWebrtc": "npx jasmine spec/testWebrtc.js",
-    "test": "npx jasmine && npm run testWebrtc && echo '-- SUCCESS --' || echo '**** FAIL ****'"
+    "test": "npx jasmine && npm run testWebrtc && echo '-- SUCCESS --' || echo '**** FAIL ****'",
+    "test:e2e": "npx playwright test",
+    "test:e2e:chromium": "npx playwright test --project=chromium",
+    "test:e2e:firefox": "npx playwright test --project=firefox",
+    "test:e2e:headed": "npx playwright test --headed",
+    "test:e2e:debug": "npx playwright test --debug"
   },
   "dependencies": {
     "@yz-social/webrtc": "^0.1.3",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "express": "^5.2.1",
     "fast-check": "^4.5.3",
     "jasmine": "^5.12.0",

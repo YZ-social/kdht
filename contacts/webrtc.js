@@ -5,6 +5,70 @@ import { Helper } from '../nodes/helper.js';
 import { Contact } from './contact.js';
 import { WebRTC } from '@yz-social/webrtc';
 
+// Connection event tracking for stability diagnostics
+export class ConnectionTracker {
+  static events = [];
+  static maxEvents = 1000;
+  static enabled = false;
+  
+  static enable() { this.enabled = true; }
+  static disable() { this.enabled = false; }
+  static clear() { this.events = []; }
+  
+  static log(type, details) {
+    if (!this.enabled) return;
+    const event = {
+      timestamp: Date.now(),
+      type,
+      ...details
+    };
+    this.events.push(event);
+    if (this.events.length > this.maxEvents) {
+      this.events.shift();
+    }
+    // Also log to console for real-time debugging
+    if (typeof console !== 'undefined') {
+      console.log(`[ConnectionTracker] ${type}:`, details);
+    }
+  }
+  
+  static getStats() {
+    const stats = {
+      totalEvents: this.events.length,
+      byType: {},
+      connectionAttempts: 0,
+      connectionSuccesses: 0,
+      connectionFailures: 0,
+      disconnects: 0,
+      timeouts: 0,
+      errors: []
+    };
+    
+    for (const event of this.events) {
+      stats.byType[event.type] = (stats.byType[event.type] || 0) + 1;
+      
+      switch (event.type) {
+        case 'connection_attempt': stats.connectionAttempts++; break;
+        case 'connection_success': stats.connectionSuccesses++; break;
+        case 'connection_failure': stats.connectionFailures++; break;
+        case 'connection_timeout': stats.timeouts++; break;
+        case 'disconnect': stats.disconnects++; break;
+        case 'error': stats.errors.push(event); break;
+      }
+    }
+    
+    stats.successRate = stats.connectionAttempts > 0 
+      ? (stats.connectionSuccesses / stats.connectionAttempts * 100).toFixed(1) + '%'
+      : 'N/A';
+    
+    return stats;
+  }
+  
+  static getRecentEvents(count = 50) {
+    return this.events.slice(-count);
+  }
+}
+
 export class WebContact extends Contact { // Our wrapper for the means of contacting a remote node.
   // Can this set all be done more simply?
   get name() { return this.node.name; } // Key of remote node as a string (e.g., as a guid).
@@ -67,6 +131,16 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const start = Date.now();
     const { host, node, isServerNode, bootstrapHost } = this;
     this.host.log('starting connection', this.sname, this.connection ? 'exists!!!' : 'fresh', this.counter);
+    
+    // Track connection attempt
+    ConnectionTracker.log('connection_attempt', {
+      from: host.contact?.sname,
+      to: this.sname,
+      initiate,
+      counter: this.counter,
+      existingConnection: !!this.connection
+    });
+    
     let {promise, resolve} = Promise.withResolvers();
     this.closed = promise;
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
@@ -82,8 +156,24 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 					     polite: this.host.key < this.node.key});
     const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
+      
+      // Track disconnect with reason
+      ConnectionTracker.log('disconnect', {
+        from: host.contact?.sname,
+        to: this.sname,
+        counter: this.counter,
+        elapsed: Date.now() - start,
+        hadWebrtc: !!this.webrtc,
+        hostStopped: this.host.isStopped()
+      });
+      
       if (this.webrtc && !this.host.isStopped()) {
 	this.host.ilog('connection to', this.sname, 'was not politely closed. Dropping contact.');
+	ConnectionTracker.log('unexpected_close', {
+	  from: host.contact?.sname,
+	  to: this.sname,
+	  counter: this.counter
+	});
 	this.host.removeContact(this, false);
       }
       this.webrtc = this.connection = this.unsafeData = null;
@@ -105,10 +195,27 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     channelPromise.then(async dataChannel => {
       this.host.log('data channel open', this.sname, Date.now() - start, this.counter);
       clearTimeout(timeout);
+      
+      // Track successful connection
+      ConnectionTracker.log('connection_success', {
+        from: host.contact?.sname,
+        to: this.sname,
+        counter: this.counter,
+        elapsed: Date.now() - start,
+        initiate
+      });
+      
       dataChannel.addEventListener('close', onclose);
       dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
       if (this.info || this.debug) await webrtc.reportConnection(true);
-      if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
+      if (webrtc.statsElapsed > 500) {
+        this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
+        ConnectionTracker.log('slow_connection', {
+          from: host.contact?.sname,
+          to: this.sname,
+          elapsed: webrtc.statsElapsed
+        });
+      }
       this.unsafeData = dataChannel;
       return dataChannel;
     });
@@ -121,6 +228,16 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	if (this.host.isStopped()) return;
 	const now = Date.now();
 	this.host.ilog('Unable to connect to', this.sname);
+	
+	// Track timeout
+	ConnectionTracker.log('connection_timeout', {
+	  from: host.contact?.sname,
+	  to: this.sname,
+	  counter: this.counter,
+	  timeoutMS,
+	  elapsed: now - start
+	});
+	
 	onclose();
 	this.host.removeContact(this); // fixme?
 	expired(null);
@@ -136,7 +253,14 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const { host, node, isServerNode, bootstrapHost } = contact;
     // Anyone can connect to a server node using the server's connect endpoint.
     // Anyone in the DHT can connect to another DHT node through a sponsor.
-    if (contact.connection) return contact.connection;
+    if (contact.connection) {
+      ConnectionTracker.log('connection_reused', {
+        from: host.contact?.sname,
+        to: this.sname,
+        counter: contact.counter
+      });
+      return contact.connection;
+    }
     contact.createWebRTC(true);
     return await this.connection;
   }

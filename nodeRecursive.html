@@ -16,12 +16,20 @@
     <input type="text" id="key" placeholder="key to read or write under"></input><br/>
     <input type="text" id="writeValue" placeholder="value to write"></input> <button id="write">write</button><br/>
     <input type="text" id="readValue" placeholder="read value" readonly></input> <button id="read">read</button><br/>    
+    <div id="diagnostics" style="margin-top: 20px;">
+      <button id="showDiagnostics">Show Connection Diagnostics</button>
+      <pre id="diagnosticsDisplay" style="background: #f0f0f0; padding: 10px; display: none;"></pre>
+    </div>
     <script type="module">
       import { v4 as uuidv4 } from 'uuid';
-      import { WebContact, configureRecursive } from '@yz-social/kdht';
+      import { WebContact, configureRecursive, ConnectionTracker } from '@yz-social/kdht';
       
       // Enable R/Kademlia recursive routing mode for browser nodes
       configureRecursive();
+      
+      // Expose ConnectionTracker globally for testing and diagnostics
+      globalThis.ConnectionTracker = ConnectionTracker;
+      ConnectionTracker.enable();
       
       Object.assign(globalThis, {uuidv4, WebContact });
       const bootstrapBase = new URL('/kdht', origin).href; // Must be a string
@@ -46,6 +54,21 @@
 
       write.onclick = () => contact.storeValue(key.value, writeValue.value);
       read.onclick = () => contact.node.locateValue(key.value).then(value => readValue.value = value);
+      
+      // Diagnostics button
+      showDiagnostics.onclick = () => {
+        const stats = ConnectionTracker.getStats();
+        const events = ConnectionTracker.getRecentEvents(20);
+        const output = {
+          stats,
+          recentEvents: events,
+          nodeConnections: contact.node.nConnections,
+          nodeReport: contact.node.report(null)
+        };
+        diagnosticsDisplay.textContent = JSON.stringify(output, null, 2);
+        diagnosticsDisplay.style.display = diagnosticsDisplay.style.display === 'none' ? 'block' : 'none';
+      };
+      
       document.addEventListener("visibilitychange", () => {
 	if (document.hidden) {
 	  contact.disconnect();
