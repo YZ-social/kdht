@@ -103,13 +103,28 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       return '';
     }
   }
-  async fetchSignals(url, signalsToSend) { 
+  async fetchSignals(url, signalsToSend, retryCount = 0) { 
+    const maxRetries = 3;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
       body: JSON.stringify(signalsToSend)
     }).catch(e => this.host.flog(e));
-    if (!this.checkResponse(response)) return this.fetchSignals(url, signalsToSend);
+    
+    if (!this.checkResponse(response)) {
+      // Don't retry on client errors (4xx) - the request is malformed
+      if (response?.status >= 400 && response?.status < 500) {
+        this.host.flog(`*** Client error ${response.status} for ${url} - not retrying ***`);
+        return [];
+      }
+      // Retry on server errors with limit
+      if (retryCount < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000 * (retryCount + 1))); // Exponential backoff
+        return this.fetchSignals(url, signalsToSend, retryCount + 1);
+      }
+      this.host.flog(`*** Max retries (${maxRetries}) exceeded for ${url} ***`);
+      return [];
+    }
     return this.checkSignals(await response?.json());
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
@@ -292,10 +307,21 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   serializeRequest(messageTag, method, sender, targetKey, ...rest) { // Stringify sender and targetKey.
     Node.assert(sender instanceof Contact, 'no sender', sender);
+    // Recursive methods pass a context object instead of a key - don't stringify it
+    const recursiveMethods = ['recursiveFindNodes', 'recursiveFindValue', 'recursiveSignals'];
+    if (recursiveMethods.includes(method)) {
+      return [messageTag, method, sender.sname, targetKey, ...rest];
+    }
     return [messageTag, method, sender.sname, targetKey.toString(), ...rest];
   }
   async deserializeRequest(method, sender, targetKey, ...rest) { // Inverse of serializeRequest. Response object will be spread for Node receiveRPC.
     // TODO: Currently, parameters do NOT include messageTag! (Because of how receiveRPC is called without it.)
+    // Recursive methods pass a context object instead of a key
+    const recursiveMethods = ['recursiveFindNodes', 'recursiveFindValue', 'recursiveSignals'];
+    if (recursiveMethods.includes(method)) {
+      // For recursive methods, targetKey is actually the context data object
+      return [method, await this.ensureRemoteContact(sender), targetKey, ...rest];
+    }
     return [method, await this.ensureRemoteContact(sender), BigInt(targetKey), ...rest];
   }
   isSignalResponse(response) {
