@@ -354,6 +354,10 @@ export class NodeRecursive extends NodeMessages {
    * This is the R/Kademlia replacement for iterative locateNodes.
    * Uses recursive routing where intermediate nodes forward requests.
    * 
+   * Unlike iterative routing where each RPC naturally creates connections,
+   * recursive routing does the lookup server-side. We must proactively
+   * connect to discovered nodes to populate our routing table.
+   * 
    * @param {BigInt} targetKey - The key to look up
    * @param {number} k - Number of closest nodes to return
    * @param {boolean} includeSelf - Whether to include self in results
@@ -366,6 +370,8 @@ export class NodeRecursive extends NodeMessages {
     // IMPORTANT: We must create contacts for discovered nodes, not just find existing ones.
     // This is how the routing table gets populated during recursive lookups.
     let helpers = [];
+    const contactsToConnect = [];
+    
     if (result.nodes && result.nodes.length > 0) {
       const { Helper } = await import('../nodes/helper.js');
       for (const nodeData of result.nodes) {
@@ -389,6 +395,10 @@ export class NodeRecursive extends NodeMessages {
         
         if (contact) {
           helpers.push(new Helper(contact, BigInt(nodeData.distance)));
+          // Queue for connection if not already connected and not self
+          if (contact.key !== this.key && !contact.connection) {
+            contactsToConnect.push(contact);
+          }
         }
       }
     }
@@ -415,7 +425,31 @@ export class NodeRecursive extends NodeMessages {
       helpers.sort(Helper.compare);
     }
     
-    return helpers.slice(0, k);
+    const finalHelpers = helpers.slice(0, k);
+    
+    // Proactively connect to discovered nodes (up to k)
+    // This is essential for recursive routing - unlike iterative routing where
+    // each RPC naturally creates connections, we must explicitly connect.
+    // Do this in parallel but don't wait for all to complete.
+    if (contactsToConnect.length > 0) {
+      const connectPromises = contactsToConnect.slice(0, k).map(async contact => {
+        try {
+          await contact.connect();
+          this.addToRoutingTable(contact);
+        } catch (e) {
+          // Connection failed, that's ok - we'll try again later
+          this.log('Failed to connect to discovered node', contact.sname, e);
+        }
+      });
+      // Don't await all - let connections happen in background
+      // But wait for at least a few to establish
+      await Promise.race([
+        Promise.all(connectPromises),
+        new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
+      ]);
+    }
+    
+    return finalHelpers;
   }
 
   /**
