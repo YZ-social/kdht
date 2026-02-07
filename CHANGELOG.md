@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Fix Browser Node Connection Count in Recursive Routing Mode
+
+- **What**: Fixed browser nodes only establishing 1 connection despite 15 portal nodes being available
+- **Why**: In recursive routing mode, lookups happen server-side, so the browser never directly contacts discovered nodes. Unlike iterative routing where each RPC naturally creates connections, recursive routing requires explicit connection logic.
+- **Root Causes Fixed**:
+  1. `recursiveLocateNodes` created contacts for discovered nodes but didn't connect to them
+  2. `ensureRemoteContact` didn't update `isServerNode` on existing contacts when rediscovered with the S prefix
+- **Changes**:
+  - `dht/nodeRecursive.js`: Added proactive connection logic to `recursiveLocateNodes` - after discovering nodes, explicitly connect to them (up to k nodes) to populate the routing table with actual WebRTC connections
+  - `contacts/contact.js`: Update `isServerNode` and clear cached `_sname` when an existing contact is rediscovered as a server node
+- **Results**: Browser nodes now establish 2-5 connections (up from 1), enabling proper DHT participation
+- **Lessons Learned**:
+  - Iterative vs recursive routing have fundamentally different connection patterns
+  - In iterative routing, each RPC to a discovered node creates a connection
+  - In recursive routing, the lookup happens server-side - the client must explicitly connect to discovered nodes
+  - The `sname` getter caches its result - if `isServerNode` changes, the cache must be cleared
+
+---
+
 #### Fix Recursive Routing Network Discovery and Signaling
 
 - **What**: Fixed two bugs preventing proper network discovery in recursive routing mode
