@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Multi-Portal Worker Support and WebRTC Serialization Fixes
+
+- **What**: Fixed two bugs preventing multiple portal workers from running together
+- **Why**: Running multiple portal workers distributes load and improves network stability. Two bugs were preventing this:
+  1. Race condition in worker bootstrap - workers could try to connect before the first worker registered
+  2. WebRTC serialization error - recursive RPC methods pass context objects, not BigInt keys
+- **Changes**:
+  - `scripts/node.js`: Added retry logic to `fetchBootstrap` (5 retries with 2s delay), check `bootstrapName` is truthy before calling `ensureRemoteContact`
+  - `contacts/webrtc.js`: Updated `serializeRequest` and `deserializeRequest` to handle recursive methods (`recursiveFindNodes`, `recursiveFindValue`, `recursiveSignals`) that pass context objects instead of BigInt keys
+- **Testing**: All 6 Chromium Playwright tests pass with 3 portal workers running
+- **Lessons Learned**:
+  - Worker startup timing is critical - later workers must wait for earlier workers to register
+  - Different RPC methods have different parameter formats - recursive methods use context objects, not keys
+  - The `toString()` method on objects returns `[object Object]`, which cannot be converted to BigInt
+
+---
+
 #### R/Kademlia Conformance - Summary
 
 This release adds optional R/Kademlia conformance features to KDHT, enabling recursive routing, proximity-aware peer selection, and message deduplication while maintaining full backward compatibility with existing iterative routing.
