@@ -363,11 +363,30 @@ export class NodeRecursive extends NodeMessages {
     const result = await this.initiateRecursiveLookup(targetKey);
     
     // Convert result nodes back to Helpers
+    // IMPORTANT: We must create contacts for discovered nodes, not just find existing ones.
+    // This is how the routing table gets populated during recursive lookups.
     let helpers = [];
     if (result.nodes && result.nodes.length > 0) {
       const { Helper } = await import('../nodes/helper.js');
       for (const nodeData of result.nodes) {
-        const contact = this.findContactByKey(BigInt(nodeData.key));
+        // First try to find existing contact
+        let contact = this.findContactByKey(BigInt(nodeData.key));
+        
+        // If not found, create a new contact using ensureRemoteContact
+        // The name field contains the sname which can be used to create the contact
+        if (!contact && nodeData.name && this.contact.ensureRemoteContact) {
+          try {
+            contact = await this.contact.ensureRemoteContact(nodeData.name);
+            // Add to routing table so we can connect to it later
+            if (contact) {
+              this.addToRoutingTable(contact);
+            }
+          } catch (e) {
+            // Failed to create contact, skip this node
+            this.log('Failed to create contact for', nodeData.name, e);
+          }
+        }
+        
         if (contact) {
           helpers.push(new Helper(contact, BigInt(nodeData.distance)));
         }
