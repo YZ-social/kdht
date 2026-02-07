@@ -259,7 +259,7 @@ export class Contact {
     const reportEmpty = this.isRunning; // Of course, this is only ever false in simulations.
     if (reportEmpty) this.host.log('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.'); // No result yet to see if it is empty, but useful in debugging.
     const start = Date.now();
-    const response = await this.host.recursiveSignals(this.key, payload, [], Date.now() + this.forwardingTimeout, this.sname);
+    const response = await this.host.initiateRecursiveSignals(this.key, payload, [], Date.now() + this.forwardingTimeout, this.sname);
 
     if (!response && reportEmpty) {
       this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
