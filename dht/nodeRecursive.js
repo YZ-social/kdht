@@ -434,6 +434,10 @@ export class NodeRecursive extends NodeMessages {
     if (contactsToConnect.length > 0) {
       const connectPromises = contactsToConnect.slice(0, k).map(async contact => {
         try {
+          // Check again right before connecting - another concurrent lookup might have started connecting
+          if (contact.connection) {
+            return; // Already connecting or connected
+          }
           await contact.connect();
           this.addToRoutingTable(contact);
         } catch (e) {
