@@ -24,8 +24,22 @@ export async function setup({baseURL, externalBaseURL = '', info = true, debug, 
 
   if (!isFirst) await Node.delay(Node.fuzzyInterval(variableSpacing * 1e3));
   // Determine boostrap BEFORE we send in our own name.
-  const bootstrapName = joinURL && await contact.fetchBootstrap(joinURL);
-  const bootstrap = joinURL && await contact.ensureRemoteContact(bootstrapName, joinURL);
+  // Retry fetchBootstrap if it returns empty (server may not be ready yet)
+  let bootstrapName = '';
+  if (joinURL) {
+    const maxRetries = 5;
+    for (let attempt = 0; attempt < maxRetries && !bootstrapName; attempt++) {
+      if (attempt > 0) {
+        console.log(`Worker ${cluster.worker.id}: Retry ${attempt}/${maxRetries} fetching bootstrap...`);
+        await Node.delay(2000); // Wait 2 seconds between retries
+      }
+      bootstrapName = await contact.fetchBootstrap(joinURL);
+    }
+    if (!bootstrapName) {
+      console.warn(`Worker ${cluster.worker.id}: Failed to get bootstrap after ${maxRetries} attempts`);
+    }
+  }
+  const bootstrap = bootstrapName && await contact.ensureRemoteContact(bootstrapName, joinURL);
   process.send(contact.sname); // Report in to server as available for others to bootstrap through.
   if (bootstrap) await contact.join(bootstrap);
   process.on('SIGINT', async () => {
