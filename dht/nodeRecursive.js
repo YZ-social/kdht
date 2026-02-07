@@ -104,7 +104,7 @@ export class NodeRecursive extends NodeMessages {
     const serializedNodes = helpers.map(h => ({
       key: String(h.key),
       distance: String(h.distance),
-      name: h.name
+      name: h.contact.sname  // Use sname to preserve server signifier (S prefix)
     }));
 
     // Check if we are the target
@@ -306,7 +306,7 @@ export class NodeRecursive extends NodeMessages {
           nodes: helpers.map(h => ({
             key: String(h.key),
             distance: String(h.distance),
-            name: h.name
+            name: h.contact.sname  // Use sname to preserve server signifier (S prefix)
           })),
           tracePath: [],
         };
@@ -469,7 +469,7 @@ export class NodeRecursive extends NodeMessages {
     const serializedNodes = helpers.map(h => ({
       key: String(h.key),
       distance: String(h.distance),
-      name: h.name
+      name: h.contact.sname  // Use sname to preserve server signifier (S prefix)
     }));
 
     // Check TTL
