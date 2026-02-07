@@ -1,0 +1,16 @@
+[Unit]
+Description=KDHT Recursive Portal Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kdht
+ExecStart=/usr/bin/node scripts/portalRecursive.js --nPortals 3
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ubuntu/kdht/kdht.log
+StandardError=append:/home/ubuntu/kdht/kdht.log
+
+[Install]
+WantedBy=multi-user.target
