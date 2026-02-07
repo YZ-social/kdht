@@ -91,7 +91,17 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       this.host.removeContact(this);
       return '';
     }
-    return await response.json();
+    try {
+      const result = await response.json();
+      if (!result) {
+        this.host.flog(`*** Empty response from ${url} - server may not be ready. ***`);
+        return '';
+      }
+      return result;
+    } catch (e) {
+      this.host.flog(`*** Failed to parse response from ${url}: ${e.message} ***`);
+      return '';
+    }
   }
   async fetchSignals(url, signalsToSend) { 
     const response = await fetch(url, {

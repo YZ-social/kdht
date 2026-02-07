@@ -30,10 +30,10 @@ cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and
 });
 
 router.get('/name/random', (req, res, next) => { // Answer the actual sname corresponding to label.
-  let list = Object.values(portals);
+  let list = Object.values(portals).filter(w => w.tag); // Only include workers that have registered
   const index = Node.randomInteger(list.length);
-  const worker =  list[index];
-  if (!worker) return res.sendStatus(403);
+  const worker = list[index];
+  if (!worker || !worker.tag) return res.sendStatus(503); // Service unavailable - no workers ready
   return res.json(worker.tag);
 });
 

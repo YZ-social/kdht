@@ -9,4 +9,5 @@
   - button "write" [ref=e6]
   - textbox "read value" [ref=e7]
   - button "read" [ref=e8]
+  - button "Show Connection Diagnostics" [ref=e10]
 ```
