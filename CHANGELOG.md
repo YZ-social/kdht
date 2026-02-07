@@ -15,7 +15,12 @@ All notable changes to this project will be documented in this file.
 - **Changes**:
   - `scripts/node.js`: Added retry logic to `fetchBootstrap` (5 retries with 2s delay), check `bootstrapName` is truthy before calling `ensureRemoteContact`
   - `contacts/webrtc.js`: Updated `serializeRequest` and `deserializeRequest` to handle recursive methods (`recursiveFindNodes`, `recursiveFindValue`, `recursiveSignals`) that pass context objects instead of BigInt keys
-- **Testing**: All 6 Chromium Playwright tests pass with 3 portal workers running
+- **Testing**: All 11 Chromium Playwright tests pass with 3 portal workers running, including:
+  - Connection stability tests (30-second stability, 100% success rate)
+  - Store/retrieve operations
+  - Multiple browser nodes connecting simultaneously
+  - Recursive routing verification (confirms `recursiveFindNodes` RPC is used)
+  - Multi-hop store/retrieve between browser nodes through portal network
 - **Lessons Learned**:
   - Worker startup timing is critical - later workers must wait for earlier workers to register
   - Different RPC methods have different parameter formats - recursive methods use context objects, not keys
