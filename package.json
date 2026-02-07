@@ -13,8 +13,13 @@
   "type": "module",
   "scripts": {
     "start": "node scripts/portal.js --externalBaseURL https://ki1r0y.com/kdht",
+    "start:recursive": "node scripts/portalRecursive.js --externalBaseURL https://ki1r0y.com/kdht",
+    "start:recursive:pns": "node scripts/portalRecursive.js --pns --externalBaseURL https://ki1r0y.com/kdht",
+    "start:local": "node scripts/portal.js",
+    "start:local:recursive": "node scripts/portalRecursive.js",
     "stop": "pkill kdht",
     "background": "npm stop; (npm start 1>server.log 2>&1 &); sleep 1",
+    "background:recursive": "npm stop; (npm run start:recursive 1>server.log 2>&1 &); sleep 1",
     "withoutExternal": "node scripts/portal.js",
     "bots": "node scripts/bots.js",
     "thrashbots": "node scripts/bots.js --thrash",

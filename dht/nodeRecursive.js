@@ -345,6 +345,235 @@ export class NodeRecursive extends NodeMessages {
   }
 
   // ============================================================
+  // Recursive Locate - Node/Value lookup using R/Kademlia routing
+  // ============================================================
+
+  /**
+   * Recursively locate nodes closest to a target key.
+   * 
+   * This is the R/Kademlia replacement for iterative locateNodes.
+   * Uses recursive routing where intermediate nodes forward requests.
+   * 
+   * @param {BigInt} targetKey - The key to look up
+   * @param {number} k - Number of closest nodes to return
+   * @param {boolean} includeSelf - Whether to include self in results
+   * @returns {Helper[]} Array of k closest Helpers
+   */
+  async recursiveLocateNodes(targetKey, k = this.constructor.k, includeSelf = false) {
+    const result = await this.initiateRecursiveLookup(targetKey);
+    
+    // Convert result nodes back to Helpers
+    let helpers = [];
+    if (result.nodes && result.nodes.length > 0) {
+      const { Helper } = await import('../nodes/helper.js');
+      for (const nodeData of result.nodes) {
+        const contact = this.findContactByKey(BigInt(nodeData.key));
+        if (contact) {
+          helpers.push(new Helper(contact, BigInt(nodeData.distance)));
+        }
+      }
+    }
+    
+    // If we didn't get enough from recursive lookup, supplement with local knowledge
+    if (helpers.length < k) {
+      const localHelpers = this.findClosestHelpers(targetKey, k * 2);
+      for (const h of localHelpers) {
+        if (!helpers.some(existing => existing.key === h.key)) {
+          helpers.push(h);
+        }
+      }
+    }
+    
+    // Sort by distance and take k closest
+    const { Helper } = await import('../nodes/helper.js');
+    helpers.sort(Helper.compare);
+    
+    // Include self if requested
+    if (includeSelf) {
+      const selfDistance = this.constructor.distance(this.key, targetKey);
+      const selfHelper = new Helper(this.contact, selfDistance);
+      helpers.push(selfHelper);
+      helpers.sort(Helper.compare);
+    }
+    
+    return helpers.slice(0, k);
+  }
+
+  /**
+   * RPC handler for recursive FIND_VALUE requests.
+   * 
+   * Like recursiveFindNodes but returns value if found locally.
+   * 
+   * @param {Object} ctxData - Serialized RequestContext
+   * @returns {Object} Result with status, value/nodes, and tracePath
+   */
+  async recursiveFindValue(ctxData) {
+    // Deserialize context
+    const ctx = RequestContext.deserialize(ctxData);
+
+    // Deduplication check
+    if (this.dedupCache.has(ctx.lookupId)) {
+      return { 
+        status: 'DUPLICATE', 
+        tracePath: ctx.tracePath.map(String),
+        reason: 'lookup_id_seen'
+      };
+    }
+
+    // Loop detection
+    if (ctx.hasVisited(this.key)) {
+      return { 
+        status: 'DUPLICATE', 
+        tracePath: ctx.tracePath.map(String),
+        reason: 'loop_detected'
+      };
+    }
+
+    // Record in dedup cache
+    this.dedupCache.add(ctx.lookupId);
+
+    // Update routing table from trace path
+    this.updateFromTracePath(ctx.tracePath);
+
+    // Check if we have the value locally
+    const value = this.retrieveLocally(ctx.targetId);
+    if (value !== undefined) {
+      return {
+        status: 'FOUND_VALUE',
+        value: value,
+        tracePath: ctx.tracePath.map(String),
+      };
+    }
+
+    // Get closest helpers to target
+    const helpers = this.findClosestHelpers(ctx.targetId);
+    const serializedNodes = helpers.map(h => ({
+      key: String(h.key),
+      distance: String(h.distance),
+      name: h.name
+    }));
+
+    // Check TTL
+    if (ctx.ttl <= 0) {
+      return {
+        status: 'TTL_EXPIRED',
+        nodes: serializedNodes,
+        tracePath: ctx.tracePath.map(String),
+      };
+    }
+
+    // Forward recursively with alternate path selection
+    return await this.forwardFindValueWithAlternatePaths(helpers, ctx, serializedNodes);
+  }
+
+  /**
+   * Forward a recursive find value, trying alternate paths on DUPLICATE responses.
+   */
+  async forwardFindValueWithAlternatePaths(helpers, ctx, serializedNodes) {
+    let currentCtx = ctx;
+
+    while (true) {
+      const nextHop = this.selectProximityAware(helpers, currentCtx);
+
+      if (!nextHop) {
+        return {
+          status: 'NO_CLOSER',
+          nodes: serializedNodes,
+          tracePath: ctx.tracePath.map(String),
+        };
+      }
+
+      const forwardCtx = currentCtx.forward(this.key);
+      this.dedupCache.markForwarded(ctx.lookupId);
+
+      try {
+        const result = await nextHop.contact.sendRPC(
+          'recursiveFindValue',
+          forwardCtx.serialize()
+        );
+
+        if (!result) {
+          currentCtx = currentCtx.markTried(nextHop.key);
+          continue;
+        }
+
+        if (result.status === 'DUPLICATE') {
+          currentCtx = currentCtx.markTried(nextHop.key);
+          continue;
+        }
+
+        return result;
+      } catch (error) {
+        currentCtx = currentCtx.markTried(nextHop.key);
+        continue;
+      }
+    }
+  }
+
+  /**
+   * Recursively locate a value by key.
+   * 
+   * This is the R/Kademlia replacement for iterative locateValue.
+   * Uses recursive routing where intermediate nodes forward requests.
+   * 
+   * @param {BigInt} targetKey - The key to look up
+   * @returns {any} The value if found, undefined otherwise
+   */
+  async recursiveLocateValue(targetKey) {
+    const ctx = this.createLookupContext(targetKey);
+    
+    // Start by finding our closest helpers
+    const helpers = this.findClosestHelpers(targetKey);
+    
+    if (helpers.length === 0) {
+      return undefined;
+    }
+
+    // Add to dedup cache
+    this.dedupCache.add(ctx.lookupId);
+
+    let currentCtx = ctx;
+
+    while (true) {
+      const firstHop = this.selectProximityAware(helpers, currentCtx);
+      
+      if (!firstHop) {
+        return undefined;
+      }
+
+      const forwardCtx = currentCtx.forward(this.key);
+      this.dedupCache.markForwarded(ctx.lookupId);
+
+      try {
+        const result = await firstHop.contact.sendRPC(
+          'recursiveFindValue',
+          forwardCtx.serialize()
+        );
+
+        if (!result) {
+          currentCtx = currentCtx.markTried(firstHop.key);
+          continue;
+        }
+
+        if (result.status === 'DUPLICATE') {
+          currentCtx = currentCtx.markTried(firstHop.key);
+          continue;
+        }
+
+        if (result.status === 'FOUND_VALUE') {
+          return result.value;
+        }
+
+        // No value found in this path
+        return undefined;
+      } catch (error) {
+        currentCtx = currentCtx.markTried(firstHop.key);
+        continue;
+      }
+    }
+  }
+
+  // ============================================================
   // Recursive Signals - WebRTC signaling using R/Kademlia routing
   // ============================================================
 

@@ -75,7 +75,28 @@ Node.proximityWeight = 0.2;
 **New Exports:**
 ```javascript
 import { Node, Contact, KBucket, Helper, RequestContext, DedupCache } from '@yz-social/kdht';
+
+// Configuration helpers (also available in browser)
+import { configureRecursive, configureIterative, getConfiguration } from '@yz-social/kdht';
 ```
+
+---
+
+#### Browser Node Recursive Mode Support
+
+- **What**: Added support for browser nodes to run in R/Kademlia recursive mode
+- **Why**: Browser nodes connecting to a recursive portal server should also use recursive routing for optimal performance. Without explicit configuration, browser nodes would default to iterative mode.
+- **Changes**:
+  - Exported `configureRecursive`, `configureIterative`, `getConfiguration` from main `index.js`
+  - Updated `scripts/configureRecursive.js` to be browser-compatible (guards against `process` being undefined)
+  - Created `nodeRecursive.html` - browser node page that automatically enables recursive mode
+- **Usage**:
+  - Use `nodeRecursive.html` instead of `node.html` for recursive mode browser nodes
+  - Or manually call `configureRecursive()` before creating nodes in custom browser code
+- **Lessons Learned**:
+  - Static class properties like `Node.recursiveRoutingEnabled` are set per JavaScript environment
+  - Server and browser run in separate environments, so configuration must be applied in both
+  - Browser nodes should match the server's routing mode for optimal performance
 
 ---
 

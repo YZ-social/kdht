@@ -26,8 +26,16 @@ export class Node extends NodeProbe {
     // Side effect is to discover other nodes (and they us).
     // includeSelf: If true, the local node is included as a candidate (useful for finding storage locations).
     targetKey = await this.ensureKey(targetKey);
+    
+    // Use recursive routing if enabled (R/Kademlia mode)
+    if (this.constructor.recursiveRoutingEnabled) {
+      return await this.recursiveLocateNodes(targetKey, number, includeSelf);
+    }
+    
+    // Default: iterative routing
     return await this.iterate(targetKey, 'findNodes', number, false, false, includeSelf);
   }
+  
   async locateValue(targetKey, additionalTries = 1) { // Promise value stored for targetKey, or undefined.
     // Side effect is to discover other nodes (and they us).
     targetKey = await this.ensureKey(targetKey);
@@ -40,6 +48,12 @@ export class Node extends NodeProbe {
       return found;
     }
 
+    // Use recursive routing if enabled (R/Kademlia mode)
+    if (this.constructor.recursiveRoutingEnabled) {
+      return await this.recursiveLocateValue(targetKey);
+    }
+
+    // Default: iterative routing
     const result = await this.iterate(targetKey, 'findValue');
     if (Node.isValueResult(result)) {
       if (trace) {
