@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Fix Recursive Routing Network Discovery and Signaling
+
+- **What**: Fixed two bugs preventing proper network discovery in recursive routing mode
+- **Why**: Browser nodes were only maintaining 1 connection despite 15 portal nodes being available. Investigation revealed:
+  1. `recursiveLocateNodes` was only using `findContactByKey` which only finds existing contacts - it never created contacts for discovered nodes
+  2. `contact.messageSignals()` was calling `this.host.recursiveSignals()` which doesn't exist - should be `initiateRecursiveSignals()`
+- **Changes**:
+  - `dht/nodeRecursive.js`: `recursiveLocateNodes` now creates contacts for discovered nodes using `ensureRemoteContact` and adds them to the routing table
+  - `contacts/contact.js`: Fixed `messageSignals` to call `initiateRecursiveSignals` instead of non-existent `recursiveSignals` method
+- **Testing**: Browser nodes now attempt to connect to discovered nodes (visible in ConnectionTracker logs). Connection timeouts to non-server nodes are expected - those are ephemeral browser nodes from previous tests that are no longer running.
+- **Lessons Learned**:
+  - In recursive routing, discovered nodes are returned as serialized data (key, distance, name) - the receiving node must create contacts from this data
+  - The `name` field in serialized nodes contains the sname which can be used with `ensureRemoteContact` to create contacts
+  - Method naming matters - `recursiveSignals` is the RPC handler, `initiateRecursiveSignals` is the entry point
+
+---
+
 #### Multi-Portal Worker Support and WebRTC Serialization Fixes
 
 - **What**: Fixed two bugs preventing multiple portal workers from running together
