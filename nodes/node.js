@@ -1,6 +1,4 @@
-const { BigInt } = globalThis; // For linters.
-import { v4 as uuidv4 } from 'uuid';
-import { NodeProbe } from './nodeProbe.js';
+import { NodePubSub } from './nodePubSub.js';
 
 /*
   The chain of superclasses are not really intended to be used separately.
@@ -8,7 +6,7 @@ import { NodeProbe } from './nodeProbe.js';
 */
 
 // An actor within thin DHT.
-export class Node extends NodeProbe {
+export class Node extends NodePubSub {
   // These are the public methods for applications.
 
   static diagnosticTrace = false; // Set to true for detailed store/read logging

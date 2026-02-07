@@ -42,15 +42,16 @@ export class StorageBag {
     return list;
   }
   toString() {
-    const rawSubjects = Object.values(this.types.raw);
-    if (rawSubjects?.length === 1) return JSON.stringify(rawSubjects[0].payload);
+    const rawSubjects = Object.values(this.types.raw || this.types.pub);
+    if (!rawSubjects) return undefined;
+    if (rawSubjects.length === 1) return JSON.stringify(rawSubjects[0].payload);
     return super.toString();
   }
   merge(storageItems, node, key) { // Add each allowed storageItem of serialized to the organized types if allowed, including any side-effects.
     // Returns merged storageBag.
     const now = Date.now();
     for (const storageItem of storageItems) {
-      const proposed = StorageItem.create(storageItem);
+      const proposed = StorageItem.create({now, ...storageItem});
       if (!proposed.merge1(now, this, node, key)) this.items = null;
     }
     return this;
@@ -74,7 +75,7 @@ export class StorageBag {
 // Keep all unexpired of a subject.
 
 export class StorageItem {
-  constructor({payload, subject = payload.toString(), issuedTime = Date.now(), type = this.constructor.type, expiration = Infinity, ...rest}) {
+  constructor({payload, subject = payload.toString(), now, issuedTime = now, type = this.constructor.type, expiration = Infinity, ...rest}) {
     // TODO: accept and cache a JWS and have getters that extract these same three parts.
     expiration = Math.min(expiration, this.constructor.expiration);
     Object.assign(this, {subject, issuedTime, payload, type, expiration, ...rest});
@@ -105,8 +106,11 @@ export class StorageItem {
     const {type, subject, payload, issuedTime, expiration, debug} = this;
     let {issuedTime:existingTime = 0, timer} = bag.types[type]?.[subject] || {};
 
-    if (debug) console.log('merging', {type, subject, existingTime, issuedTime, now, expiration});
-    if (!this.allowedTime(existingTime, now, issuedTime)) return null;
+    const allowed = this.allowedTime(existingTime, now, issuedTime);
+    if (debug) console.log('merging', {type, subject, existingTime, issuedTime, now, expiration,
+				       staticExpiration: this.constructor.expiration,
+				       isFuture: issuedTime > now, isEarlier: issuedTime <= existingTime, allowed, self:this});
+    if (!allowed) return null;
         
     const timeout = issuedTime + expiration - now;
     clearTimeout(timer);

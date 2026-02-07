@@ -13,8 +13,8 @@
   <body>
     <button id="update">update node display</button><pre id="display"></pre><br/>
     <input type="text" id="key" value="foo" placeholder="key to read or write under"></input><br/>
-    <input type="text" id="writeValue" placeholder="value to write"></input> <button id="write">write</button><br/>
-    <input type="text" id="readValue" placeholder="read value" readonly></input> <button id="read">read</button><br/>    
+    <input type="text" id="readValue" placeholder="read value" readonly></input> <button id="read">subscribe</button><br/>
+    <input type="text" id="writeValue" placeholder="value to write"></input> <button id="write">publish</button><br/>
     <script type="module">
       import { v4 as uuidv4 } from 'uuid';
       import kdht from '@yz-social/kdht';
@@ -34,9 +34,11 @@
       }
 
       update.onclick = () => display.textContent = contact.node.report(null);
-      write.onclick = () => contact.storeValue(key.value, [{subject: 'replaceable', payload: writeValue.value}]);
-      read.onclick = () => contact.node.locateStorageValue(key.value)
-        .then(value => readValue.value = `${value?.[0]?.payload} @${value ? new Date(value[0]?.issuedTime).toLocaleTimeString() : '-'}`);
+      write.onclick = () => contact.host.publish({eventName: key.value, payload: writeValue.value});
+      read.onclick = () => contact.host.subscribe({eventName: key.value,
+						   handler: storageItem => {
+						     readValue.value = `${storageItem?.payload} @${new Date(storageItem?.issuedTime).toLocaleTimeString()}`;
+						   }});
       document.addEventListener("visibilitychange", () => {
 	if (document.hidden) {
 	  contact.disconnect();
