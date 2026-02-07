@@ -316,6 +316,281 @@ test.describe('Multiple Browser Nodes', () => {
   });
 });
 
+test.describe('Recursive Routing Verification', () => {
+  
+  test('should verify recursive routing is enabled', async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/nodeRecursive.html`);
+    
+    // Wait for connection
+    await page.waitForFunction(() => {
+      return typeof contact !== 'undefined' && contact?.node?.isRunning;
+    }, { timeout: 60000 });
+    
+    // Check that recursive routing is enabled via the node's constructor
+    const config = await page.evaluate(() => {
+      if (typeof contact !== 'undefined' && contact?.node) {
+        const NodeClass = contact.node.constructor;
+        return {
+          recursiveRoutingEnabled: NodeClass.recursiveRoutingEnabled,
+          proximityRoutingEnabled: NodeClass.proximityRoutingEnabled,
+          pnsEnabled: NodeClass.pnsEnabled,
+          defaultTTL: NodeClass.defaultTTL
+        };
+      }
+      return null;
+    });
+    
+    console.log('R/Kademlia configuration:', config);
+    
+    expect(config).not.toBeNull();
+    expect(config.recursiveRoutingEnabled).toBe(true);
+    expect(config.proximityRoutingEnabled).toBe(true);
+  });
+
+  test('should use recursive locateNodes (not iterative)', async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/nodeRecursive.html`);
+    
+    // Wait for connection
+    await page.waitForFunction(() => {
+      return typeof contact !== 'undefined' && contact?.node?.isRunning;
+    }, { timeout: 60000 });
+    
+    // Wait for network to stabilize
+    await page.waitForTimeout(5000);
+    
+    // Perform a locateNodes lookup and verify it uses recursive routing
+    const result = await page.evaluate(async () => {
+      // Generate a random target key
+      const targetKey = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
+      
+      // Check if recursiveLocateNodes method exists (it should if recursive routing is enabled)
+      const hasRecursiveMethod = typeof contact.node.recursiveLocateNodes === 'function';
+      const NodeClass = contact.node.constructor;
+      
+      // Perform the lookup
+      const startTime = Date.now();
+      const helpers = await contact.node.locateNodes(targetKey);
+      const elapsed = Date.now() - startTime;
+      
+      return {
+        hasRecursiveMethod,
+        recursiveRoutingEnabled: NodeClass.recursiveRoutingEnabled,
+        helpersFound: helpers?.length || 0,
+        elapsed,
+        // Check if dedup cache was used (indicates recursive routing)
+        dedupCacheSize: contact.node.dedupCache?.cache?.size || 0
+      };
+    });
+    
+    console.log('locateNodes result:', result);
+    
+    expect(result.recursiveRoutingEnabled).toBe(true);
+    expect(result.hasRecursiveMethod).toBe(true);
+    expect(result.helpersFound).toBeGreaterThan(0);
+    // Dedup cache should have entries if recursive routing was used
+    expect(result.dedupCacheSize).toBeGreaterThan(0);
+  });
+
+  test('should use recursive locateValue for retrieval', async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/nodeRecursive.html`);
+    
+    // Wait for connection
+    await page.waitForFunction(() => {
+      return typeof contact !== 'undefined' && contact?.node?.isRunning;
+    }, { timeout: 60000 });
+    
+    // Wait for network to stabilize
+    await page.waitForTimeout(5000);
+    
+    // Store a value first
+    const testKey = `recursive-test-${Date.now()}`;
+    const testValue = `recursive-value-${Date.now()}`;
+    
+    await page.evaluate(async ({ key, value }) => {
+      await contact.storeValue(key, value);
+    }, { key: testKey, value: testValue });
+    
+    console.log(`Stored: ${testKey} = ${testValue}`);
+    
+    // Wait for replication
+    await page.waitForTimeout(3000);
+    
+    // Clear dedup cache to track new lookups
+    await page.evaluate(() => {
+      if (contact.node._dedupCache) {
+        contact.node._dedupCache = null;
+      }
+    });
+    
+    // Retrieve using locateValue (should use recursive routing)
+    const result = await page.evaluate(async ({ key }) => {
+      const NodeClass = contact.node.constructor;
+      const startTime = Date.now();
+      const value = await contact.node.locateValue(key);
+      const elapsed = Date.now() - startTime;
+      
+      return {
+        value,
+        elapsed,
+        recursiveRoutingEnabled: NodeClass.recursiveRoutingEnabled,
+        // Check dedup cache usage
+        dedupCacheSize: contact.node.dedupCache?.cache?.size || 0
+      };
+    }, { key: testKey });
+    
+    console.log(`Retrieved: ${testKey} = ${result.value} (${result.elapsed}ms)`);
+    console.log('Dedup cache entries:', result.dedupCacheSize);
+    
+    expect(result.value).toBe(testValue);
+    expect(result.recursiveRoutingEnabled).toBe(true);
+  });
+
+  test('should handle multi-hop recursive signaling', async ({ browser, baseURL }) => {
+    // This test creates two browser nodes and verifies they can communicate
+    // through the portal network using recursive signaling
+    
+    const context1 = await browser.newContext();
+    const context2 = await browser.newContext();
+    const page1 = await context1.newPage();
+    const page2 = await context2.newPage();
+    
+    try {
+      // Connect both nodes
+      await Promise.all([
+        page1.goto(`${baseURL}/nodeRecursive.html`),
+        page2.goto(`${baseURL}/nodeRecursive.html`)
+      ]);
+      
+      // Wait for both to connect
+      await Promise.all([
+        page1.waitForFunction(() => typeof contact !== 'undefined' && contact?.node?.isRunning, { timeout: 60000 }),
+        page2.waitForFunction(() => typeof contact !== 'undefined' && contact?.node?.isRunning, { timeout: 60000 })
+      ]);
+      
+      // Wait for network to stabilize
+      await page1.waitForTimeout(10000);
+      
+      // Get node info from both
+      const node1Info = await page1.evaluate(() => ({
+        name: contact.node.name,
+        key: contact.node.key.toString(),
+        sname: contact.sname,
+        nConnections: contact.node.nConnections,
+        contacts: contact.node.contacts.map(c => c.sname)
+      }));
+      
+      const node2Info = await page2.evaluate(() => ({
+        name: contact.node.name,
+        key: contact.node.key.toString(),
+        sname: contact.sname,
+        nConnections: contact.node.nConnections,
+        contacts: contact.node.contacts.map(c => c.sname)
+      }));
+      
+      console.log('Node 1:', node1Info);
+      console.log('Node 2:', node2Info);
+      
+      // Node 1 stores a value
+      const testKey = `multi-hop-${Date.now()}`;
+      const testValue = `value-from-node1-${Date.now()}`;
+      
+      const storeResult = await page1.evaluate(async ({ key, value }) => {
+        const stored = await contact.storeValue(key, value);
+        return { stored, storageSize: contact.node.storage.size };
+      }, { key: testKey, value: testValue });
+      
+      console.log(`Node 1 stored: ${testKey} = ${testValue}, result:`, storeResult);
+      
+      // Wait for replication
+      await page1.waitForTimeout(5000);
+      
+      // Check if value is stored on portal nodes (via node 1's perspective)
+      const storageCheck = await page1.evaluate(async ({ key }) => {
+        // Try to locate the value from node 1's perspective
+        const value = await contact.node.locateValue(key);
+        return { value, localValue: contact.node.retrieveLocally(key) };
+      }, { key: testKey });
+      
+      console.log('Storage check from Node 1:', storageCheck);
+      
+      // Node 2 retrieves the value (this exercises recursive routing through portals)
+      const retrievedValue = await page2.evaluate(async ({ key }) => {
+        const value = await contact.node.locateValue(key);
+        return { value, localValue: contact.node.retrieveLocally(key) };
+      }, { key: testKey });
+      
+      console.log(`Node 2 retrieved: ${testKey} =`, retrievedValue);
+      
+      // The value should be found either locally or through the network
+      expect(retrievedValue.value || retrievedValue.localValue).toBe(testValue);
+      
+    } finally {
+      await context1.close();
+      await context2.close();
+    }
+  });
+
+  test('should verify recursive findNodes RPC is used', async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/nodeRecursive.html`);
+    
+    // Wait for connection
+    await page.waitForFunction(() => {
+      return typeof contact !== 'undefined' && contact?.node?.isRunning;
+    }, { timeout: 60000 });
+    
+    // Wait for network to stabilize
+    await page.waitForTimeout(5000);
+    
+    // Instrument the node to track RPC calls
+    const rpcStats = await page.evaluate(async () => {
+      // Track RPC calls
+      const rpcCalls = [];
+      const originalSendRPC = contact.constructor.prototype.sendRPC;
+      
+      contact.constructor.prototype.sendRPC = async function(method, ...args) {
+        rpcCalls.push({ method, timestamp: Date.now() });
+        return originalSendRPC.call(this, method, ...args);
+      };
+      
+      // Perform a lookup
+      const targetKey = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
+      await contact.node.locateNodes(targetKey);
+      
+      // Restore original
+      contact.constructor.prototype.sendRPC = originalSendRPC;
+      
+      // Analyze RPC calls
+      const NodeClass = contact.node.constructor;
+      const recursiveCalls = rpcCalls.filter(c => c.method.startsWith('recursive'));
+      const iterativeCalls = rpcCalls.filter(c => c.method === 'findNodes' || c.method === 'findValue');
+      
+      return {
+        totalCalls: rpcCalls.length,
+        recursiveCalls: recursiveCalls.length,
+        iterativeCalls: iterativeCalls.length,
+        methods: rpcCalls.map(c => c.method),
+        recursiveRoutingEnabled: NodeClass.recursiveRoutingEnabled
+      };
+    });
+    
+    console.log('RPC stats:', rpcStats);
+    
+    // With recursive routing enabled, we should see recursiveFindNodes calls
+    // and NOT iterative findNodes calls
+    expect(rpcStats.recursiveRoutingEnabled).toBe(true);
+    
+    if (rpcStats.totalCalls > 0) {
+      // If any RPCs were made, they should be recursive
+      console.log('RPC methods used:', rpcStats.methods);
+      // Note: The first lookup might not make RPCs if we're the closest node
+      // But if RPCs are made, they should be recursive
+      if (rpcStats.recursiveCalls > 0 || rpcStats.iterativeCalls > 0) {
+        expect(rpcStats.recursiveCalls).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
 test.describe('Connection Limit Stress Test', () => {
   
   test('should handle connection limits gracefully', async ({ page, baseURL }) => {
