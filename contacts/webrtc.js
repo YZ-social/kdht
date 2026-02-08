@@ -136,6 +136,13 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
     this.host.noteContactForTransport(contact);
     contact.createWebRTC(false);
+    
+    // Check that webrtc was created successfully before responding
+    if (!contact.webrtc) {
+      this.host.flog('Failed to create WebRTC for signals from', senderSname);
+      return [];
+    }
+    
     return await contact.webrtc.respond(signals);
   }
   get webrtcLabel() {
