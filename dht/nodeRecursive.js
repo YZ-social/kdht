@@ -797,7 +797,8 @@ export class NodeRecursive extends NodeMessages {
       const nextHop = this.selectProximityAware(helpers, currentCtx);
 
       if (!nextHop) {
-        this.log('No closer node for recursive signals to', targetNameForDebugging);
+        this.ilog('No closer node for recursive signals to', targetNameForDebugging,
+          '- helpers:', helpers.length, 'connected:', helpers.filter(h => h.contact.connection).length);
         return {
           status: 'NO_CLOSER',
           result: null,
@@ -894,8 +895,8 @@ export class NodeRecursive extends NodeMessages {
       const firstHop = this.selectFirstHop(helpers, currentCtx);
       
       if (!firstHop) {
-        this.log('Unable to forward recursive signals to', targetNameForDebugging, 
-          'among', helpers.filter(h => h.contact.connection).length, 'available contacts.');
+        this.ilog('Unable to forward recursive signals to', targetNameForDebugging, 
+          '- helpers:', helpers.length, 'connected:', helpers.filter(h => h.contact.connection).length);
         return {
           result: null,
           forwardingExclusions,

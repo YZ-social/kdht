@@ -205,14 +205,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       resolve(null); // closed promise
     };
     if (initiate) {
-      // For server-to-server connections, always use HTTP endpoint - it's more reliable
-      // than recursive signaling through a potentially incomplete network.
-      // For client-to-server connections, use HTTP if we have no connections yet.
-      // For client-to-client connections, use recursive signaling through the network.
-      const targetIsServer = isServerNode;
-      const useHttpSignaling = bootstrapHost && (targetIsServer || !host.connections.length);
-      
-      if (useHttpSignaling) {
+      if (bootstrapHost && !host.connections.length) {
 	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${host.contact.sname}/${this.sname}`;
 	this.webrtc.transferSignals = signals => this.fetchSignals(url, signals);
       } else {
