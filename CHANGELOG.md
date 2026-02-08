@@ -6,6 +6,33 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Fix Portal Node Bootstrap Selection for Mesh Formation
+
+- **What**: Fixed portal nodes being selected for bootstrap before they've joined the network
+- **Why**: New nodes could bootstrap through portal nodes that had no connections yet, preventing proper mesh formation. This could cause:
+  1. New nodes to connect to isolated nodes with no network access
+  2. Potential network partitions if nodes bootstrap through disconnected nodes
+  3. Recursive signaling failures because the bootstrap node can't forward signals
+- **Root Cause**: The HTTP `/name/random` endpoint returned any registered portal node, even if that node hadn't finished joining the network yet. Portal nodes reported themselves as available before completing the join process.
+- **Changes**:
+  - `scripts/router.js`: 
+    - Added `isReady` flag to track whether a portal node has completed joining
+    - Added `connectionCount` tracking for each portal node
+    - Modified `/name/random` to prefer nodes with connections, falling back to any ready node (genesis case)
+    - Added support for `{type: 'ready'}` and `{type: 'connectionCount'}` messages from workers
+  - `scripts/node.js`:
+    - Portal nodes now send `{type: 'ready', connectionCount}` AFTER completing join
+    - Added periodic connection count reporting (every 10 seconds)
+    - Separated registration (for receiving signals) from ready status (for helping others join)
+- **Results**: New nodes now bootstrap through well-connected portal nodes, ensuring proper mesh formation
+- **Lessons Learned**:
+  - For recursive routing to work, the bootstrap node must be part of the connected network
+  - Genesis node is exempt from connection requirements (it has no one to connect to initially)
+  - Periodic connection count updates allow the router to make informed bootstrap decisions
+  - The mesh grows organically: genesis → first few nodes → those become bootstrap candidates
+
+---
+
 #### Fix Recursive Routing First Hop Selection for Self-Lookups
 
 - **What**: Fixed recursive routing failing when a node looks up its own key (e.g., during join)

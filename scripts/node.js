@@ -40,8 +40,23 @@ export async function setup({baseURL, externalBaseURL = '', info = true, debug, 
     }
   }
   const bootstrap = bootstrapName && await contact.ensureRemoteContact(bootstrapName, joinURL);
-  process.send(contact.sname); // Report in to server as available for others to bootstrap through.
+  
+  // Register our sname with the router first (so we can receive signals)
+  process.send(contact.sname);
+  
+  // Join the network
   if (bootstrap) await contact.join(bootstrap);
+  
+  // Now report that we're ready with our connection count
+  // This tells the router we can help other nodes join
+  const connectionCount = contact.host.nConnections;
+  process.send({ type: 'ready', connectionCount });
+  
+  // Periodically report connection count so router can make informed decisions
+  setInterval(() => {
+    process.send({ type: 'connectionCount', count: contact.host.nConnections });
+  }, 10000); // Every 10 seconds
+  
   process.on('SIGINT', async () => {
     console.log(process.title, 'Shutdown for Ctrl+C');
     await contact.disconnect();
