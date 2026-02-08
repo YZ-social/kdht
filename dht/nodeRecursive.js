@@ -792,28 +792,36 @@ export class NodeRecursive extends NodeMessages {
     const helpers = this.findClosestHelpers(ctx.targetId);
     let currentCtx = ctx;
 
+    // Pre-filter to only connected helpers for signals forwarding
+    // Unlike lookups, signals MUST go through connected nodes
+    const connectedHelpers = helpers.filter(h => h.contact.connection);
+    
+    if (connectedHelpers.length === 0) {
+      this.ilog('No connected helpers for recursive signals to', targetNameForDebugging,
+        '- helpers:', helpers.length, 'connected: 0');
+      return {
+        status: 'NO_CLOSER',
+        result: null,
+        forwardingExclusions,
+      };
+    }
+
     // Try candidates until we get a successful response or run out of options
     while (true) {
       // Use selectFirstHop instead of selectProximityAware for signals forwarding.
       // Unlike lookups where we need to converge on the k closest nodes,
       // signals need to reach a specific target that might not be in anyone's
       // routing table yet (e.g., a new node trying to connect).
-      const nextHop = this.selectFirstHop(helpers, currentCtx);
+      const nextHop = this.selectFirstHop(connectedHelpers, currentCtx);
 
       if (!nextHop) {
         this.ilog('No closer node for recursive signals to', targetNameForDebugging,
-          '- helpers:', helpers.length, 'connected:', helpers.filter(h => h.contact.connection).length);
+          '- helpers:', helpers.length, 'connected:', connectedHelpers.length);
         return {
           status: 'NO_CLOSER',
           result: null,
           forwardingExclusions,
         };
-      }
-
-      // Skip if no connection
-      if (!nextHop.contact.connection) {
-        currentCtx = currentCtx.markTried(nextHop.key);
-        continue;
       }
 
       // Skip if already in forwardingExclusions (for backward compat with old signals)
@@ -891,26 +899,32 @@ export class NodeRecursive extends NodeMessages {
       };
     }
 
+    // Pre-filter to only connected helpers for signals forwarding
+    const connectedHelpers = helpers.filter(h => h.contact.connection);
+    
+    if (connectedHelpers.length === 0) {
+      this.ilog('Unable to forward recursive signals to', targetNameForDebugging, 
+        '- helpers:', helpers.length, 'connected: 0');
+      return {
+        result: null,
+        forwardingExclusions,
+      };
+    }
+
     let currentCtx = ctx;
 
     // Try candidates until we get a successful response or run out of options
     while (true) {
       // Select first hop - use selectFirstHop which doesn't require distance progress
-      const firstHop = this.selectFirstHop(helpers, currentCtx);
+      const firstHop = this.selectFirstHop(connectedHelpers, currentCtx);
       
       if (!firstHop) {
         this.ilog('Unable to forward recursive signals to', targetNameForDebugging, 
-          '- helpers:', helpers.length, 'connected:', helpers.filter(h => h.contact.connection).length);
+          '- helpers:', helpers.length, 'connected:', connectedHelpers.length);
         return {
           result: null,
           forwardingExclusions,
         };
-      }
-
-      // Skip if no connection
-      if (!firstHop.contact.connection) {
-        currentCtx = currentCtx.markTried(firstHop.key);
-        continue;
       }
 
       // Skip if already tried
