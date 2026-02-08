@@ -322,7 +322,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       // For recursive methods, targetKey is actually the context data object
       return [method, await this.ensureRemoteContact(sender), targetKey, ...rest];
     }
-    return [method, await this.ensureRemoteContact(sender), BigInt(targetKey), ...rest];
+    try {
+      return [method, await this.ensureRemoteContact(sender), BigInt(targetKey), ...rest];
+    } catch (e) {
+      this.host.flog('Error deserializing request:', method, 'targetKey:', targetKey, 'error:', e.message);
+      throw e;
+    }
   }
   isSignalResponse(response) {
     const first = response[0];

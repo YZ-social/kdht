@@ -205,10 +205,16 @@ export class Contact {
     } else if (data[0] === 'bye') {
       this.bye();
     } else { // An incoming request.
-      const deserialized = await this.deserializeRequest(...data);
-      let response = await this.host.receiveRPC(...deserialized);
-      response = this.serializeResponse(response);
-      await this.send([messageTag, response]);
+      try {
+        const deserialized = await this.deserializeRequest(...data);
+        let response = await this.host.receiveRPC(...deserialized);
+        response = this.serializeResponse(response);
+        await this.send([messageTag, response]);
+      } catch (e) {
+        this.host.flog('Error processing RPC:', data[0], 'error:', e.message);
+        // Send error response to prevent caller from hanging
+        await this.send([messageTag, null]);
+      }
     }
   }
   // Sponsorship
