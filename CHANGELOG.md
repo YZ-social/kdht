@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Fix Recursive Routing First Hop Selection for Self-Lookups
+
+- **What**: Fixed recursive routing failing when a node looks up its own key (e.g., during join)
+- **Why**: The `selectProximityAware` method filters candidates by requiring XOR-distance progress (`h.distance < myDistance`). This is correct for intermediate nodes forwarding requests, but wrong for the origin node initiating a lookup. When looking up your own key, `myDistance = 0`, so no candidates pass the filter.
+- **Root Cause**: The origin node was using the same selection logic as forwarding nodes. Per Kademlia spec, the origin is asking "who knows about this key?" - it's not forwarding toward a target.
+- **Changes**:
+  - Added `selectFirstHop` method that doesn't require distance progress - used by origin nodes
+  - Updated `initiateRecursiveLookup`, `recursiveLocateValue`, and `initiateRecursiveSignals` to use `selectFirstHop`
+  - Kept `selectProximityAware` for intermediate forwarding (where progress is required)
+- **Kademlia Spec Reference**: "To join the network, a node u must have a contact to an already participating node w. u inserts w into the appropriate k-bucket. u then performs a node lookup for its own node ID."
+- **Lessons Learned**:
+  - Initiating a lookup vs forwarding a lookup are fundamentally different operations
+  - The origin asks the network for information; intermediate nodes make progress toward the target
+  - Self-lookups (distance 0) are valid and important for network discovery during join
+
+---
+
 #### Fix Browser Node Connection Count in Recursive Routing Mode
 
 - **What**: Fixed browser nodes only establishing 1 connection despite 15 portal nodes being available
