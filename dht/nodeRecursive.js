@@ -794,7 +794,11 @@ export class NodeRecursive extends NodeMessages {
 
     // Try candidates until we get a successful response or run out of options
     while (true) {
-      const nextHop = this.selectProximityAware(helpers, currentCtx);
+      // Use selectFirstHop instead of selectProximityAware for signals forwarding.
+      // Unlike lookups where we need to converge on the k closest nodes,
+      // signals need to reach a specific target that might not be in anyone's
+      // routing table yet (e.g., a new node trying to connect).
+      const nextHop = this.selectFirstHop(helpers, currentCtx);
 
       if (!nextHop) {
         this.ilog('No closer node for recursive signals to', targetNameForDebugging,
