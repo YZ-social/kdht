@@ -265,6 +265,61 @@ export class NodeRecursive extends NodeMessages {
   }
 
   /**
+   * Select the first hop for initiating a recursive lookup.
+   * 
+   * Unlike selectProximityAware (used for forwarding), this method does NOT
+   * require XOR-distance progress. The origin node is asking "who knows about
+   * this key?" - it's not forwarding toward a target.
+   * 
+   * Per Kademlia spec: "To join the network, a node u must have a contact to
+   * an already participating node w. u inserts w into the appropriate k-bucket.
+   * u then performs a node lookup for its own node ID."
+   * 
+   * When looking up our own ID, we can't make "progress" (distance 0), but we
+   * still need to query the network to discover our neighbors.
+   * 
+   * @param {Helper[]} candidates - Helpers sorted by XOR distance
+   * @param {RequestContext} ctx - Current request context
+   * @returns {Helper|null} The selected first hop, or null if none valid
+   */
+  selectFirstHop(candidates, ctx) {
+    // Filter out visited nodes, self, and tried nodes
+    // Note: We do NOT filter by distance progress here - the origin node
+    // is asking the network, not forwarding toward a target
+    const valid = candidates.filter(h => 
+      h.key !== this.key && 
+      !ctx.hasVisited(h.key) &&
+      !ctx.hasTried(h.key)
+    );
+
+    if (valid.length === 0) return null;
+
+    // If proximity routing is disabled, just use closest by XOR
+    if (!this.constructor.proximityRoutingEnabled) {
+      return valid[0]; // Already sorted by XOR distance
+    }
+
+    // Score by XOR distance with RTT bias (Requirement 5.2)
+    const weight = this.constructor.proximityWeight;
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const h of valid) {
+      // Default high RTT if unknown (encourages learning)
+      const rtt = h.contact.rtt || 1000;
+      // Score combines XOR distance with RTT penalty
+      // Lower score is better
+      const score = Number(h.distance) * (1 + weight * rtt / 1000);
+      if (score < bestScore) {
+        bestScore = score;
+        best = h;
+      }
+    }
+
+    return best;
+  }
+
+  /**
    * Initiate a recursive lookup for the given target key.
    * 
    * This is the entry point for recursive routing when enabled.
@@ -296,8 +351,9 @@ export class NodeRecursive extends NodeMessages {
 
     // Try candidates until we get a non-DUPLICATE response or run out of options
     while (true) {
-      // Select first hop
-      const firstHop = this.selectProximityAware(helpers, currentCtx);
+      // Select first hop - use selectFirstHop which doesn't require distance progress
+      // This is important for self-lookups during join where myDistance = 0
+      const firstHop = this.selectFirstHop(helpers, currentCtx);
       
       if (!firstHop) {
         // We might be the closest node or all paths exhausted
@@ -592,7 +648,8 @@ export class NodeRecursive extends NodeMessages {
     let currentCtx = ctx;
 
     while (true) {
-      const firstHop = this.selectProximityAware(helpers, currentCtx);
+      // Select first hop - use selectFirstHop which doesn't require distance progress
+      const firstHop = this.selectFirstHop(helpers, currentCtx);
       
       if (!firstHop) {
         return undefined;
@@ -833,7 +890,8 @@ export class NodeRecursive extends NodeMessages {
 
     // Try candidates until we get a successful response or run out of options
     while (true) {
-      const firstHop = this.selectProximityAware(helpers, currentCtx);
+      // Select first hop - use selectFirstHop which doesn't require distance progress
+      const firstHop = this.selectFirstHop(helpers, currentCtx);
       
       if (!firstHop) {
         this.log('Unable to forward recursive signals to', targetNameForDebugging, 
