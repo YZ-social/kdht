@@ -263,8 +263,15 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	  elapsed: now - start
 	});
 	
+	// Clear webrtc BEFORE calling onclose so it knows this is a timeout,
+	// not an unexpected close. This prevents the "was not politely closed"
+	// message and double-remove of the contact.
+	const webrtcToClose = this.webrtc;
+	this.webrtc = null;
+	webrtcToClose?.close();
 	onclose();
-	this.host.removeContact(this); // fixme?
+	// Don't remove contact on timeout - the node may still be reachable
+	// through other paths. Let the routing table manage stale contacts.
 	expired(null);
       }, timeoutMS);
     });
