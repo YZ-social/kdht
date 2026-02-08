@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Add Error Handling to RPC Deserialization to Prevent Worker Crashes
+
+- **What**: Added try-catch error handling to RPC deserialization to prevent worker crashes
+- **Why**: Workers were crashing when receiving malformed RPC messages, causing network instability. The crashes were caused by:
+  1. `BigInt(targetKey)` throwing when `targetKey` is not a valid BigInt string
+  2. Unhandled exceptions in `deserializeRequest` propagating up and crashing the worker
+- **Root Cause**: The `deserializeRequest` function in `contacts/webrtc.js` was not handling errors when converting `targetKey` to BigInt. If a malformed message arrived (e.g., from a different version of the code or a corrupted message), the worker would crash.
+- **Changes**:
+  - `contacts/webrtc.js`: Added try-catch around `BigInt(targetKey)` conversion with error logging
+  - `contacts/contact.js`: Added try-catch around the entire RPC processing in `receiveRPC`, sending null response on error to prevent caller from hanging
+- **Results**: Workers no longer crash on malformed messages. Errors are logged and the caller receives a null response.
+- **Lessons Learned**:
+  - RPC handlers should be defensive against malformed input
+  - Sending a null response on error prevents the caller from hanging indefinitely
+  - Error logging helps diagnose issues without crashing the worker
+
+---
+
 #### Fix Portal Node Bootstrap Selection for Mesh Formation
 
 - **What**: Fixed portal nodes being selected for bootstrap before they've joined the network
