@@ -50,6 +50,7 @@ export class NodeRefresh extends NodeKeys {
       this.ilog('refresh', statisticsKey, timerKey, 'last/lag ms:', elapsed.toLocaleString(), lag.toLocaleString());
       if (lag > 250) console.log(`** System is overloaded by ${lag.toLocaleString()} ms. **`);
       await thunk();
+      this.noteStatistic(now, statisticsKey);
     }, timeout));
   }
 }

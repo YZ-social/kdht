@@ -24,7 +24,36 @@ export class NodeUtilities {
     console.error(...rest, new Error("Assert failure").stack); // Not throwing error, because we want to exit. But we are grabbing stack.
     globalThis.process?.exit(1);
   }
-  // TODO: Instead of a global collector (which won't work when distributed across devices), 
+
+  static initialStatisticBuckets() {
+    const stat = {count:0, elapsed:0};
+    return {
+      bucket: Object.assign({}, stat), // copy the model
+      storage: Object.assign({}, stat),
+      rpc: Object.assign({}, stat)
+    };
+  }
+  static recordStatistic(accumulator, startTimeMS, name) {
+    const stat = accumulator?.[name];
+    if (!stat) return;
+    stat.count++;
+    stat.elapsed += Date.now() - startTimeMS;
+  }
+  statistics = NodeUtilities.initialStatisticBuckets();
+  noteStatistic(startTimeMS, name) {
+    this.constructor.recordStatistic(this.statistics, startTimeMS, name);
+    this.constructor.noteStatistic(startTimeMS, name);
+    if (name === 'bucket' || name === 'storage') this.publish({eventName: 'network statistics',
+							       subject: this.name,
+							       payload: this.getStatisticsJSON()});
+  }
+  getStatisticsJSON() {
+    const {statistics} = this;
+    statistics.connections = this.contacts.map(c => c.connection && c.name).filter(n => n);
+    return statistics;
+  }
+
+  // I expect this class/global version  to be phased out, in favor of the instance/publishing version, above.
   static _stats = {};
   static get statistics() { // Return {bucket, storage, rpc}, where each value is [elapsedInSeconds, count, averageInMSToNearestTenth].
     // If Nodes.contacts is populated, also report average number of buckets and contacts.
@@ -46,18 +75,10 @@ export class NodeUtilities {
     return _stats;
   }
   static resetStatistics() { // Reset statistics to zero.
-    const stat = {count:0, elapsed:0, lag:0};
-    this._stats = {
-      bucket: Object.assign({}, stat), // copy the model
-      storage: Object.assign({}, stat),
-      rpc: Object.assign({}, stat)
-    };
+    this._stats = this.initialStatisticBuckets();
   }
   static noteStatistic(startTimeMS, name) { // Given a startTimeMS, update statistics bucket for name.
-    const stat = this._stats?.[name];
-    if (!stat) return;
-    stat.count++;
-    stat.elapsed += Date.now() - startTimeMS;
+    this.recordStatistic(this._stats, startTimeMS, name);
   }
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.contact?.report || this.name}, ${this.nConnections} connections`;
@@ -76,8 +97,9 @@ export class NodeUtilities {
     }
     return logger ? logger(report) : report;
   }
+  
   static reportAll() {
     this.contacts?.forEach(contact => contact.node.report());
-  }
+  }  
 }
 

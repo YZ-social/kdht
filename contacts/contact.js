@@ -166,7 +166,7 @@ export class Contact {
 	if (!sender.isRunning) return null; // Sender closed after call.
 	return result;
       })
-      .finally(() => Node.noteStatistic(start, 'rpc'));
+      .finally(() => this.host.noteStatistic(start, 'rpc'));
   }
   getResponsePromise(messageTag) { // Get a promise that will resolve when a response comes in as messageTag.
     return new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
