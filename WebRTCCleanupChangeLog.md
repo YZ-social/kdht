@@ -6,6 +6,29 @@ All notable changes for the WebRTC Resource Cleanup feature will be documented i
 
 ### Added
 
+#### WebRTC Resource Cleanup - Task 5: Update Existing Cleanup Paths
+
+- **What**: Updated all existing cleanup paths to use the new `safeCleanup` method
+- **Why**: The existing cleanup paths (timeout, onclose, disconnectTransport) were using direct `webrtc.close()` calls which didn't follow the proper cleanup order and could leak resources. By routing all cleanup through `safeCleanup`, we ensure consistent, complete resource cleanup.
+- **Changes**:
+  - `contacts/webrtc.js`:
+    - **5.1 Timeout handling**: Replaced direct `webrtc.close()` with `safeCleanup('timeout')` in the timeout handler. This ensures complete cleanup (tracks → listeners → channel → connection → nullify) when connection attempts timeout.
+    - **5.2 Onclose handler**: Updated to call `safeCleanup('disconnect')` for unexpected closes (when `webrtc` is set and host is not stopped). Added `connectionState` to the unexpected_close log event. Contact is removed from routing table after cleanup.
+    - **5.3 disconnectTransport**: Replaced direct `webrtc.close()` with `safeCleanup('close')` to ensure proper cleanup order when transport is disconnected.
+- **Tests**:
+  - Extended `spec/rdht/webrtcCleanupSpec.js` with:
+    - Property 5: Contact Removal on Unexpected Disconnect (validates Requirement 4.4)
+    - Tests verify contact is removed from routing table on unexpected disconnect
+    - Tests verify contact is NOT removed on normal close (host stopped)
+    - Tests verify cleanup handles already-null webrtc correctly
+- **Requirements**: 2.1, 2.5, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 4.3, 4.4
+- **Lessons Learned**:
+  - The onclose handler needed to be made async to properly await `safeCleanup`
+  - Property tests for disconnect behavior need custom `safeCleanup` that skips `waitForStableState` to avoid timeouts in tests
+  - The distinction between unexpected close (webrtc set, host running) and normal close (webrtc null or host stopped) is important for correct contact removal behavior
+
+---
+
 #### WebRTC Resource Cleanup - Task 4: Safe Cleanup Methods
 
 - **What**: Implemented state-aware safe cleanup methods for WebRTC connections

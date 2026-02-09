@@ -403,10 +403,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 					       ]},
 					     ]},
 					     polite: this.host.key < this.node.key});
-    const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
+    const onclose = async () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
       
-      // Track disconnect with reason
+      // Track disconnect with reason (Requirements 4.1, 4.3)
       ConnectionTracker.log('disconnect', {
         from: host.contact?.sname,
         to: this.sname,
@@ -418,14 +418,24 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       
       if (this.webrtc && !this.host.isStopped()) {
 	this.host.ilog('connection to', this.sname, 'was not politely closed. Dropping contact.');
+	
+	// Log unexpected disconnect (Requirements 4.1, 4.3)
 	ConnectionTracker.log('unexpected_close', {
 	  from: host.contact?.sname,
 	  to: this.sname,
-	  counter: this.counter
+	  counter: this.counter,
+	  connectionState: this.webrtc?.pc?.connectionState
 	});
+	
+	// Use safeCleanup for proper resource cleanup (Requirements 4.1, 4.2, 4.3)
+	await this.safeCleanup('disconnect');
+	
+	// Remove contact from routing table (Requirement 4.4)
 	this.host.removeContact(this, false);
+      } else {
+	// Normal close - just nullify references
+	this.webrtc = this.connection = this.unsafeData = null;
       }
-      this.webrtc = this.connection = this.unsafeData = null;
       resolve(null); // closed promise
     };
     if (initiate) {
@@ -479,7 +489,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	const now = Date.now();
 	this.host.ilog('Unable to connect to', this.sname);
 	
-	// Track timeout
+	// Track timeout (Requirements 3.1, 3.2)
 	ConnectionTracker.log('connection_timeout', {
 	  from: host.contact?.sname,
 	  to: this.sname,
@@ -488,13 +498,13 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	  elapsed: now - start
 	});
 	
-	// Clear webrtc BEFORE calling onclose so it knows this is a timeout,
-	// not an unexpected close. This prevents the "was not politely closed"
-	// message and double-remove of the contact.
-	const webrtcToClose = this.webrtc;
-	this.webrtc = null;
-	webrtcToClose?.close();
-	onclose();
+	// Use safeCleanup for proper resource cleanup (Requirements 3.1, 3.2, 3.3, 3.4)
+	// This ensures complete cleanup: tracks → listeners → channel → connection → nullify
+	await this.safeCleanup('timeout');
+	
+	// Resolve closed promise
+	resolve(null);
+	
 	// Don't remove contact on timeout - the node may still be reachable
 	// through other paths. Let the routing table manage stale contacts.
 	expired(null);
@@ -597,8 +607,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async disconnectTransport(andNotify = true) {
     if (!this.connection) return;
     super.disconnectTransport(andNotify);
-    const webrtc = this.webrtc;
-    this.connection = this.webrtc = null;
-    webrtc?.close();
+    
+    // Use safeCleanup for proper resource cleanup (Requirements 2.1, 2.5)
+    // This ensures cleanup follows correct order: tracks → listeners → channel → connection → nullify
+    await this.safeCleanup('close');
   }
 }

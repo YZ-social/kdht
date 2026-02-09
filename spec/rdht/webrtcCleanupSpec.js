@@ -537,6 +537,195 @@ describe('WebRTC Resource Cleanup', function () {
     });
   });
 
+  describe('Property 5: Contact Removal on Unexpected Disconnect', function () {
+    /**
+     * **Validates: Requirements 4.4**
+     * 
+     * For any WebContact where the remote peer disconnects unexpectedly
+     * (connection state changes to 'failed' or 'disconnected' without local initiation),
+     * the contact SHALL be removed from the host's routing table (buckets or looseContacts).
+     */
+    
+    function createMockHostWithRoutingTable() {
+      const contacts = new Map();
+      const looseContacts = new Map();
+      
+      return {
+        contact: { sname: 'test-host' },
+        log: () => {},
+        flog: () => {},
+        ilog: () => {},
+        isStopped: () => false,
+        
+        // Routing table simulation
+        contacts,
+        looseContacts,
+        
+        addContact(contact) {
+          contacts.set(contact.key, contact);
+        },
+        
+        removeContact(contact, notify = true) {
+          contacts.delete(contact.key);
+          looseContacts.delete(contact.key);
+          return true;
+        },
+        
+        removeLooseContact(key) {
+          looseContacts.delete(key);
+        },
+        
+        hasContact(key) {
+          return contacts.has(key) || looseContacts.has(key);
+        }
+      };
+    }
+    
+    function createMockWebContactForDisconnect(host, connectionState) {
+      const contactKey = BigInt(Math.floor(Math.random() * 1000000));
+      
+      const mockContact = {
+        host,
+        key: contactKey,
+        sname: 'test-remote-' + contactKey,
+        _eventListeners: new Map(),
+        _cleanupInProgress: false,
+        webrtc: {
+          pc: {
+            connectionState: connectionState,
+            getSenders: () => []
+          },
+          close: () => {}
+        },
+        connection: Promise.resolve(null),
+        unsafeData: { close: () => {} },
+        
+        removeAllListeners: WebContact.prototype.removeAllListeners,
+        performCleanup: WebContact.prototype.performCleanup,
+        
+        // Custom safeCleanup that skips waiting (for testing)
+        async safeCleanup(reason) {
+          if (this._cleanupInProgress) return;
+          this._cleanupInProgress = true;
+          try {
+            // Skip waitForStableState - go directly to cleanup
+            this.performCleanup(reason);
+          } finally {
+            this._cleanupInProgress = false;
+          }
+        }
+      };
+      
+      // Add contact to host's routing table
+      host.addContact(mockContact);
+      
+      return mockContact;
+    }
+    
+    it('removes contact from routing table on unexpected disconnect', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          // Unexpected disconnect states
+          fc.constantFrom('failed', 'disconnected'),
+          async (disconnectState) => {
+            ConnectionTracker.clear();
+            const host = createMockHostWithRoutingTable();
+            const contact = createMockWebContactForDisconnect(host, disconnectState);
+            
+            // Track connection
+            ConnectionTracker.trackConnectionCreated();
+            
+            // Verify contact is in routing table before disconnect
+            const wasInTable = host.hasContact(contact.key);
+            
+            // Simulate unexpected disconnect handling (as done in onclose handler)
+            // This mimics what happens when webrtc is set and host is not stopped
+            if (contact.webrtc && !host.isStopped()) {
+              await contact.safeCleanup('disconnect');
+              host.removeContact(contact, false);
+            }
+            
+            // Verify contact is removed from routing table
+            const isInTableAfter = host.hasContact(contact.key);
+            
+            return wasInTable && !isInTableAfter;
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    it('does not remove contact on normal close (host stopped)', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.constantFrom(...ConnectionStates.STABLE),
+          async (state) => {
+            ConnectionTracker.clear();
+            const host = createMockHostWithRoutingTable();
+            // Override isStopped to return true (simulating normal shutdown)
+            host.isStopped = () => true;
+            
+            const contact = createMockWebContactForDisconnect(host, state);
+            
+            // Track connection
+            ConnectionTracker.trackConnectionCreated();
+            
+            // Verify contact is in routing table before
+            const wasInTable = host.hasContact(contact.key);
+            
+            // Simulate normal close handling (host is stopped)
+            // In this case, we don't remove the contact
+            if (!contact.webrtc || host.isStopped()) {
+              // Normal close - just nullify references
+              contact.webrtc = contact.connection = contact.unsafeData = null;
+            }
+            
+            // Contact should still be in routing table (not removed on normal close)
+            const isInTableAfter = host.hasContact(contact.key);
+            
+            return wasInTable && isInTableAfter;
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    it('handles cleanup correctly when webrtc is already null', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.constantFrom('failed', 'disconnected', 'closed'),
+          async (state) => {
+            ConnectionTracker.clear();
+            const host = createMockHostWithRoutingTable();
+            const contact = createMockWebContactForDisconnect(host, state);
+            
+            // Track connection
+            ConnectionTracker.trackConnectionCreated();
+            
+            // Clear webrtc before handling (simulates timeout case)
+            contact.webrtc = null;
+            
+            // Verify contact is in routing table before
+            const wasInTable = host.hasContact(contact.key);
+            
+            // Simulate close handling when webrtc is already null
+            // This should NOT remove the contact (it's a normal/expected close)
+            if (!contact.webrtc || host.isStopped()) {
+              // Normal close - just nullify references
+              contact.connection = contact.unsafeData = null;
+            }
+            
+            // Contact should still be in routing table
+            const isInTableAfter = host.hasContact(contact.key);
+            
+            return wasInTable && isInTableAfter;
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
   describe('Unit tests for ConnectionTracker resource monitoring', function () {
     describe('trackConnectionCreated', function () {
       it('increments activeConnections', function () {

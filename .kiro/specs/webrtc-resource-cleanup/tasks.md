@@ -77,23 +77,23 @@ This implementation adds proper WebRTC resource cleanup to prevent UDP socket an
     - **Property 3: Cleanup Order Correctness**
     - **Validates: Requirements 2.1, 2.5**
 
-- [ ] 5. Update existing cleanup paths to use safeCleanup
-  - [ ] 5.1 Update timeout handling in createWebRTC
+- [x] 5. Update existing cleanup paths to use safeCleanup
+  - [x] 5.1 Update timeout handling in createWebRTC
     - Replace direct webrtc.close() with safeCleanup('timeout')
     - Ensure timeout path performs complete cleanup
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
   
-  - [ ] 5.2 Update onclose handler in createWebRTC
+  - [x] 5.2 Update onclose handler in createWebRTC
     - Call safeCleanup('disconnect') for unexpected closes
     - Log unexpected disconnect to ConnectionTracker
     - _Requirements: 4.1, 4.2, 4.3_
   
-  - [ ] 5.3 Update disconnectTransport method
+  - [x] 5.3 Update disconnectTransport method
     - Replace direct webrtc.close() with safeCleanup('close')
     - Ensure proper cleanup order
     - _Requirements: 2.1, 2.5_
   
-  - [ ] 5.4 Write property test for contact removal on unexpected disconnect
+  - [x] 5.4 Write property test for contact removal on unexpected disconnect
     - **Property 5: Contact Removal on Unexpected Disconnect**
     - **Validates: Requirements 4.4**
 
