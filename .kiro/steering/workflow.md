@@ -24,6 +24,7 @@
 - These are pre-existing issues, not related to R/Kademlia changes
 - On Windows, verify changes with: `npx jasmine spec/dhtInternalsSpec.js spec/dhtKeySpec.js spec/rdht/*.js`
 - This runs all unit tests and property tests without the flaky simulation tests
+- The `timeout` command does not work on Windows - use `Start-Sleep -Seconds N` in PowerShell instead
 
 ## Commit Discipline
 - Commit all code before moving on to the next task
@@ -35,7 +36,12 @@
 - Prefer extending existing classes over creating new ones
 
 ## Change Log
-After making changes, document in `CHANGELOG.md`:
+After making changes, document in the appropriate changelog:
 - What was changed
 - Why it was changed
 - Any lessons learned that might help other developers solving similar problems
+
+### Changelog Files by Spec
+- **webrtc-resource-cleanup spec**: Update `WebRTCCleanupChangeLog.md`
+- **rdht-conformance spec**: Update `RecursiveChangeLog.md`
+- **Other changes**: Update `RecursiveChangeLog.md`
