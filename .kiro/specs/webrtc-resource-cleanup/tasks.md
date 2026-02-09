@@ -25,15 +25,15 @@ This implementation adds proper WebRTC resource cleanup to prevent UDP socket an
     - Add `isTransitional(state)` and `isStable(state)` methods
     - _Requirements: 1.1, 1.2, 1.4_
 
-- [ ] 3. Implement listener tracking in WebContact
-  - [ ] 3.1 Add listener tracking infrastructure
+- [x] 3. Implement listener tracking in WebContact
+  - [x] 3.1 Add listener tracking infrastructure
     - Add `_eventListeners` Map property to track registered listeners
     - Add `_cleanupInProgress` boolean to prevent concurrent cleanup
     - Add `registerListener(target, event, handler)` method that stores and adds listener
     - Add `removeAllListeners()` method that removes all tracked listeners
     - _Requirements: 2.2, 2.3_
   
-  - [ ] 3.2 Update createWebRTC to use listener tracking
+  - [x] 3.2 Update createWebRTC to use listener tracking
     - Replace direct `addEventListener` calls with `registerListener`
     - Track data channel 'close' and 'message' listeners
     - Call `trackConnectionCreated()` when WebRTC is created

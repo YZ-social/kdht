@@ -6,6 +6,26 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### WebRTC Resource Cleanup - Task 3: Listener Tracking in WebContact
+
+- **What**: Added listener tracking infrastructure to WebContact for proper cleanup
+- **Why**: WebRTC connections leak resources when event listeners aren't properly removed. By tracking all registered listeners, we can ensure complete cleanup when connections close.
+- **Changes**:
+  - `contacts/webrtc.js`:
+    - Added `_eventListeners` Map property to track registered listeners (keyed by target → event → handlers)
+    - Added `_cleanupInProgress` boolean to prevent concurrent cleanup
+    - Added `registerListener(target, event, handler)` method that stores and adds listeners
+    - Added `removeAllListeners()` method that removes all tracked listeners safely
+    - Updated `createWebRTC` to use `registerListener` for data channel 'close' and 'message' events
+    - Added `ConnectionTracker.trackConnectionCreated()` call when WebRTC is created
+- **Requirements**: 2.2, 2.3, 5.1
+- **Lessons Learned**:
+  - Tracking listeners in a Map<target, Map<event, handler[]>> structure allows efficient removal by target or event
+  - The `removeAllListeners()` method wraps `removeEventListener` in try-catch since targets may already be destroyed
+  - Calling `trackConnectionCreated()` at WebRTC creation time (not connection success) ensures accurate counting even for failed connections
+
+---
+
 #### WebRTC Resource Cleanup - Task 2: ConnectionStates Helper
 
 - **What**: Added `ConnectionStates` helper object for classifying WebRTC connection states

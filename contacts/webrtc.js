@@ -130,6 +130,46 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get key() { return this.node.key; }   // Key of remote node as a BigInt.
   get isServerNode() { return this.node.isServerNode; } // It it reachable through a server.
 
+  // Listener tracking for proper cleanup (Requirements 2.2, 2.3)
+  _eventListeners = new Map();  // Map<target, Map<event, handler[]>>
+  _cleanupInProgress = false;   // Prevent concurrent cleanup
+
+  // Register a listener and track it for later removal
+  registerListener(target, event, handler) {
+    if (!target) return;
+    
+    // Get or create the event map for this target
+    if (!this._eventListeners.has(target)) {
+      this._eventListeners.set(target, new Map());
+    }
+    const eventMap = this._eventListeners.get(target);
+    
+    // Get or create the handler array for this event
+    if (!eventMap.has(event)) {
+      eventMap.set(event, []);
+    }
+    eventMap.get(event).push(handler);
+    
+    // Actually add the listener
+    target.addEventListener(event, handler);
+  }
+
+  // Remove all tracked listeners
+  removeAllListeners() {
+    for (const [target, eventMap] of this._eventListeners) {
+      for (const [event, handlers] of eventMap) {
+        for (const handler of handlers) {
+          try {
+            target.removeEventListener(event, handler);
+          } catch (e) {
+            // Target may already be destroyed, ignore
+          }
+        }
+      }
+    }
+    this._eventListeners.clear();
+  }
+
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (response?.ok) return true;
     this.host.flog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);
@@ -230,6 +270,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     
     let {promise, resolve} = Promise.withResolvers();
     this.closed = promise;
+    
+    // Track connection creation (Requirement 5.1)
+    ConnectionTracker.trackConnectionCreated();
+    
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
 					     debug: host.debug,
 					     configuration: {iceServers: [
@@ -292,8 +336,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
         initiate
       });
       
-      dataChannel.addEventListener('close', onclose);
-      dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
+      // Use registerListener for proper cleanup tracking (Requirements 2.2, 2.3)
+      this.registerListener(dataChannel, 'close', onclose);
+      this.registerListener(dataChannel, 'message', event => this.receiveWebRTC(event.data));
       if (this.info || this.debug) await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) {
         this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
