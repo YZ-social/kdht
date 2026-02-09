@@ -170,6 +170,124 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     this._eventListeners.clear();
   }
 
+  // Wait for connection to reach a stable state before cleanup (Requirements 1.1, 1.3)
+  async waitForStableState(maxWaitMs = 5000) {
+    const start = Date.now();
+    const state = this.webrtc?.pc?.connectionState;
+    
+    // If no webrtc or already stable, return immediately
+    if (!state || ConnectionStates.isStable(state)) {
+      return { waited: false, forced: false };
+    }
+    
+    // Poll until stable or timeout
+    while (Date.now() - start < maxWaitMs) {
+      const currentState = this.webrtc?.pc?.connectionState;
+      if (!currentState || ConnectionStates.isStable(currentState)) {
+        return { waited: true, forced: false };
+      }
+      await Node.delay(100);
+    }
+    
+    // Timeout exceeded - log warning and force cleanup
+    ConnectionTracker.log('cleanup_forced', {
+      from: this.host?.contact?.sname,
+      to: this.sname,
+      state: this.webrtc?.pc?.connectionState,
+      waitedMs: maxWaitMs
+    });
+    return { waited: true, forced: true };
+  }
+
+  // Execute cleanup in correct order (Requirements 2.1, 2.4, 2.5, 3.1, 3.4)
+  performCleanup(reason) {
+    let success = true;
+    const connectionState = this.webrtc?.pc?.connectionState;
+    
+    // Step 1: Stop all media tracks
+    try {
+      this.webrtc?.pc?.getSenders?.()?.forEach(sender => {
+        try { sender.track?.stop(); } catch (e) { /* ignore */ }
+      });
+    } catch (e) {
+      success = false;
+      ConnectionTracker.log('cleanup_error', { 
+        step: 'stop_tracks', 
+        error: e.message,
+        from: this.host?.contact?.sname,
+        to: this.sname
+      });
+    }
+    
+    // Step 2: Remove all event listeners
+    try {
+      this.removeAllListeners();
+    } catch (e) {
+      success = false;
+      ConnectionTracker.log('cleanup_error', { 
+        step: 'remove_listeners', 
+        error: e.message,
+        from: this.host?.contact?.sname,
+        to: this.sname
+      });
+    }
+    
+    // Step 3: Close data channel
+    try {
+      if (this.unsafeData) {
+        this.unsafeData.close?.();
+      }
+    } catch (e) {
+      success = false;
+      ConnectionTracker.log('cleanup_error', { 
+        step: 'close_channel', 
+        error: e.message,
+        from: this.host?.contact?.sname,
+        to: this.sname
+      });
+    }
+    
+    // Step 4: Close peer connection
+    try {
+      this.webrtc?.close?.();
+    } catch (e) {
+      success = false;
+      ConnectionTracker.log('cleanup_error', { 
+        step: 'close_connection', 
+        error: e.message,
+        from: this.host?.contact?.sname,
+        to: this.sname
+      });
+    }
+    
+    // Step 5: Nullify references (always do this regardless of errors)
+    this.webrtc = null;
+    this.connection = null;
+    this.unsafeData = null;
+    
+    // Log cleanup result to ConnectionTracker
+    ConnectionTracker.trackConnectionClosed(success, reason);
+    
+    return success;
+  }
+
+  // State-aware cleanup entry point (Requirements 1.1, 1.2)
+  async safeCleanup(reason) {
+    // Prevent concurrent cleanup
+    if (this._cleanupInProgress) return;
+    this._cleanupInProgress = true;
+    
+    try {
+      // Wait for stable state if needed
+      await this.waitForStableState();
+      
+      // Perform cleanup in correct order
+      this.performCleanup(reason);
+    } finally {
+      this._cleanupInProgress = false;
+    }
+  }
+
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (response?.ok) return true;
     this.host.flog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);

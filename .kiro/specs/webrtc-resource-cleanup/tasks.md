@@ -39,15 +39,15 @@ This implementation adds proper WebRTC resource cleanup to prevent UDP socket an
     - Call `trackConnectionCreated()` when WebRTC is created
     - _Requirements: 2.2, 2.3, 5.1_
 
-- [ ] 4. Implement safe cleanup methods
-  - [ ] 4.1 Add waitForStableState method
+- [x] 4. Implement safe cleanup methods
+  - [x] 4.1 Add waitForStableState method
     - Check current connectionState from webrtc.pc
     - If transitional, poll every 100ms until stable or timeout (5000ms default)
     - Log forced cleanup warning if timeout exceeded
     - Return object with `waited` and `forced` flags
     - _Requirements: 1.1, 1.3_
   
-  - [ ] 4.2 Add performCleanup method with correct order
+  - [x] 4.2 Add performCleanup method with correct order
     - Stop all media tracks via getSenders().forEach(s => s.track?.stop())
     - Call removeAllListeners() to remove tracked listeners
     - Close data channel if exists
@@ -57,7 +57,7 @@ This implementation adds proper WebRTC resource cleanup to prevent UDP socket an
     - Handle errors gracefully, continue cleanup on failure
     - _Requirements: 2.1, 2.4, 2.5, 3.1, 3.4_
   
-  - [ ] 4.3 Add safeCleanup entry point method
+  - [x] 4.3 Add safeCleanup entry point method
     - Check _cleanupInProgress flag, return early if true
     - Set _cleanupInProgress = true
     - Call waitForStableState()
@@ -65,15 +65,15 @@ This implementation adds proper WebRTC resource cleanup to prevent UDP socket an
     - Set _cleanupInProgress = false in finally block
     - _Requirements: 1.1, 1.2_
   
-  - [ ] 4.4 Write property test for state-aware cleanup behavior
+  - [x] 4.4 Write property test for state-aware cleanup behavior
     - **Property 1: State-Aware Cleanup Behavior**
     - **Validates: Requirements 1.1, 1.2**
   
-  - [ ] 4.5 Write property test for cleanup completeness
+  - [x] 4.5 Write property test for cleanup completeness
     - **Property 2: Cleanup Completeness**
     - **Validates: Requirements 2.2, 2.3, 2.4, 3.3, 3.4, 4.2**
   
-  - [ ] 4.6 Write property test for cleanup order correctness
+  - [x] 4.6 Write property test for cleanup order correctness
     - **Property 3: Cleanup Order Correctness**
     - **Validates: Requirements 2.1, 2.5**
 
