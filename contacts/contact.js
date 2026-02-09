@@ -115,12 +115,27 @@ export class Contact {
       await Promise.all(this.host.storage.entries().map(([key, value]) => this.storeValue(key, value)));
     }
     this.host.stopRefresh();
+    
+    // Collect all cleanup promises from connections (Requirements 6.1, 6.2, 6.3)
+    const cleanupPromises = [];
     for (const contact of this.host.connections) {
-      const far = await contact.connection;
-      if (!far) return;
-      contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
-      await contact.disconnectTransport();
+      const cleanupPromise = (async () => {
+        try {
+          const far = await contact.connection;
+          if (!far) return;
+          contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
+          await contact.disconnectTransport();
+        } catch (e) {
+          // Handle cleanup failures gracefully without throwing (Requirement 6.3)
+          this.host.ilog('Cleanup error for contact', contact.sname, ':', e.message);
+        }
+      })();
+      cleanupPromises.push(cleanupPromise);
     }
+    
+    // Wait for all cleanup operations to complete (Requirement 6.2)
+    await Promise.allSettled(cleanupPromises);
+    
     this.host.isRunning = false;
   }
   async disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously

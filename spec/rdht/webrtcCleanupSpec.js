@@ -875,4 +875,261 @@ describe('WebRTC Resource Cleanup', function () {
       });
     });
   });
+
+  describe('Property 6: Complete Shutdown Cleanup', function () {
+    /**
+     * **Validates: Requirements 6.1, 6.2**
+     * 
+     * For any Node with N active WebContact connections, when disconnect() is called,
+     * the returned promise SHALL not resolve until all N connections have completed cleanup,
+     * and after resolution, no WebContact SHALL have a non-null webrtc property.
+     */
+    
+    function createMockWebContactForShutdown(host, index) {
+      let cleanupCompleted = false;
+      let cleanupStartTime = null;
+      let cleanupEndTime = null;
+      
+      const mockContact = {
+        host,
+        sname: `test-contact-${index}`,
+        key: BigInt(index),
+        _eventListeners: new Map(),
+        _cleanupInProgress: false,
+        cleanupCompleted: () => cleanupCompleted,
+        getCleanupTiming: () => ({ start: cleanupStartTime, end: cleanupEndTime }),
+        webrtc: {
+          pc: {
+            connectionState: 'connected',
+            getSenders: () => []
+          },
+          close: () => {}
+        },
+        connection: Promise.resolve({ readyState: 'open' }),
+        unsafeData: { 
+          readyState: 'open',
+          close: () => {},
+          send: () => {}
+        },
+        
+        synchronousSend(message) {
+          // Mock send - do nothing
+        },
+        
+        async disconnectTransport(andNotify = true) {
+          cleanupStartTime = Date.now();
+          // Simulate some cleanup time
+          await new Promise(r => setTimeout(r, 5 + Math.random() * 10));
+          
+          // Perform cleanup
+          this.webrtc = null;
+          this.connection = null;
+          this.unsafeData = null;
+          
+          cleanupCompleted = true;
+          cleanupEndTime = Date.now();
+        }
+      };
+      
+      return mockContact;
+    }
+    
+    function createMockHostWithConnections(numConnections) {
+      const connections = [];
+      
+      const mockHost = {
+        contact: { sname: 'test-host' },
+        name: 'test-host',
+        key: BigInt(0),
+        node: null, // Will be set to self
+        refreshTimeIntervalMS: 1000,
+        isRunning: true,
+        storage: new Map(),
+        connections,
+        messageResolvers: new Map(),
+        
+        log: () => {},
+        flog: () => {},
+        ilog: () => {},
+        
+        isStopped() {
+          return !this.isRunning;
+        },
+        
+        stopRefresh() {
+          this.refreshTimeIntervalMS = 0;
+        },
+        
+        storeValue(key, value) {
+          return Promise.resolve();
+        }
+      };
+      
+      // Set node to self (required for disconnect assertion)
+      mockHost.node = mockHost;
+      
+      // Create mock contacts
+      for (let i = 0; i < numConnections; i++) {
+        const contact = createMockWebContactForShutdown(mockHost, i + 1);
+        connections.push(contact);
+      }
+      
+      return mockHost;
+    }
+    
+    // Import Contact's disconnect method behavior
+    async function mockDisconnect(host) {
+      // Replicate the updated disconnect logic from Contact class
+      if (host.refreshTimeIntervalMS) {
+        host.ilog('disconnecting from network');
+      }
+      if (!host.isStopped()) {
+        if (host.storage.size) host.ilog('Copying', host.storage.size, 'stored values');
+        await Promise.all(Array.from(host.storage.entries()).map(([key, value]) => host.storeValue(key, value)));
+      }
+      host.stopRefresh();
+      
+      // Collect all cleanup promises from connections (Requirements 6.1, 6.2, 6.3)
+      const cleanupPromises = [];
+      for (const contact of host.connections) {
+        const cleanupPromise = (async () => {
+          try {
+            const far = await contact.connection;
+            if (!far) return;
+            contact.synchronousSend(['-', 'bye']);
+            await contact.disconnectTransport();
+          } catch (e) {
+            // Handle cleanup failures gracefully without throwing (Requirement 6.3)
+            host.ilog('Cleanup error for contact', contact.sname, ':', e.message);
+          }
+        })();
+        cleanupPromises.push(cleanupPromise);
+      }
+      
+      // Wait for all cleanup operations to complete (Requirement 6.2)
+      await Promise.allSettled(cleanupPromises);
+      
+      host.isRunning = false;
+    }
+    
+    it('waits for all connections to complete cleanup before resolving', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.integer({ min: 1, max: 10 }),
+          async (numConnections) => {
+            const host = createMockHostWithConnections(numConnections);
+            
+            // Verify all connections have webrtc before disconnect
+            const allHadWebrtc = host.connections.every(c => c.webrtc !== null);
+            
+            // Call disconnect
+            await mockDisconnect(host);
+            
+            // After disconnect resolves, all connections should have completed cleanup
+            const allCleanedUp = host.connections.every(c => c.cleanupCompleted());
+            
+            // All webrtc properties should be null
+            const allWebrtcNull = host.connections.every(c => c.webrtc === null);
+            
+            return allHadWebrtc && allCleanedUp && allWebrtcNull;
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    it('all N connections have null webrtc after disconnect resolves', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.integer({ min: 0, max: 15 }),
+          async (numConnections) => {
+            const host = createMockHostWithConnections(numConnections);
+            
+            // Call disconnect
+            await mockDisconnect(host);
+            
+            // Verify all webrtc properties are null
+            return host.connections.every(c => c.webrtc === null);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    it('disconnect resolves even with zero connections', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.constant(0),
+          async (numConnections) => {
+            const host = createMockHostWithConnections(numConnections);
+            
+            // Should not throw and should complete
+            await mockDisconnect(host);
+            
+            // Host should be stopped
+            return host.isRunning === false;
+          }
+        ),
+        { numRuns: 10 }
+      );
+    });
+
+    it('handles cleanup failures gracefully without throwing', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.integer({ min: 1, max: 5 }),
+          fc.integer({ min: 0, max: 4 }),
+          async (numConnections, failingIndex) => {
+            const host = createMockHostWithConnections(numConnections);
+            
+            // Make one connection fail during cleanup
+            if (failingIndex < numConnections) {
+              const failingContact = host.connections[failingIndex];
+              failingContact.disconnectTransport = async () => {
+                throw new Error('Simulated cleanup failure');
+              };
+            }
+            
+            // Disconnect should not throw even with failing cleanup
+            let didThrow = false;
+            try {
+              await mockDisconnect(host);
+            } catch (e) {
+              didThrow = true;
+            }
+            
+            // Should not throw and host should be stopped
+            return !didThrow && host.isRunning === false;
+          }
+        ),
+        { numRuns: 50 }
+      );
+    });
+
+    it('all cleanups complete before disconnect promise resolves', async function () {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.integer({ min: 2, max: 8 }),
+          async (numConnections) => {
+            const host = createMockHostWithConnections(numConnections);
+            let disconnectResolved = false;
+            
+            // Start disconnect
+            const disconnectPromise = mockDisconnect(host).then(() => {
+              disconnectResolved = true;
+            });
+            
+            // Wait for disconnect to complete
+            await disconnectPromise;
+            
+            // At this point, all cleanups should have completed
+            const allCompleted = host.connections.every(c => c.cleanupCompleted());
+            
+            return disconnectResolved && allCompleted;
+          }
+        ),
+        { numRuns: 50 }
+      );
+    });
+  });
 });

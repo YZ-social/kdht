@@ -97,14 +97,14 @@ This implementation adds proper WebRTC resource cleanup to prevent UDP socket an
     - **Property 5: Contact Removal on Unexpected Disconnect**
     - **Validates: Requirements 4.4**
 
-- [ ] 6. Update node shutdown to ensure complete cleanup
-  - [ ] 6.1 Update disconnect method in Contact class
+- [x] 6. Update node shutdown to ensure complete cleanup
+  - [x] 6.1 Update disconnect method in Contact class
     - Collect all cleanup promises from connections
     - Use Promise.allSettled to wait for all cleanups
     - Handle cleanup failures gracefully without throwing
     - _Requirements: 6.1, 6.2, 6.3_
   
-  - [ ] 6.2 Write property test for complete shutdown cleanup
+  - [x] 6.2 Write property test for complete shutdown cleanup
     - **Property 6: Complete Shutdown Cleanup**
     - **Validates: Requirements 6.1, 6.2**
 

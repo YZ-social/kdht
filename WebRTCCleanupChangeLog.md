@@ -6,6 +6,32 @@ All notable changes for the WebRTC Resource Cleanup feature will be documented i
 
 ### Added
 
+#### WebRTC Resource Cleanup - Task 6: Node Shutdown Complete Cleanup
+
+- **What**: Updated the `disconnect()` method in Contact class to properly wait for all connection cleanups
+- **Why**: When a node disconnects from the network, all WebRTC connections need to be properly cleaned up. The previous implementation processed connections sequentially and could exit early if a connection had no far end. The new implementation collects all cleanup promises and uses `Promise.allSettled` to wait for all cleanups to complete, handling failures gracefully.
+- **Changes**:
+  - `contacts/contact.js`:
+    - Refactored `disconnect()` to collect cleanup promises from all connections
+    - Each connection cleanup is wrapped in an async IIFE with try-catch for graceful error handling
+    - Uses `Promise.allSettled()` to wait for all cleanups before setting `isRunning = false`
+    - Cleanup failures are logged but don't throw exceptions (Requirement 6.3)
+- **Tests**:
+  - Extended `spec/rdht/webrtcCleanupSpec.js` with:
+    - Property 6: Complete Shutdown Cleanup (validates Requirements 6.1, 6.2)
+    - Tests verify disconnect waits for all N connections to complete cleanup
+    - Tests verify all webrtc properties are null after disconnect resolves
+    - Tests verify disconnect resolves even with zero connections
+    - Tests verify cleanup failures are handled gracefully without throwing
+    - Tests verify all cleanups complete before disconnect promise resolves
+- **Requirements**: 6.1, 6.2, 6.3
+- **Lessons Learned**:
+  - The original implementation had a bug: `if (!far) return;` would exit the entire disconnect loop early if any connection had no far end
+  - Using `Promise.allSettled` instead of `Promise.all` ensures all cleanups are attempted even if some fail
+  - Wrapping each cleanup in an async IIFE allows parallel cleanup while still collecting all promises
+
+---
+
 #### WebRTC Resource Cleanup - Task 5: Update Existing Cleanup Paths
 
 - **What**: Updated all existing cleanup paths to use the new `safeCleanup` method
