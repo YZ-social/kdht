@@ -99,12 +99,13 @@ describe("DHT storageBag", function () {
       expect(Object.values(rpcTrace.dwight7).sort()).toEqual(['blue4', 'red3', 'white now']);
     });
     afterAll(async function () { // Unpublish
-      await Node.delay(1);
+      await Node.delay(1); // a new "now"
       storageBag.merge([{type:'pub', subject:'white', payload: null}], dummyNode, 42);
     });
   });
 
   afterAll(async function () { // Remove all and confirm that bag goes away.
+    await Node.delay(1); //a new "now"
     let node = {storage: new Map()};
     let key = 42;
     node.storage.set(key, storageBag);
