@@ -5,15 +5,70 @@ import { Helper } from '../nodes/helper.js';
 import { Contact } from './contact.js';
 import { WebRTC } from '@yz-social/webrtc';
 
+// Connection state classification for safe cleanup
+// Transitional states are unsafe to close - cleanup should wait for stable state
+// Stable states are safe to close - cleanup can proceed immediately
+export const ConnectionStates = {
+  // Transitional states - unsafe to close
+  TRANSITIONAL: ['new', 'connecting', 'disconnected'],
+  
+  // Stable states - safe to close
+  STABLE: ['connected', 'failed', 'closed'],
+  
+  isTransitional(state) {
+    return this.TRANSITIONAL.includes(state);
+  },
+  
+  isStable(state) {
+    return this.STABLE.includes(state);
+  }
+};
+
 // Connection event tracking for stability diagnostics
 export class ConnectionTracker {
   static events = [];
   static maxEvents = 1000;
   static enabled = false;
   
+  // Resource monitoring properties
+  static activeConnections = 0;
+  static cleanupSuccesses = 0;
+  static cleanupFailures = 0;
+  
   static enable() { this.enabled = true; }
   static disable() { this.enabled = false; }
-  static clear() { this.events = []; }
+  static clear() { 
+    this.events = []; 
+    this.activeConnections = 0;
+    this.cleanupSuccesses = 0;
+    this.cleanupFailures = 0;
+  }
+  
+  // Track when a new WebRTC connection is created
+  static trackConnectionCreated() {
+    this.activeConnections++;
+  }
+  
+  // Track when a connection is closed/cleaned up
+  static trackConnectionClosed(success, reason) {
+    this.activeConnections = Math.max(0, this.activeConnections - 1);
+    if (success) {
+      this.cleanupSuccesses++;
+    } else {
+      this.cleanupFailures++;
+    }
+    this.log('cleanup_completed', { success, reason });
+  }
+  
+  // Get current resource statistics
+  static getResourceStats() {
+    return {
+      activeConnections: this.activeConnections,
+      cleanupSuccesses: this.cleanupSuccesses,
+      cleanupFailures: this.cleanupFailures,
+      totalCleanups: this.cleanupSuccesses + this.cleanupFailures
+    };
+  }
   
   static log(type, details) {
     if (!this.enabled) return;

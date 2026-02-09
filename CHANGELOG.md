@@ -6,6 +6,74 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### WebRTC Resource Cleanup - Task 2: ConnectionStates Helper
+
+- **What**: Added `ConnectionStates` helper object for classifying WebRTC connection states
+- **Why**: Safe cleanup requires knowing whether a connection is in a transitional state (unsafe to close) or stable state (safe to close). This helper provides the classification logic needed by the upcoming `safeCleanup` method.
+- **Changes**:
+  - `contacts/webrtc.js`:
+    - Added `ConnectionStates` object with `TRANSITIONAL` and `STABLE` state arrays
+    - `TRANSITIONAL`: `['new', 'connecting', 'disconnected']` - states where cleanup should wait
+    - `STABLE`: `['connected', 'failed', 'closed']` - states where cleanup can proceed
+    - Added `isTransitional(state)` method to check if a state is transitional
+    - Added `isStable(state)` method to check if a state is stable
+    - Exported `ConnectionStates` for use in tests and other modules
+- **Tests**:
+  - Extended `spec/rdht/webrtcCleanupSpec.js` with:
+    - Unit tests for `TRANSITIONAL` and `STABLE` arrays
+    - Unit tests for `isTransitional()` and `isStable()` methods
+    - Tests for unknown/null/undefined state handling
+    - State classification completeness test (all WebRTC states are classified)
+- **Lessons Learned**:
+  - WebRTC `connectionState` has 6 possible values - each must be classified as either transitional or stable
+  - The classification follows WebRTC best practices: don't close during transitional states to avoid resource leaks
+
+---
+
+#### WebRTC Resource Cleanup - Task 1: ConnectionTracker Resource Monitoring
+
+- **What**: Extended `ConnectionTracker` class with resource monitoring capabilities
+- **Why**: To track active WebRTC connections and cleanup operations for diagnosing resource leaks (UDP sockets, file descriptors)
+- **Changes**:
+  - `contacts/webrtc.js`:
+    - Added `activeConnections` counter to track currently open connections
+    - Added `cleanupSuccesses` and `cleanupFailures` counters for cleanup tracking
+    - Added `trackConnectionCreated()` method to increment active connections
+    - Added `trackConnectionClosed(success, reason)` method to decrement and track cleanup results
+    - Added `getResourceStats()` method returning current resource statistics
+    - Updated `clear()` to reset all new counters
+- **Tests**:
+  - Created `spec/rdht/webrtcCleanupSpec.js` with:
+    - Property 4: Tracker Count Accuracy (validates Requirements 3.2, 4.3, 5.1, 5.2)
+    - Unit tests for `trackConnectionCreated`, `trackConnectionClosed`, `getResourceStats`, `clear`
+- **Lessons Learned**:
+  - Static class properties persist across test iterations - property tests must reset state at start of each iteration
+  - The `activeConnections` counter uses `Math.max(0, ...)` to prevent negative values from cleanup calls without matching creates
+
+---
+
+#### Fix Connection Timeout Handling to Prevent Cascade of Contact Removals
+
+- **What**: Fixed connection timeout handling that was causing cascade of contact removals and "was not politely closed" errors
+- **Why**: When a connection attempt timed out, the contact was being incorrectly treated as an "unexpected close" and removed from the routing table. This caused:
+  1. "connection to X was not politely closed. Dropping contact." errors on every timeout
+  2. Double-removal of contacts (once in onclose, once in timeout handler)
+  3. Cascade of connection failures as nodes lost their routing table entries
+- **Root Cause**: The timeout handler called `onclose()` while `this.webrtc` was still set, causing `onclose()` to think this was an unexpected close rather than a timeout. Then the timeout handler called `removeContact()` again, resulting in double-removal.
+- **Changes**:
+  - `contacts/webrtc.js`:
+    - Clear `this.webrtc` BEFORE calling `onclose()` in the timeout handler
+    - Properly close the WebRTC connection on timeout
+    - Remove the redundant `removeContact()` call from the timeout handler
+    - Let the routing table manage stale contacts naturally instead of aggressive removal
+- **Results**: Connection timeouts no longer cause cascade of contact removals. The "was not politely closed" message only appears for actual unexpected closes.
+- **Lessons Learned**:
+  - Timeout handling must be careful about the state it leaves for cleanup handlers
+  - Aggressive contact removal on timeout can destabilize the network
+  - Let the routing table's natural eviction handle stale contacts
+
+---
+
 #### Add Error Handling to RPC Deserialization to Prevent Worker Crashes
 
 - **What**: Added try-catch error handling to RPC deserialization to prevent worker crashes
