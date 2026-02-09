@@ -42,7 +42,7 @@ export class StorageBag {
     return list;
   }
   toString() {
-    const rawSubjects = Object.values(this.types.raw || this.types.pub);
+    const rawSubjects = Object.values(this.types.raw || this.types.pub || {});
     if (!rawSubjects) return undefined;
     if (rawSubjects.length === 1) return JSON.stringify(rawSubjects[0].payload);
     return super.toString();
