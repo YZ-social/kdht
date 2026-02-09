@@ -29,7 +29,7 @@
 	console.log('connecting to', bootstrapName);
 	const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
 	await contact.join(bootstrapContact);
-	contact.host.subscribe({eventName: 'network statistics', handler: item => item.payload.storage.count && item.payload.storage.count});
+	contact.host.subscribe({eventName: 'network statistics', handler: item => item.payload.storage.count});
 	update.onclick();
 	return contact;
       }

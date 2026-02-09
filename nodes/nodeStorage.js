@@ -32,7 +32,7 @@ export class NodeStorage extends NodeRefresh {
     this.schedule(key, 'storage', () => {
       const found = this.retrieveLocally(key);
       if (found === undefined) {
-	this.flog('undefined (expired?) value for refresh, was', value);
+	this.log('undefined (expired?) value for refresh, was', value);
 	return; // expired
       }
       this.ilog('refresh value', key, found);
