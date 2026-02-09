@@ -114,7 +114,7 @@ export class StorageItem {
         
     const timeout = issuedTime + expiration - now;
     clearTimeout(timer);
-    this.timer = setTimeout(() => this.delete(bag, node, key, type, subject), timeout);
+    this.timer = timeout < Infinity && setTimeout(() => this.delete(bag, node, key, type, subject), timeout);
 
     const subjects = bag.types[type] ||= {};
     subjects[subject] = this;

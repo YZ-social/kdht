@@ -1,5 +1,5 @@
 import { NodeProbe } from './nodeProbe.js';
-import { StorageItem } from './storageBag.js';
+import { StorageItem, StorageBag } from './storageBag.js';
 
 export class NodePubSub extends NodeProbe {
   eventHandlers = new Map(); // key => function(key, StorageItem)
@@ -28,13 +28,29 @@ export class NodePubSub extends NodeProbe {
       payload, 
       issuedTime: Date.now()}]);
   }
-  event(key, storageItem) { // Handler for 'event' RPC. Dispatches to the handler.
-    this.ilog('event @', key, storageItem);
-    this.eventHandlers.get(key)?.(storageItem, key);
+  ourEventData = new Map(); // The current data to which we have subscribed.
+  event(key, {subject, issuedTime, payload}) { // Handler for 'event' RPC. Dispatches to the handler.
+    let existingValue = this.ourEventData.get(key);
+    if (!existingValue) this.ourEventData.set(key, existingValue = new StorageBag());
+    existingValue.merge([{type: 'event', subject, issuedTime, payload}], this, key);
+    return 'pong';
   }
 }
 
-export class SubStorageItem extends StorageItem {
+export class EventStorageItem extends StorageItem { // An event received at a subscriber. Only fires handler on new data for subject.
+  static type = 'event';
+  static expiration = Infinity;
+  merge1(now, storageBag, node, key) {
+    const storageItem = super.merge1(now, storageBag, node, key);
+    if (!storageItem || storageItem.isCancelled || !node) return storageItem;
+    node.ilog('event @', key, storageItem);
+    node.eventHandlers.get(key)?.(storageItem, key);
+    return storageItem;
+  }
+}
+EventStorageItem.register();
+
+export class SubStorageItem extends StorageItem { // A subscription.
   static type = 'sub';
   static expiration = 60 * 60e3; // Delete after an hour. Must be renewed by app.
   merge1(now, storageBag, node, key) {
@@ -44,7 +60,7 @@ export class SubStorageItem extends StorageItem {
     node?.contact?.ensureRemoteContact(subscriberItem.payload).then(contact => {
       for (const publicationItem of publications) {
 	if (publicationItem.isCancelled) continue;
-	contact.sendRPC('event', key, publicationItem);
+	contact.sendRPC('event', key, publicationItem.toJSON());
       }
     });
     return subscriberItem;
@@ -53,7 +69,7 @@ export class SubStorageItem extends StorageItem {
 SubStorageItem.register();
 
 
-export class PubStorageItem extends StorageItem {
+export class PubStorageItem extends StorageItem { // A published datum.
   static type = 'pub';
   static expiration = 10 * 60e3; // 10 minutes
   merge1(now, storageBag, node, key) {
@@ -63,7 +79,9 @@ export class PubStorageItem extends StorageItem {
     for (const subscriberItem of subscriptions) {
       //fixme node?.log('publish', {subscriberItem, publicationItem});
       node?.contact?.ensureRemoteContact(subscriberItem.payload)
-	.then(contact => contact.sendRPC('event', key, publicationItem));
+	.then(contact => {
+	  contact.sendRPC('event', key, publicationItem.toJSON());
+	});
     }
     return publicationItem;
   }

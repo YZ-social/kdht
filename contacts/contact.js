@@ -151,7 +151,7 @@ export class Contact {
     if (!sender.isRunning) return null; // sender closed before call.
     if (sender.key === this.key) { // self-send short-circuit
       const result = this.host.receiveRPC(method, sender, ...rest);
-      if (!result) this.host.flog('no local result');
+      if (!result) this.host.flog('no local result for method', method, ...rest);
       return result;
     }
     if (!await this.connect()) return null;
