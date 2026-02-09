@@ -111,7 +111,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
       this.unsafeData = dataChannel;
       return dataChannel;
-    });
+    }).finally(() => this.host.noteStatistic(start, 'webrtc'));
     if (!timeoutMS) {
       this.connection = channelPromise;
       return;

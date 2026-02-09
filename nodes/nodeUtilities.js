@@ -30,6 +30,7 @@ export class NodeUtilities {
     return {
       bucket: Object.assign({}, stat), // copy the model
       storage: Object.assign({}, stat),
+      webrtc: Object.assign({}, stat),
       rpc: Object.assign({}, stat)
     };
   }
@@ -43,9 +44,9 @@ export class NodeUtilities {
   noteStatistic(startTimeMS, name) {
     this.constructor.recordStatistic(this.statistics, startTimeMS, name);
     this.constructor.noteStatistic(startTimeMS, name);
-    if (name === 'bucket' || name === 'storage') this.publish({eventName: 'network statistics',
-							       subject: this.name,
-							       payload: this.getStatisticsJSON()});
+    if (name !== 'rpc') this.publish({eventName: 'network statistics',
+				      subject: this.name,
+				      payload: this.getStatisticsJSON()});
   }
   getStatisticsJSON() {
     const {statistics} = this;
