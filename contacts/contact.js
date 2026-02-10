@@ -171,28 +171,24 @@ export class Contact {
   getResponsePromise(messageTag) { // Get a promise that will resolve when a response comes in as messageTag.
     return new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
   }
-  async receiveRPC(messageTag, ...data) { // Call the message method to act on the 'to' node side.
+  async receiveRPC(messageTag, methodOrResult, ...data) { // Handle a message from another node.
+    if (!this.host.isRunning) return this.disconnectTransport();
+    // Messages handled directly by the connection, rather than the node.
+    if (methodOrResult === 'close') return this.close();
+    if (methodOrResult === 'bye') return this.bye();
+
+    // See if this is a response to something we sent and are waiting for.
     const responder = this.host.messageResolvers.get(messageTag);
-    if (responder) { // A response to something we sent and are waiting for.
-      let [result] = data;
+    if (responder) {
       this.host.messageResolvers.delete(messageTag);
-      result = await this.deserializeResponse(result);
-      responder(result);
-    } else if (!this.host.isRunning) {
-      this.disconnectTransport();
-      // Kludge: In testing, it is possible for a disconnecting node to send a request that will respond to a new session of the same id.
-    } else if (typeof(data[0]) !== 'string' || data[0] === 'pong') {
-      ; //this.host.flog(this.counter, 'received result without responder', messageTag, data, 'at', this.sname);
-    } else if (data[0] === 'close') {
-      this.close();
-    } else if (data[0] === 'bye') {
-      this.bye();
-    } else { // An incoming request.
-      const deserialized = await this.deserializeRequest(...data);
-      let response = await this.host.receiveRPC(...deserialized);
-      response = this.serializeResponse(response);
-      await this.send([messageTag, response]);
+      return responder(await this.deserializeResponse(methodOrResult));
     }
+
+    // An incoming request.
+    const deserialized = await this.deserializeRequest(methodOrResult, ...data);
+    let response = await this.host.receiveRPC(...deserialized);
+    response = this.serializeResponse(response);
+    return await this.send([messageTag, response]);
   }
   // Sponsorship
   _sponsors = new Map(); // maps key => contact
