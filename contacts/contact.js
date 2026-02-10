@@ -262,28 +262,25 @@ export class Contact {
     // forwardingExclusions is a list of everything we tried, whether successful or not.
     const payload = [this.host.contact.sname, ...signals]; // 
     
-    // In recursive routing mode, go straight to recursive signaling - don't try sponsors
-    const useRecursiveRouting = this.host.constructor.recursiveRoutingEnabled;
-    
-    if (!useRecursiveRouting) {
-      // Try sponsors first. (Just two round trips if connected.)
-      const sponsors = Array.from(this._sponsors.values());
-      //this.host.flog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
+    // Always try sponsors first, regardless of routing mode.
+    // Sponsors are about signaling paths, not DHT routing - the sponsor introduced us
+    // to this contact, so it likely has a direct connection and can forward signals.
+    // This is more efficient than multi-hop recursive signaling.
+    const sponsors = Array.from(this._sponsors.values());
+    if (sponsors.length > 0) {
       const trySponsors = async () => {
         for (const sponsor of sponsors) {
           if (!sponsor.connection) continue;
           const response = await sponsor.sendRPC('signals', this.key, payload);
-          //this.host.flog('sponsor:', sponsor.sname, 'response:', response);
           if (response) return response;
-          //this._sponsors.delete(sponsor.key); // FIXME: but it might be ok next time.
         }
         return null;
       };
       const try1 = await trySponsors();
       if (try1) return try1.result || [];
-      await Node.delay(100); // TODO: Why is this necessary, and how long is enough?
+      await Node.delay(100); // Brief delay before retry
       const try2 = await trySponsors();
-      if (try2) { this.host.flog('Sponsored result from', this.sname, 'on second try.'); return try2.result || []; } // TODO: why does this ever fire?
+      if (try2) { this.host.flog('Sponsored result from', this.sname, 'on second try.'); return try2.result || []; }
     }
 
     if (this.host.isStopped()) return [];

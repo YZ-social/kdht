@@ -789,7 +789,10 @@ export class NodeRecursive extends NodeMessages {
    * @returns {Object} Result with status, result, and forwardingExclusions
    */
   async forwardSignalsWithAlternatePaths(ctx, signals, forwardingExclusions, targetNameForDebugging) {
-    const helpers = this.findClosestHelpers(ctx.targetId);
+    // Use findAllConnectedHelpers to include looseContacts - contacts that have connections
+    // but haven't sent us an RPC yet. This is important for signal forwarding because we
+    // want to try ALL possible paths, not just nodes in the routing table.
+    const helpers = this.findAllConnectedHelpers(ctx.targetId);
     let currentCtx = ctx;
 
     // Pre-filter to only connected helpers for signals forwarding
@@ -891,7 +894,10 @@ export class NodeRecursive extends NodeMessages {
     // Initialize forwardingExclusions with ourselves
     forwardingExclusions.push(this.name);
 
-    const helpers = this.findClosestHelpers(key);
+    // Use findAllConnectedHelpers to include looseContacts - contacts that have connections
+    // but haven't sent us an RPC yet. This is important for signal forwarding because we
+    // want to try ALL possible paths, not just nodes in the routing table.
+    const helpers = this.findAllConnectedHelpers(key);
     
     if (helpers.length === 0) {
       return {

@@ -6,6 +6,28 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Include looseContacts in Signal Forwarding for Better Mesh Formation
+
+- **What**: Modified signal forwarding to consider ALL connected nodes, not just those in the routing table
+- **Why**: When forwarding signals recursively, the code was only considering contacts in the routing table (via `findClosestHelpers`). Contacts in `looseContacts` - which have WebRTC connections but haven't sent us an RPC yet - were being ignored. This caused signal routing to fail even when a path existed through a looseContact.
+- **Root Cause**: The mesh formation process has a timing window:
+  1. Node A connects to Node B (WebRTC connection established)
+  2. Node B adds Node A to `looseContacts`
+  3. Node A sends an RPC to Node B
+  4. Node B moves Node A to routing table via `addToRoutingTable`
+  
+  Between steps 2 and 4, Node A is in `looseContacts` with a connection. If another node tries to send signals through Node B to Node A during this window, `findClosestHelpers` wouldn't find Node A because it only searches the routing table.
+- **Changes**:
+  - `nodes/nodeContacts.js`: Added `findAllConnectedHelpers()` method that includes both routing table contacts and looseContacts (avoiding duplicates by key)
+  - `dht/nodeRecursive.js`: Updated `forwardSignalsWithAlternatePaths()` and `initiateRecursiveSignals()` to use `findAllConnectedHelpers()` instead of `findClosestHelpers()`
+- **Results**: Signal forwarding now considers all connected nodes, improving mesh formation reliability
+- **Lessons Learned**:
+  - The routing table and looseContacts serve different purposes: routing table is for DHT operations, looseContacts is for connection management
+  - For signal forwarding, we want ALL possible paths, not just nodes in the routing table
+  - The timing between connection establishment and routing table addition creates a window where signals could fail
+
+---
+
 #### Fix Recursive Signals to Try Alternate Paths on NO_CLOSER Response
 
 - **What**: Fixed recursive signal forwarding to try alternate paths when a helper returns NO_CLOSER

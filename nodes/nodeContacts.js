@@ -123,4 +123,21 @@ export class NodeContacts extends NodeConnections {
     contacts.push(this.contact); // We are a candidate, too! TODO: Handle this separately in iterate so that we don't have to marshal our contacts.
     return Helper.findClosest(targetKey, contacts, count);
   }
+  findAllConnectedHelpers(targetKey, count = this.constructor.k) { // Like findClosestHelpers but includes looseContacts.
+    // This is useful for signal forwarding where we want to consider ALL connected nodes,
+    // not just those in the routing table. Contacts in looseContacts have connections but
+    // haven't sent us an RPC yet (so they're not in the routing table).
+    if (!this.contact) return [];
+    const contacts = this.contacts; // From routing table
+    // Add looseContacts, avoiding duplicates by key
+    const seenKeys = new Set(contacts.map(c => c.key));
+    for (const loose of this.looseContacts) {
+      if (!seenKeys.has(loose.key)) {
+        contacts.push(loose);
+        seenKeys.add(loose.key);
+      }
+    }
+    contacts.push(this.contact);
+    return Helper.findClosest(targetKey, contacts, count);
+  }
 }
