@@ -74,13 +74,16 @@ export class KBucket {
     let added = this.removeKey(contact.key, false) || 'added';
     //this.node.log('addContact', contact.name, this.index, added, this.isFull ? 'full' : '');
     if (this.isFull) {
-      if (added === 'present') this.node.looseContacts.push(contact); // So no findContact will fail during ping. Should we instead serialize findContact?
+      const wasPresent = added === 'present';
+      const originalContactKey = contact.key; // Save before potential reassignment
+      if (wasPresent) this.node.looseContacts.push(contact); // So no findContact will fail during ping. Should we instead serialize findContact?
       const head = this.contacts[0];
       if (head.connection) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back, below.
       }
-      if (added === 'present') this.node.removeLooseContact(contact.key);
+      // Always remove the original contact from looseContacts if it was added there
+      if (wasPresent) this.node.removeLooseContact(originalContactKey);
       // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
       // Subtle: Don't remove before waiting for the ping, as there can be overlap with other activity that could
       // think there's room and thus add it twice.

@@ -171,6 +171,12 @@ export class Contact {
   rpcTimeout(method, ...rest) { // Promise to resolve to null at appriate timeout for RPC method
     let hops = 1;
     if (method === 'signals') hops = rest[3] ? 15 : 2;
+    // Recursive methods can traverse multiple hops (up to TTL)
+    if (method === 'recursiveFindNodes' || method === 'recursiveFindValue') {
+      // Use TTL from context if available, otherwise use default
+      const ctx = rest[0];
+      hops = (ctx && ctx.ttl) ? ctx.ttl : 20;
+    }
     return Node.delay(hops * this.constructor.maxPingMS, null);
   }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.

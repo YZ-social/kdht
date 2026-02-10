@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+#### Fix Memory Leak in KBucket.addContact looseContacts Handling
+
+- **What**: Fixed memory leak where contacts were added to `looseContacts` but never removed
+- **Why**: The server ran out of memory after ~12 hours of operation. Memory grew from 25% to 100% over 4 hours, causing the server to become unresponsive.
+- **Root Cause**: In `KBucket.addContact()`, when a contact was already present in a full bucket with a live head:
+  1. The contact was added to `looseContacts` (line: `if (added === 'present') this.node.looseContacts.push(contact)`)
+  2. Then `added` was set to `false` because head was alive
+  3. The `removeLooseContact` check used `added === 'present'`, which was now `false`
+  4. Result: contact stayed in `looseContacts` forever
+  
+  This happened on every RPC from an existing contact when the bucket was full, causing unbounded growth.
+- **Changes**:
+  - `nodes/kbucket.js`: Save `wasPresent` flag and `originalContactKey` before the `added` variable is modified, then always remove from looseContacts if it was added there
+- **Results**: Memory leak fixed. looseContacts is now properly cleaned up.
+- **Lessons Learned**:
+  - Be careful when modifying variables that are used in later conditionals
+  - Memory leaks in long-running services may not be apparent in short test runs
+  - Monitor memory usage over time in production deployments
+
+---
+
 ### Added
 
 #### Include looseContacts in Signal Forwarding for Better Mesh Formation
