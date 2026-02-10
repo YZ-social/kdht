@@ -849,8 +849,9 @@ export class NodeRecursive extends NodeMessages {
           continue;
         }
 
-        // On DUPLICATE response, try alternate path
-        if (result.status === 'DUPLICATE') {
+        // On DUPLICATE or NO_CLOSER response, try alternate path
+        // NO_CLOSER means this path couldn't reach the target, but another path might
+        if (result.status === 'DUPLICATE' || result.status === 'NO_CLOSER') {
           currentCtx = currentCtx.markTried(nextHop.key);
           continue;
         }
@@ -950,8 +951,9 @@ export class NodeRecursive extends NodeMessages {
           continue;
         }
 
-        // On DUPLICATE, try alternate path
-        if (result.status === 'DUPLICATE') {
+        // On DUPLICATE or NO_CLOSER, try alternate path
+        // NO_CLOSER means this path couldn't reach the target, but another path might
+        if (result.status === 'DUPLICATE' || result.status === 'NO_CLOSER') {
           currentCtx = currentCtx.markTried(firstHop.key);
           continue;
         }
