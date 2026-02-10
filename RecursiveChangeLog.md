@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Fix Recursive Signals to Try Alternate Paths on NO_CLOSER Response
+
+- **What**: Fixed recursive signal forwarding to try alternate paths when a helper returns NO_CLOSER
+- **Why**: When a helper returns NO_CLOSER (meaning it couldn't find a path to the target), we should try other helpers instead of giving up. Previously, only DUPLICATE responses triggered alternate path selection, causing nodes in early-forming networks to get stuck with few connections.
+- **Root Cause**: In `initiateRecursiveSignals` and `forwardSignalsWithAlternatePaths`, when a helper returned NO_CLOSER, the code would return that as the final result instead of trying other available helpers. This was problematic because:
+  1. In a small network (< k nodes), any connected node might be able to reach the target
+  2. The first path tried might not have a route, but another path might succeed
+  3. Nodes would fail to connect and get stuck with few connections
+- **Changes**:
+  - `dht/nodeRecursive.js`: Updated both `initiateRecursiveSignals` and `forwardSignalsWithAlternatePaths` to treat NO_CLOSER the same as DUPLICATE - mark the helper as tried and continue to the next candidate
+- **Results**: Nodes in early-forming networks can now find alternate paths to reach targets, improving mesh formation stability
+- **Lessons Learned**:
+  - NO_CLOSER means "I can't reach the target from here" - it doesn't mean "the target is unreachable"
+  - In recursive routing, multiple paths should be tried before giving up
+  - The network eventually stabilizes, but initial formation is smoother with this fix
+
+---
+
 #### Fix Connection Timeout Handling to Prevent Cascade of Contact Removals
 
 - **What**: Fixed connection timeout handling that was causing cascade of contact removals and "was not politely closed" errors
