@@ -77,6 +77,34 @@ router.get('/name/random', (req, res, next) => { // Answer the actual sname corr
   return res.json(worker.tag);
 });
 
+router.get('/status', (req, res) => { // Answer status of all portal nodes for monitoring.
+  const status = Object.values(portals).map(w => ({
+    name: w.tag,
+    isReady: w.isReady,
+    connectionCount: w.connectionCount || 0
+  })).filter(s => s.name); // Only include registered workers
+  
+  const totalConnections = status.reduce((sum, s) => sum + s.connectionCount, 0);
+  const readyCount = status.filter(s => s.isReady).length;
+  const nodeCount = status.length;
+  // Full mesh would have n*(n-1) connections (each connection counted on both ends)
+  const expectedConnections = nodeCount * (nodeCount - 1);
+  const connectivityPercent = expectedConnections > 0 
+    ? Math.round(totalConnections / expectedConnections * 100) 
+    : 0;
+  
+  return res.json({
+    summary: {
+      nodeCount,
+      readyCount,
+      totalConnections,
+      expectedConnections,
+      connectivityPercent
+    },
+    nodes: status
+  });
+});
+
 router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON POST requests that provide an array of signals and get signals back.
   // Our WebRTC send [['offer', ...], ['icecandidate', ...], ...]
   // and accept responses of [['answer', ...], ['icecandidate', ...], ...]
