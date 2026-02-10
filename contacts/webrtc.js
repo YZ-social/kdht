@@ -80,12 +80,16 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 					       ]},
 					     ]},
 					     polite: this.host.key < this.node.key});
-    const onclose = () => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
+    const onmessage = event => this.receiveWebRTC(event.data);
+    const onclose = normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed');
       if (this.webrtc && !this.host.isStopped()) {
-	this.host.ilog('connection to', this.sname, 'was not politely closed. Dropping contact.');
+	// If called by timeout, normalClosure is falsy.
+	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Dropping contact.');
 	this.host.removeContact(this, false);
       }
+      this.unsafeData?.removeEventListener('close', onclose);
+      this.unsafeData?.removeEventListener('message', onmessage);
       this.webrtc = this.connection = this.unsafeData = null;
       resolve(null); // closed promise
     };
@@ -105,11 +109,11 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     channelPromise.then(async dataChannel => {
       this.host.log('data channel open', this.sname, Date.now() - start, this.counter);
       clearTimeout(timeout);
+      this.unsafeData = dataChannel;
       dataChannel.addEventListener('close', onclose);
-      dataChannel.addEventListener('message', event => this.receiveWebRTC(event.data));
+      dataChannel.addEventListener('message', onmessage);
       if (this.info || this.debug) await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
-      this.unsafeData = dataChannel;
       return dataChannel;
     }).finally(() => this.host.noteStatistic(start, 'webrtc'));
     if (!timeoutMS) {

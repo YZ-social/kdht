@@ -27,6 +27,7 @@
 	contact = globalThis.contact = await kdht.WebContact.create({name});
 	const bootstrapName = await contact.fetchBootstrap(bootstrapBase);
 	console.log('connecting to', bootstrapName);
+	if (!bootstrapName) return;
 	const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
 	await contact.join(bootstrapContact);
 	contact.host.subscribe({eventName: 'network statistics', handler: item => item.payload.storage.count});
