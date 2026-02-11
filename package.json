@@ -15,7 +15,7 @@
     "withoutExternal": "node scripts/portal.js",
     "bots": "node scripts/bots.js",
     "thrashbots": "node scripts/bots.js --thrash",
-    "testWebrtc": "npx jasmine spec/testWebrtc.js",
+    "testWebrtc": "npm stop; npx jasmine spec/testWebrtc.js",
     "test": "npx jasmine && npm run testWebrtc && echo '-- SUCCESS --' || echo '**** FAIL ****'"
   },
   "dependencies": {
