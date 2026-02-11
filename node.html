@@ -30,7 +30,7 @@
 	if (!bootstrapName) return;
 	const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
 	await contact.join(bootstrapContact);
-	contact.host.subscribe({eventName: 'network statistics', handler: item => item.payload.storage.count});
+	//contact.host.subscribe({eventName: 'network statistics', handler: console.log});
 	update.onclick();
 	return contact;
       }
@@ -42,11 +42,8 @@
 						     readValue.value = `${storageItem?.payload} @${new Date(storageItem?.issuedTime).toLocaleTimeString()}`;
 						   }});
       document.addEventListener("visibilitychange", () => {
-	if (document.hidden) {
-	  contact.disconnect();
-	} else {
-	  connect();
-	}
+	if (document.hidden) console.log('hidden');
+	else if (!contact.host.connections.length) connect();
       });
       await connect();
     </script>
