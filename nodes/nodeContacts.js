@@ -89,7 +89,7 @@ export class NodeContacts extends NodeConnections {
     if (immediate) {
       delete this.contactDictionary[contact.name];
     } else {
-      contact.node.isRunninng = false;
+      contact.node.isRunning = false;
       setTimeout(() => delete this.contactDictionary[contact.name], this.refreshTimeIntervalMS/2);
     }
     const key = contact.key;
