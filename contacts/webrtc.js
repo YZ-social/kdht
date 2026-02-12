@@ -27,15 +27,21 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       this.host.removeContact(this);
       return '';
     }
-    return await response.json();
+    return await response.json().catch(err => { console.warn(`error in fetchBootstrap: ${err}`); return null; });
   }
-  async fetchSignals(url, signalsToSend) {
+  static maxFetchRetryMS = 30e3;
+  async fetchSignals(url, signalsToSend, retryMS = 0) {
+    if (!this.webrtc) return this.checkSignals(null); // Connection was abandoned (e.g., by timeout).
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
       body: JSON.stringify(signalsToSend)
     }).catch(e => this.host.flog(e));
-    if (!this.checkResponse(response)) return this.fetchSignals(url, signalsToSend);
+    if (!this.checkResponse(response)) {
+      if (retryMS) await Node.delay(retryMS);
+      const nextRetryMS = Math.min(retryMS ? retryMS * 2 : 1e3, this.constructor.maxFetchRetryMS);
+      return this.fetchSignals(url, signalsToSend, nextRetryMS);
+    }
     return this.checkSignals(await response?.json());
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
@@ -90,7 +96,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       }
       this.unsafeData?.removeEventListener('close', onclose);
       this.unsafeData?.removeEventListener('message', onmessage);
+      const closeable = this.webrtc;
       this.webrtc = this.connection = this.unsafeData = null;
+      closeable?.close(); // Free native WebRTC resources promptly.
       resolve(null); // closed promise
     };
     if (initiate) {
@@ -149,9 +157,16 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
-    if (channel?.readyState === 'open') return channel.send(JSON.stringify(message));
-    this.host.ilog('Tried to send on unopen channel on', this.sname, 'state:', channel?.readyState, message);
-    return this.bye(); // Likely an impoolite disconnect.
+    if (!channel) return;
+    if (channel.readyState !== 'open') {
+      this.host.ilog('Tried to send on unopen channel on', this.sname, message);
+      return this.bye(); // Likely an impolite disconnect.
+    }
+    try {
+      channel.send(JSON.stringify(message));
+    } catch (e) { // Some webrtc can change readyState in background.
+      this.host.log(e);
+    }
   }
   synchronousSend(message) { // this.send awaits channel open promise. This is if we know it has been opened.
     if (this.unsafeData?.readyState !== 'open') return; // But it may have since been closed.
