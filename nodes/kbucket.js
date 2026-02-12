@@ -62,18 +62,14 @@ export class KBucket {
     // Resets refresh timer.
     this.node.constructor.assert(contact.node.key !== this.node.key, 'attempt to add self contact to bucket');
     let added = this.removeKey(contact.key, false) || 'added';
-    //this.node.log('addContact', contact.name, this.index, added, this.isFull ? 'full' : '');
     if (this.isFull) {
-      if (added === 'present') this.node.looseContacts.push(contact); // So no findContact will fail during ping. Should we instead serialize findContact?
+      this.node.constructor.assert(added !== 'present', 'full bucket after removing contact');
       const head = this.contacts[0];
       if (head.connection) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back, below.
       }
-      if (added === 'present') this.node.removeLooseContact(contact.key);
       // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
-      // Subtle: Don't remove before waiting for the ping, as there can be overlap with other activity that could
-      // think there's room and thus add it twice.
       this.removeKey(head.key);
     }
     this.contacts.push(contact);
