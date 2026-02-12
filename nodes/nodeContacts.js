@@ -8,10 +8,10 @@ export class NodeContacts extends NodeConnections {
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static commonPrefixLength(distance) { // Number of leading zeros of distance (within fixed keySize).
     if (distance === this.zero) return this.keySize; // I.e., zero distance => our own Node => 128 (i.e., one past the farthest bucket).
-    
+
     let length = 0;
     let mask = this.one << BigInt(this.keySize - 1);
-    
+
     for (let i = 0; i < this.keySize; i++) {
       if ((distance & mask) !== this.zero) {
         return length;
@@ -19,7 +19,7 @@ export class NodeContacts extends NodeConnections {
       length++;
       mask >>= this.one;
     }
-    
+
     return this.keySize;
   }
   routingTable = new Map(); // Maps bit prefix length to KBucket
@@ -60,6 +60,21 @@ export class NodeContacts extends NodeConnections {
     return this.contacts.filter(contact => contact.connection)
       .concat(this.looseContacts.filter(contact => contact.connection));
   }
+  recentlyDead = new Map(); // Maps name => expiration timestamp for contacts we've given up on.
+  static deadContactCooldownMS = 120e3; // How long to suppress re-creation of a dead contact from peer mentions.
+  isRecentlyDead(name) { // Check and lazily prune the specific entry if expired.
+    const deadUntil = this.recentlyDead.get(name);
+    if (!deadUntil) return false;
+    if (Date.now() < deadUntil) return true;
+    this.recentlyDead.delete(name);
+    return false;
+  }
+  pruneRecentlyDead() { // Sweep all expired entries. Called from bucket refresh.
+    const now = Date.now();
+    for (const [name, deadUntil] of this.recentlyDead) {
+      if (now >= deadUntil) this.recentlyDead.delete(name);
+    }
+  }
   contactDictionary = {}; // maps name => contact for lifetime of Node instance until removeContact.
   existingContact(name) { // Returns contact with the given name for this node, without searching buckets or looseContacts.
     return this.contactDictionary[name];
@@ -90,6 +105,8 @@ export class NodeContacts extends NodeConnections {
       delete this.contactDictionary[contact.name];
     } else {
       contact.node.isRunning = false;
+      this.recentlyDead.set(contact.name, Date.now() + this.constructor.deadContactCooldownMS);
+      contact.hearsayOnly = true;
       setTimeout(() => delete this.contactDictionary[contact.name], this.refreshTimeIntervalMS/2);
     }
     const key = contact.key;
@@ -101,6 +118,8 @@ export class NodeContacts extends NodeConnections {
   }
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
     if (contact.key === this.key) return null; // Do not add self.
+    this.recentlyDead.delete(contact.name); // Contact is alive — clear any dead status.
+    contact.hearsayOnly = false; // Proof of life — we received an RPC from this contact.
 
     // In most cases there should be a connection, but it sometimes happens that by the time we get here,
     // we have already dropped the connection.

@@ -10,6 +10,7 @@ export class Contact {
   // host should be a dht Node.
   // node is the far end of the contact, and could be Node (for in-process simulation) or a serialization of a key.
   static counter = 0;
+  hearsayOnly = true; // Until we receive an RPC from this contact (via addToRoutingTable), it's hearsay.
   static fromNode(node, host = node) {
     let contact = host.existingContact(node.name);
     if (contact) Node.assert(contact.host === host, 'Existing contact host', contact.host.name, 'does not match specified host', host.name, 'for', node.name);
@@ -21,6 +22,7 @@ export class Contact {
     contact.node = node;
     contact.host = host; // In whose buckets (or looseContacts) does this contact live?
     contact.counter = this.counter++;
+    if (node === host) contact.hearsayOnly = false; // Home contact is never hearsay.
     host.addExistingContact(contact); // After contact.node (and thus contact.namem) is set.
     return contact;
   }

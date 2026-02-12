@@ -25,7 +25,7 @@ export class NodePubSub extends NodeProbe {
     return await this.storeValue(await key, [{
       type: 'pub',
       subject,
-      payload, 
+      payload,
       issuedTime: Date.now()}]);
   }
   ourEventData = new Map(); // The current data to which we have subscribed.
@@ -57,6 +57,7 @@ export class SubStorageItem extends StorageItem { // A subscription.
     const subscriberItem = super.merge1(now, storageBag, node, key);
     if (!subscriberItem || subscriberItem.isCancelled) return subscriberItem;
     const publications = Object.values(storageBag.types.pub || {});
+    if (node?.isRecentlyDead(subscriberItem.payload)) return subscriberItem;
     node?.contact?.ensureRemoteContact(subscriberItem.payload).then(contact => {
       for (const publicationItem of publications) {
 	if (publicationItem.isCancelled) continue;
@@ -77,7 +78,7 @@ export class PubStorageItem extends StorageItem { // A published datum.
     if (!publicationItem || publicationItem.isCancelled) return publicationItem;
     const subscriptions = Object.values(storageBag.types.sub || {});
     for (const subscriberItem of subscriptions) {
-      //fixme node?.log('publish', {subscriberItem, publicationItem});
+      if (node?.isRecentlyDead(subscriberItem.payload)) continue;
       node?.contact?.ensureRemoteContact(subscriberItem.payload)
 	.then(contact => {
 	  contact.sendRPC('event', key, publicationItem.toJSON());

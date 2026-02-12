@@ -29,7 +29,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     }
     return await response.json();
   }
-  async fetchSignals(url, signalsToSend) { 
+  async fetchSignals(url, signalsToSend) {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
@@ -134,6 +134,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Creates a connected WebRTC instance.
+    if (this.host.isRecentlyDead(this.node.name)) return null;
+
     const contact = this.host.noteContactForTransport(this);
     ///if (contact.connection) contact.host.flog('connect existing', contact.sname, contact.counter);
 
@@ -157,7 +159,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     try {
       this.unsafeData.send(JSON.stringify(message));
     } catch (e) { // Some webrtc can change readyState in background.
-      this.host.log(e); 
+      this.host.log(e);
     }
   }
   serializeRequest(messageTag, method, sender, targetKey, ...rest) { // Stringify sender and targetKey.
@@ -184,8 +186,11 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     if (!Node.isContactsResult(result)) return result;
     if (!result.length) return result;
     if (this.isSignalResponse(result)) return result;
-    return await Promise.all(result.map(async ([sname, distance]) =>
-      new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance))));
+    return (await Promise.all(result.map(async ([sname, distance]) => {
+      const name = this.getName(sname);
+      if (this.host.isRecentlyDead(name)) return null;
+      return new Helper(await this.ensureRemoteContact(sname, this), BigInt(distance));
+    }))).filter(Boolean);
   }
   async transmitRPC(messageTag, method, sender, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');

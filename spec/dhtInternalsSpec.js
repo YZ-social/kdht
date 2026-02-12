@@ -496,7 +496,7 @@ describe("DHT internals", function () {
       return testResult;
     }
 
-    // Generate 20 randomized store/read tests
+    // Generate 20 randomized store/read tests. Change to xit to skip.
     for (let testNum = 1; testNum <= 20; testNum++) {
       it(`randomized store/read test ${testNum}`, async function() {
         // Randomize network parameters
@@ -539,5 +539,72 @@ describe("DHT internals", function () {
         expect(result.found).toBe(true);
       }, 60e3);
     }
+  });
+
+  describe("hearsayOnly flag", function() {
+    it("starts true for new contacts.", function() {
+      const host = SimulatedContact.fromKey(0n);
+      const other = SimulatedContact.fromKey(1n, host.node);
+      expect(other.hearsayOnly).toBe(true);
+    });
+    it("is false for home contact.", function() {
+      const contact = SimulatedContact.fromKey(0n);
+      expect(contact.hearsayOnly).toBe(false);
+    });
+    it("is cleared by addToRoutingTable.", function() {
+      const host = SimulatedContact.fromKey(0n);
+      const other = SimulatedContact.fromKey(1n, host.node);
+      expect(other.hearsayOnly).toBe(true);
+      host.node.addToRoutingTable(other);
+      expect(other.hearsayOnly).toBe(false);
+    });
+    it("is set back by removeContact(_, false).", function() {
+      const host = SimulatedContact.fromKey(0n);
+      const other = SimulatedContact.fromKey(1n, host.node);
+      host.node.addToRoutingTable(other);
+      expect(other.hearsayOnly).toBe(false);
+      host.node.removeContact(other, false);
+      expect(other.hearsayOnly).toBe(true);
+    });
+  });
+
+  describe("recentlyDead mechanism", function() {
+    it("isRecentlyDead returns false for unknown names.", function() {
+      const host = SimulatedContact.fromKey(0n);
+      expect(host.node.isRecentlyDead('nobody')).toBe(false);
+    });
+    it("isRecentlyDead returns true within cooldown.", function() {
+      const host = SimulatedContact.fromKey(0n);
+      const other = SimulatedContact.fromKey(1n, host.node);
+      host.node.addToRoutingTable(other);
+      host.node.removeContact(other, false);
+      expect(host.node.isRecentlyDead(other.name)).toBe(true);
+    });
+    it("addToRoutingTable clears dead status.", function() {
+      const host = SimulatedContact.fromKey(0n);
+      const other = SimulatedContact.fromKey(1n, host.node);
+      host.node.addToRoutingTable(other);
+      host.node.removeContact(other, false);
+      expect(host.node.isRecentlyDead(other.name)).toBe(true);
+      // Re-add simulates the node coming back.
+      host.node.addToRoutingTable(other);
+      expect(host.node.isRecentlyDead(other.name)).toBe(false);
+    });
+    it("pruneRecentlyDead removes expired entries.", function() {
+      const host = SimulatedContact.fromKey(0n);
+      // Manually insert an already-expired entry.
+      host.node.recentlyDead.set('expired-node', Date.now() - 1000);
+      host.node.recentlyDead.set('still-alive', Date.now() + 60e3);
+      expect(host.node.recentlyDead.size).toBe(2);
+      host.node.pruneRecentlyDead();
+      expect(host.node.recentlyDead.size).toBe(1);
+      expect(host.node.recentlyDead.has('still-alive')).toBe(true);
+    });
+    it("isRecentlyDead lazily prunes expired entries.", function() {
+      const host = SimulatedContact.fromKey(0n);
+      host.node.recentlyDead.set('gone', Date.now() - 1);
+      expect(host.node.isRecentlyDead('gone')).toBe(false);
+      expect(host.node.recentlyDead.has('gone')).toBe(false);
+    });
   });
 });

@@ -10,6 +10,7 @@ describe("DHT storageBag", function () {
   }
   let rpcTrace = {};
   let dummyNode = {
+    isRecentlyDead() { return false; },
     contact: {
       ensureRemoteContact(nodeName) {
 	return Promise.resolve({
@@ -106,7 +107,7 @@ describe("DHT storageBag", function () {
 
   afterAll(async function () { // Remove all and confirm that bag goes away.
     await Node.delay(1); //a new "now"
-    let node = {storage: new Map()};
+    let node = {storage: new Map(), isRecentlyDead() { return false; }};
     let key = 42;
     node.storage.set(key, storageBag);
     const expiration = StorageItem.expiration;

@@ -36,6 +36,7 @@ export class KBucket {
   }
   async refresh() { // Refresh specified bucket using LocateNodes for a random key in the specified bucket's range.
     if (this.node.isStopped() || !this.contacts.length) return false; // fixme skip isStopped?
+    this.node.pruneRecentlyDead();
     const targetKey = this.randomTarget;
     await this.node.locateNodes(targetKey); // Side-effect is to update this bucket.
     return true;
