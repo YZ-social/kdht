@@ -6,9 +6,8 @@ import { WebContact, Node } from '../index.js';
 export async function setup({baseURL, externalBaseURL = '', info = true, debug, fixedSpacing, variableSpacing}) {
   const hostName = uuidv4();
   process.title = 'kdht-portal-' + hostName;
-  // For debugging:
-  // process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
-  // process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
+  process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
+  process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
 
   const contact = await WebContact.create({name: hostName, isServerNode: true, info, debug});
   // Handle signaling that comes as a message from the server.
@@ -17,17 +16,30 @@ export async function setup({baseURL, externalBaseURL = '', info = true, debug, 
     process.send([senderSname, ...response]);
   });
 
-  await Node.delay(fixedSpacing * 1e3 * cluster.worker.id - 1);
+  // Cap startup delay so replacement workers (high IDs) don't wait excessively.
+  const startupDelay = fixedSpacing * 1e3 * Math.min(cluster.worker.id, 15) - 1;
+  await Node.delay(startupDelay);
 
   const isFirst = cluster.worker.id === 1; // The primary/server is 0.
   const joinURL = isFirst ? externalBaseURL : baseURL;
 
   if (!isFirst) await Node.delay(Node.fuzzyInterval(variableSpacing * 1e3));
-  // Determine boostrap BEFORE we send in our own name.
-  const bootstrapName = joinURL && await contact.fetchBootstrap(joinURL);
-  const bootstrap = joinURL && await contact.ensureRemoteContact(bootstrapName, joinURL);
+  // Determine bootstrap BEFORE we send in our own name.
+  let bootstrapName = joinURL && await contact.fetchBootstrap(joinURL);
   process.send(contact.sname); // Report in to server as available for others to bootstrap through.
-  if (bootstrap) await contact.join(bootstrap);
+  // Bootstrap: retry with different random targets until we get a connection.
+  if (joinURL) {
+    for (let attempt = 0; !contact.host.connections.length; attempt++) {
+      if (attempt) {
+	contact.host.flog(`Bootstrap attempt ${attempt} to ${bootstrapName} failed, retrying with another target.`);
+	await Node.delay(5e3);
+	bootstrapName = await contact.fetchBootstrap(joinURL);
+      }
+      if (!bootstrapName) continue;
+      const bootstrap = await contact.ensureRemoteContact(bootstrapName, joinURL);
+      await contact.join(bootstrap);
+    }
+  }
   process.on('SIGINT', async () => {
     console.log(process.title, 'Shutdown for Ctrl+C');
     await contact.disconnect();

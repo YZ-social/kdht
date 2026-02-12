@@ -25,6 +25,7 @@ function initWorker(worker) {
 Object.values(cluster.workers).forEach(initWorker);
 cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and restart them.
   console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
+  delete portals[worker.tag];
   delete worker.tag;
   initWorker(cluster.fork());
 });
@@ -59,8 +60,15 @@ router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON P
   // Pass the POST body to the worker and await the response.
   const promise = new Promise(resolve => worker.requestResolvers[params.from] = resolve);
   worker.send(body, undefined, undefined, error => error && console.log(`Error communicating with portal worker ${worker.id}:${worker.tag} ${worker.isConnected() ? 'connected' : 'disconnected'} ${worker.isDead() ? 'dead' : 'running'}:`, error));
-  let response = await promise;
-  delete worker.requestResolvers[params.from]; // Now that we have the response.
+  const timeout = new Promise(resolve => setTimeout(() => resolve(null), 15e3));
+  let response = await Promise.race([promise, timeout]);
+  delete worker.requestResolvers[params.from];
+
+  if (response === null) { // Worker didn't respond in time — likely hung.
+    console.warn(`Worker ${worker.id}:${worker.tag} timed out responding to ${params.from}. Removing from portals.`);
+    delete portals[worker.tag];
+    return res.sendStatus(504);
+  }
 
   return res.send(response);
 });
