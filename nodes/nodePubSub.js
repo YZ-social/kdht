@@ -78,6 +78,7 @@ export class PubStorageItem extends StorageItem { // A published datum.
     if (!publicationItem || publicationItem.isCancelled) return publicationItem;
     const subscriptions = Object.values(storageBag.types.sub || {});
     for (const subscriberItem of subscriptions) {
+      //fixme node?.log('publish', {subscriberItem, publicationItem});
       if (node?.isRecentlyDead(subscriberItem.payload)) continue;
       node?.contact?.ensureRemoteContact(subscriberItem.payload)
 	.then(contact => {
