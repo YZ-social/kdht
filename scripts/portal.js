@@ -93,8 +93,8 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   const {baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, verbose} = argv;
   const contact = await PortalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, debug: verbose});
   function report() {
-    contact.host.report();
+    contact.host.healthReport();
     setTimeout(report, 2 * Node.refreshTimeIntervalMS);
   }
-  //report();
+  report();
 }

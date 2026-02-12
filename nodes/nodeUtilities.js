@@ -10,7 +10,7 @@ export class NodeUtilities {
   static randomInteger(max) { // Return a random number between 0 (inclusive) and max (exclusive).
     return Math.floor(Math.random() * max);
   }
-  
+
   debug = false;
   info = true;
   get sname() { // The home contact sname, or just name if no contact
@@ -45,12 +45,12 @@ export class NodeUtilities {
     this.constructor.recordStatistic(this.statistics, startTimeMS, name);
     this.constructor.noteStatistic(startTimeMS, name);
     if (name !== 'rpc') this.publish({eventName: 'network statistics',
-				      subject: this.name,
+				      subject: this.sname,
 				      payload: this.getStatisticsJSON()});
   }
   getStatisticsJSON() {
     const {statistics} = this;
-    statistics.connections = this.contacts.map(c => c.connection && c.name).filter(n => n);
+    statistics.connections = this.contacts.map(c => c.connection && c.sname).filter(n => n);
     return statistics;
   }
 
@@ -81,6 +81,27 @@ export class NodeUtilities {
   static noteStatistic(startTimeMS, name) { // Given a startTimeMS, update statistics bucket for name.
     this.recordStatistic(this._stats, startTimeMS, name);
   }
+  healthReport() { // Log key metrics for diagnosing overload.
+    const resolvers = this.messageResolvers?.size || 0;
+    const connections = this.nConnections;
+    const forwards = this.pendingForwards || 0;
+    const timers = this.timers?.size || 0;
+    const loose = this.looseContacts?.length || 0;
+    const contacts = this.contacts?.length || 0;
+    const cooldowns = this.signalCooldowns?.size || 0;
+    const dead = this.recentlyDead?.size || 0;
+    const stored = this.storage?.size || 0;
+    // Measure event loop lag: schedule a 0ms timer and see how long it actually takes.
+    const mem = globalThis.process?.memoryUsage?.();
+    const rss = mem ? Math.round(mem.rss / 1048576) : '?';
+    const heap = mem ? Math.round(mem.heapUsed / 1048576) : '?';
+    const ext = mem ? Math.round(mem.external / 1048576) : '?';
+    const lagStart = Date.now();
+    setTimeout(() => {
+      const lag = Date.now() - lagStart;
+      this.flog(`HEALTH lag:${lag}ms resolvers:${resolvers} conns:${connections} contacts:${contacts} loose:${loose} fwds:${forwards} timers:${timers} cooldowns:${cooldowns} dead:${dead} stored:${stored} rss:${rss}MB heap:${heap}MB ext:${ext}MB`);
+    }, 0);
+  }
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.contact?.report || this.name}, ${this.nConnections} connections`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }
@@ -98,9 +119,40 @@ export class NodeUtilities {
     }
     return logger ? logger(report) : report;
   }
-  
+
   static reportAll() {
     this.contacts?.forEach(contact => contact.node.report());
-  }  
+  }
+  getContactsData() {
+    // Returns array of contact data for visualization.
+    // Each entry: { differingBits, log2Distance, name, key, isConnected }
+    // differingBits = bucketIndex + 1 = number of bits that differ in the address
+    const contacts = [];
+    for (let index = 0; index < this.constructor.keySize; index++) {
+      const bucket = this.routingTable.get(index);
+      if (!bucket) continue;
+      for (const contact of bucket.contacts) {
+        const distance = this.constructor.distance(this.key, contact.key);
+        contacts.push({
+          differingBits: index + 1,
+          log2Distance: this.constructor.log2BigInt(distance),
+          name: contact.sname,
+          key: contact.key,
+          isConnected: !!contact.connection
+        });
+      }
+    }
+    return contacts;
+  }
+  static log2BigInt(n) {
+    // Compute log2 of a BigInt with decimal precision.
+    if (n <= 0n) return 0;
+    const bitStr = n.toString(2);
+    const bitLength = bitStr.length;
+    // Use up to 52 leading bits for fractional precision (JS number precision limit)
+    const leadingBits = bitStr.slice(0, 52);
+    const leadingValue = parseInt(leadingBits, 2);
+    return (bitLength - leadingBits.length) + Math.log2(leadingValue);
+  }
 }
 
