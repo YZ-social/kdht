@@ -120,8 +120,9 @@ export class StorageItem {
     subjects[subject] = this;
     return this;
   }
+  static allowedClockSkewMS = 5e3; // Tolerance for clock differences between nodes.
   allowedTime(existingTime, now, issuedTime) { // Keep only the latest unexpired
-    if (issuedTime > now) return false; // Cannot stake out the future. TODO: allow some clock skew.
+    if (issuedTime > now + this.constructor.allowedClockSkewMS) return false; // Cannot stake out the future (beyond clock skew tolerance).
     if (issuedTime <= existingTime) return false;
     return true;
   }
