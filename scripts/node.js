@@ -6,8 +6,9 @@ import { WebContact, Node } from '../index.js';
 export async function setup({baseURL, externalBaseURL = '', info = true, debug, fixedSpacing, variableSpacing}) {
   const hostName = uuidv4();
   process.title = 'kdht-portal-' + hostName;
-  process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
-  process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
+  // For debugging:
+  // process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
+  // process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
 
   const contact = await WebContact.create({name: hostName, isServerNode: true, info, debug});
   // Handle signaling that comes as a message from the server.
