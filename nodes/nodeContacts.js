@@ -109,6 +109,7 @@ export class NodeContacts extends NodeConnections {
       contact.hearsayOnly = true;
       setTimeout(() => delete this.contactDictionary[contact.name], this.refreshTimeIntervalMS/2);
     }
+    contact._sponsors?.clear(); // TENTATIVE FIX: release references to sponsor contacts.
     const key = contact.key;
     if (this.removeLooseContact(key)) return null;
     const bucketIndex = this.getBucketIndex(key);
