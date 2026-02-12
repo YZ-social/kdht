@@ -186,6 +186,10 @@ export class Contact {
       return responder(await this.deserializeResponse(methodOrResult));
     }
 
+    // A late response for a timed-out or closed RPC — resolver already cleaned up. Drop it.
+    // All valid incoming requests have at least a sender after the method; late responses don't.
+    if (typeof methodOrResult !== 'string' || !data.length) return;
+
     // An incoming request.
     const deserialized = await this.deserializeRequest(methodOrResult, ...data);
     let response = await this.host.receiveRPC(...deserialized);

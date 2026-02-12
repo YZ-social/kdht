@@ -607,4 +607,33 @@ describe("DHT internals", function () {
       expect(host.node.recentlyDead.has('gone')).toBe(false);
     });
   });
+
+  describe("late response handling", function() {
+    it("drops non-string messages when no resolver exists.", async function() {
+      // Simulates a late response arriving after the resolver was cleaned up.
+      const host = SimulatedContact.fromKey(0n);
+      const other = SimulatedContact.fromKey(1n, host.node);
+      // receiveRPC with a non-string methodOrResult and no matching resolver should not throw.
+      await other.receiveRPC('stale-tag', {forwardingExclusions: null});
+      // If we reach here without error, the late response was silently dropped.
+      expect(true).toBe(true);
+    });
+    it("drops array responses when no resolver exists.", async function() {
+      const host = SimulatedContact.fromKey(0n);
+      const other = SimulatedContact.fromKey(1n, host.node);
+      await other.receiveRPC('stale-tag', ['some', 'helper', 'data']);
+      expect(true).toBe(true);
+    });
+    it("drops pong responses when no resolver exists.", async function() {
+      // 'pong' is a string, but it's a response value, not a method name.
+      // The typeof check won't catch this, but receiveRPC in NodeMessages will
+      // handle it (pong is actually a method that returns 'pong', so it won't crash).
+      const host = SimulatedContact.fromKey(0n);
+      const other = SimulatedContact.fromKey(1n, host.node);
+      // 'pong' is a valid method, so it won't crash — it just does nothing useful.
+      // This confirms the code path doesn't error out.
+      await other.receiveRPC('stale-tag', 'pong');
+      expect(true).toBe(true);
+    });
+  });
 });

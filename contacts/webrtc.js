@@ -196,7 +196,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     const responsePromise = this.getResponsePromise(messageTag);
     await this.send([messageTag, method, sender, ...rest]);
-    return await Promise.race([responsePromise, this.rpcTimeout(method, ...rest), this.closed]);
+    const result = await Promise.race([responsePromise, this.rpcTimeout(method, ...rest), this.closed]);
+    this.host.messageResolvers.delete(messageTag); // Clean up if timeout or closed won the race.
+    return result;
   }
 
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
