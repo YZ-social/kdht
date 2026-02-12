@@ -49,13 +49,25 @@ export class NodeMessages extends NodeContacts {
       return {forwardingExclusions}; // Subtle: If it fails, return a definitive failure instead of just null.
     }
 
-    // Forward recursively.
-    if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, Contact.forwardingTimeoutMS, targetNameForDebugging);
+    // Forward recursively, but limit concurrency to avoid amplification cascades.
+    if (forwardingExclusions) {
+      if (this.pendingForwards >= this.constructor.maxPendingForwards) return {forwardingExclusions};
+      this.pendingForwards++;
+      try {
+	return await this.recursiveSignals(key, signals, forwardingExclusions, Date.now() + Contact.forwardingTimeoutMS, targetNameForDebugging);
+      } finally {
+	this.pendingForwards--;
+      }
+    }
 
     // We were a sponsor but for a contact has since disconnected. We do not know if they are still connected to others.
     //this.flog('\n*** sponsored disconnected ***');
     return {forwardingExclusions}; // FIXME: Is this definitively right, or should we answer null here?
   }
+  pendingForwards = 0; // Number of concurrent recursive signal-forwarding operations on this node.
+  static maxPendingForwards = this.alpha; // Limit concurrent recursive forwards to avoid amplification cascades.
+  signalCooldowns = new Map(); // Maps target name => expiration timestamp for recently-failed recursive signaling.
+  static signalCooldownMS = 60e3; // How long to suppress recursive signaling to a target after failure.
   static maxTries = Math.pow(this.alpha, 3); // alpha tries at each of three deep, or equivalent.
   async recursiveSignals(key, signals, forwardingExclusions, expiration, targetNameForDebugging) { // Forward recursively.
     // The target key may not be reachable from here (and might not even still be running).

@@ -207,9 +207,9 @@ export class Contact {
   }
 
   // Signaling
+  static forwardingTimeoutMS = 14 * this.maxPingMS; // 15 hops minus 1 round trip.
   get forwardingTimeout() { // How long to wait for a recursive signals message to get halfway.
-    const roundTrip = this.rpcTimeout('signals', 0, 1, 2, []);
-    return roundTrip - this.maxPingMS;
+    return this.constructor.forwardingTimeoutMS;
   }
   async messageSignals(signals) { // send signals through the network, promising the response signals.
     // If contact cannot be reached, remove it and promise [].
@@ -241,6 +241,12 @@ export class Contact {
 
     if (this.host.isStopped()) return [];
 
+    // Skip recursive signaling if we recently failed to reach this target.
+    const cooldownExpiration = this.host.signalCooldowns?.get(this.name);
+    if (cooldownExpiration && Date.now() < cooldownExpiration) {
+      return this.checkSignals(null);
+    }
+
     const reportEmpty = this.isRunning; // Of course, this is only ever false in simulations.
     if (reportEmpty) this.host.log('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.'); // No result yet to see if it is empty, but useful in debugging.
     const start = Date.now();
@@ -248,12 +254,16 @@ export class Contact {
 
     if (!response && reportEmpty) {
       this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.signalCooldowns?.set(this.name, Date.now() + this.host.constructor.signalCooldownMS);
       return this.checkSignals(null);
     }
-    
+
     const {forwardingExclusions, result} = response || {};
     if (!result && reportEmpty) {
       this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.signalCooldowns?.set(this.name, Date.now() + this.host.constructor.signalCooldownMS);
+    } else if (result) {
+      this.host.signalCooldowns?.delete(this.name); // Successful: clear any cooldown.
     }
     return this.checkSignals(result);
   }
