@@ -22,9 +22,9 @@
 //   storageBag, such as published messages and subscriptions.
 // - Each storageItem is individually expired, based on when it was created
 //   and the expiration time for that type of storageItem.
-// - A storageItem's expiration can be extended for the same or for a different
+//   A storageItem's expiration can be extended for the same or for a different
 //   payload, by specifying a new issuedTime or a new payload on the same subject.
-//   The subject can be specified so that we know which item to moddify. 
+// - The subject can be specified so that we know which item to moddify.
 //   The subject defaults to be the same as the payload, but applications might
 //   use a per-user or per-message GUID.
 
