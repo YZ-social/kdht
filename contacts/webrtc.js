@@ -96,9 +96,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       }
       this.unsafeData?.removeEventListener('close', onclose);
       this.unsafeData?.removeEventListener('message', onmessage);
-      const closeable = this.webrtc;
       this.webrtc = this.connection = this.unsafeData = null;
-      closeable?.close(); // Free native WebRTC resources promptly.
       resolve(null); // closed promise
     };
     if (initiate) {
