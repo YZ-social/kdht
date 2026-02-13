@@ -35,6 +35,11 @@ const argv = yargs(hideBin(process.argv))
 	default: true,
 	description: "Run with info logging."
       })
+      .option('rude', {
+	type: 'boolean',
+	default: false,
+	description: "Skip polite disconnect — just abandon connections (simulates browser reload)."
+      })
       .option('verbose', {
 	alias: 'v',
 	type: 'boolean',
@@ -73,9 +78,14 @@ while (argv.thrash) {
   await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
   const old = contact;
   const next = uuidv4();
-  console.log('disconnecting', old.sname);
-  await contact.disconnect();
-  await Node.delay(1e3); // TODO: remove?
+  if (argv.rude) {
+    console.log('abandoning', old.sname);
+    // Don't disconnect — just drop everything, simulating a browser reload.
+  } else {
+    console.log('disconnecting', old.sname);
+    await contact.disconnect();
+    await Node.delay(1e3); // TODO: remove?
+  }
 
   contact = await WebContact.create({name: next, info: argv.info, debug: argv.verbose});
   bootstrapName = await contact.fetchBootstrap(argv.baseURL);
