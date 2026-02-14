@@ -40,8 +40,10 @@ export class NodeUtilities {
     stat.count++;
     stat.elapsed += Date.now() - startTimeMS;
   }
+  static publishStatistics = false;
   statistics = NodeUtilities.initialStatisticBuckets();
   noteStatistic(startTimeMS, name) {
+    if (!this.constructor.publishStatistics) return;
     this.constructor.recordStatistic(this.statistics, startTimeMS, name);
     this.constructor.noteStatistic(startTimeMS, name);
     if (name !== 'rpc') this.publish({eventName: 'network statistics',
