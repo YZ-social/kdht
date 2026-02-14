@@ -160,6 +160,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       this.host.log(e); 
     }
   }
+  get isOpen() {
+    return this.unsafeData?.readyState === 'open';
+  }
   serializeRequest(messageTag, method, sender, targetKey, ...rest) { // Stringify sender and targetKey.
     Node.assert(sender instanceof Contact, 'no sender', sender);
     return [messageTag, method, sender.sname, targetKey.toString(), ...rest];

@@ -7,7 +7,7 @@ export class SimulatedContact extends Contact {
   get isServerNode() { return this.node.isServerNode; }
 
   connection = null;
-  async connect() { return this.connection = this.node.contact; }
+  async connect() { return this.isOpen = this.connection = this.node.contact; }
   disconnectTransport(andNotify = true) {
     super.disconnectTransport(andNotify);
     this.connection = null;
@@ -42,6 +42,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     Node.assert(farContactForUs.key === this.host.key, 'Far contact backpointer', farContactForUs.node.name, 'does not point to us', this.host.name);
     Node.assert(farContactForUs.host.key === this.key, 'Far contact host', farContactForUs.host.name, 'is not hosted at contact', this.name);
     super.disconnectTransport(andNotify);
+    this.isOpen = farContactForUs.isOpen = false;
     this.connection = farContactForUs.connection = null;
   }
     
@@ -80,6 +81,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
 
 	resolveFar(contact);
 	node.noteContactForTransport(farContactForUs);
+	farContactForUs.isOpen = contact.isOpen = true;
       });
     });
   }

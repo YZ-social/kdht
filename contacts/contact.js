@@ -225,7 +225,7 @@ export class Contact {
     //this.host.flog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
     const trySponsors = async () => {
       for (const sponsor of sponsors) {
-	if (!sponsor.connection) continue;
+	if (!sponsor.isOpen) continue;
 	const response = await sponsor.sendRPC('signals', this.key, payload);
 	//this.host.flog('sponsor:', sponsor.sname, 'response:', response);
 	if (response) return response;
@@ -247,13 +247,13 @@ export class Contact {
     const response = await this.host.recursiveSignals(this.key, payload, [], Date.now() + this.forwardingTimeout, this.sname);
 
     if (!response && reportEmpty) {
-      this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');
       return this.checkSignals(null);
     }
     
     const {forwardingExclusions, result} = response || {};
     if (!result && reportEmpty) {
-      this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');
     }
     return this.checkSignals(result);
   }
