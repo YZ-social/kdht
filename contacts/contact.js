@@ -84,6 +84,12 @@ export class Contact {
   store(key, value) {
     return this.sendRPC('store', key, value);
   }
+  async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
+    let { host, node, connection } = this;
+    Node.assert(host.key !== node.key, 'connecting to self', host, node);
+    if (connection) return connection;
+    return await (this.connection = this.createConnection(Date.now()));
+  }
   async disconnect() { // Disconnect host node and all it's connections. Stages are:
     // (0: Testing only - Test cleanup globally sets Node.refreshTimeIntervalMS to zero.)
     // 1. Refresh all value storage.

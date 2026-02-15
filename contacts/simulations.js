@@ -7,7 +7,9 @@ export class SimulatedContact extends Contact {
   get isServerNode() { return this.node.isServerNode; }
 
   connection = null;
-  async connect() { return this.isOpen = this.connection = this.node.contact; }
+  async createConnection() {
+    return this.isOpen = this.connection = this.node.contact;
+  }
   disconnectTransport(andNotify = true) {
     super.disconnectTransport(andNotify);
     this.connection = null;
@@ -46,21 +48,12 @@ export class SimulatedConnectionContact extends SimulatedContact {
     this.connection = farContactForUs.connection = null;
   }
     
-  async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
-    // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
-    // TODO: Simulate webrtc signaling.
-    const contact = this;
-    let { host, node, isServerNode, connection } = contact;
-    Node.assert(host.key !== node.key, 'connecting to self', host, node);
-    if (connection) return connection;
-    const start = Date.now();
-
-    return this.connection = new Promise(resolveHere => {
+  createConnection(start) {
+    return new Promise(resolveHere => {
+      const contact = this;
+      let { host, node, isServerNode, connection } = contact;
       const farContactForUs = node.ensureContact(host.contact);
       farContactForUs.connection = new Promise(async resolveFar => {
-
-	// Anyone can connect to a server node using the server's connect endpoint.
-	// Anyone in the DHT can connect to another DHT node through a sponsor.
 	if (isServerNode) {
 	  await Node.delay(200); // Connect through portal.
 	} else {
@@ -83,6 +76,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
 	node.noteContactForTransport(farContactForUs);
 	farContactForUs.isOpen = contact.isOpen = true;
       });
+      farContactForUs.isOpen = contact.isOpen = true;// fixme remove. this is just until we have the serialization in place
     });
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
