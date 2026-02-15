@@ -76,7 +76,6 @@ export class SimulatedConnectionContact extends SimulatedContact {
 	node.noteContactForTransport(farContactForUs);
 	farContactForUs.isOpen = contact.isOpen = true;
       });
-      farContactForUs.isOpen = contact.isOpen = true;// fixme remove. this is just until we have the serialization in place
     });
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
