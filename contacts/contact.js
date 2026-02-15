@@ -89,8 +89,16 @@ export class Contact {
     let { host, node, connection } = this;
     Node.assert(host.key !== node.key, 'connecting to self', host, node);
     if (connection) return connection;
-    return this.connection = this.host.contact.connectionQueue = this.host.contact.connectionQueue.then(() => this.createConnection(Date.now()));
+    const start = Date.now();
+    return this.connection = this.host.contact.connectionQueue = this.host.contact.connectionQueue
+      .then(() => this.createConnection())
+      .finally(() => this.noteConnection(start));
   }
+  noteConnection(start) { // Log and not statistic
+    this.host.noteStatistic(start, 'connection');
+    this.host.ilog(this.isOpen ? 'connected to' : 'failed connecting to', this.sname, 'in', Date.now() - start, 'ms.');
+  }
+
   async disconnect() { // Disconnect host node and all it's connections. Stages are:
     // (0: Testing only - Test cleanup globally sets Node.refreshTimeIntervalMS to zero.)
     // 1. Refresh all value storage.

@@ -48,13 +48,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
     if (contact.webrtc?.pc) return await contact.webrtc.respond(signals);
 
-    contact.connection = contact.createWebRTC(Date.now(), false);
+    const start = Date.now();
+    contact.connection = contact.createConnection(false)
+      .finally(() => this.noteConnection(start));
     return await contact.webrtc.respond(signals);
   }
-  createConnection(start) {
-    return this.createWebRTC(start, true);
-  }
-  createWebRTC(start, initiate = false, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
+  createConnection(initiate = true, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
     // Return a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
     //   incomming messages are dispatched to receiveWebRTC(string)
@@ -108,20 +107,17 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const channelPromise = webrtc.getDataChannelPromise(kdhtChannelName);
     webrtc.createChannel(kdhtChannelName, {negotiated: true});
     channelPromise.then(async dataChannel => {
-      this.host.log('data channel open', this.sname, Date.now() - start, this.counter);
       clearTimeout(timeout);
       this.unsafeData = dataChannel;
       dataChannel.addEventListener('close', onclose);
       dataChannel.addEventListener('message', onmessage);
       if (this.info || this.debug) await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
-    }).finally(() => this.host.noteStatistic(start, 'webrtc'));
+    });
     if (!timeoutMS) return channelPromise;
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
 	if (this.host.isStopped()) return expired(null);
-	const now = Date.now();
-	this.host.ilog('Unable to connect to', this.sname);
 	onclose();
 	this.host.removeContact(this); // fixme?
 	return expired(null);

@@ -48,7 +48,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     this.connection = farContactForUs.connection = null;
   }
     
-  createConnection(start) {
+  createConnection() {
     return new Promise(resolveHere => {
       const contact = this;
       let { host, node, isServerNode, connection } = contact;
@@ -66,7 +66,6 @@ export class SimulatedConnectionContact extends SimulatedContact {
 	    this.connection = farContactForUs.connection = null;
 	    return;
 	  }
-	  this.host.ilog('connected to', this.sname, 'in', (Date.now() - start).toLocaleString(), 'ms.');
 	}
 
 	resolveHere(farContactForUs);
