@@ -10,6 +10,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get name() { return this.node.name; } // Key of remote node as a string (e.g., as a guid).
   get key() { return this.node.key; }   // Key of remote node as a BigInt.
   get isServerNode() { return this.node.isServerNode; } // It it reachable through a server.
+  get webrtcLabel() {
+    return `@${this.host.contact.sname} ==> ${this.sname}`;
+  }
 
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (response?.ok) return true;
@@ -51,28 +54,25 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
     if (contact.webrtc?.pc) return await contact.webrtc.respond(signals);
 
-    this.host.noteContactForTransport(contact);
-    contact.createWebRTC(false);
-    return await contact.webrtc.respond(signals);
+    const start = Date.now();
+    contact.connection = contact.createConnection(false)
+      .finally(() => contact.noteConnection(start));
+    return await contact.webrtc?.respond(signals);
   }
-  get webrtcLabel() {
-    return `@${this.host.contact.sname} ==> ${this.sname}`;
-  }
-
-  createWebRTC(initiate = false, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
-    // Sets up contact to have properties:
-    // - connection - a promise for an open webrtc data channel:
+  createConnection(initiate = true, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
+    // Return a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
     //   incomming messages are dispatched to receiveWebRTC(string)
+    // Sets up contact to have properties:
     // - closed - resolves when webrtc closes.
     // - webrtc - an instance of WebRTC (which may be used for webrtc.respond()
     //
     // If timeoutMS is non-zero and a connection is not established within that time, connection and closed resolve to null.
     //
     // This is synchronous: all side-effects (assignments to this) happen immediately.
-    const start = Date.now();
-    const { host, node, isServerNode, bootstrapHost } = this;
-    this.host.log('starting connection', this.sname, this.connection ? 'exists!!!' : 'fresh', this.counter);
+    this.host.log('starting connection', this.sname, this.counter);
+    this.host.noteContactForTransport(this);
+    const { host, node, bootstrapHost } = this;
     let {promise, resolve} = Promise.withResolvers();
     this.closed = promise;
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
@@ -88,10 +88,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 					     polite: this.host.key < this.node.key});
     const onmessage = event => this.receiveWebRTC(event.data);
     const onclose = normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
-      this.host.log('connection closed');
+      this.host.log('connection closed to', this.sname, 'normal:', !!normalClosure);
       if (this.webrtc && !this.host.isStopped()) {
 	// If called by timeout, normalClosure is falsy.
-	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Dropping contact.');
+	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Removing contact.');
 	this.host.removeContact(this, false);
       }
       this.unsafeData?.removeEventListener('close', onclose);
@@ -100,7 +100,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       resolve(null); // closed promise
     };
     if (initiate) {
-      if (bootstrapHost && !host.connections.length) {
+      if (bootstrapHost && !host.connections.find(c => c.isOpen)) {
 	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${host.contact.sname}/${this.sname}`;
 	this.webrtc.transferSignals = signals => this.fetchSignals(url, signals);
       } else {
@@ -113,52 +113,33 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const channelPromise = webrtc.getDataChannelPromise(kdhtChannelName);
     webrtc.createChannel(kdhtChannelName, {negotiated: true});
     channelPromise.then(async dataChannel => {
-      this.host.log('data channel open', this.sname, Date.now() - start, this.counter);
       clearTimeout(timeout);
       this.unsafeData = dataChannel;
       dataChannel.addEventListener('close', onclose);
       dataChannel.addEventListener('message', onmessage);
       if (this.info || this.debug) await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
-      return dataChannel;
-    }).finally(() => this.host.noteStatistic(start, 'webrtc'));
-    if (!timeoutMS) {
-      this.connection = channelPromise;
-      return;
-    }
+    });
+    if (!timeoutMS) return channelPromise;
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
-	if (this.host.isStopped()) return;
-	const now = Date.now();
-	this.host.ilog('Unable to connect to', this.sname);
+	if (this.host.isStopped()) return expired(null);
 	onclose();
 	this.host.removeContact(this); // fixme?
-	expired(null);
+	return expired(null);
       }, timeoutMS);
     });
-    this.connection = Promise.race([channelPromise, timerPromise]);
-  }
-  async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
-    // Creates a connected WebRTC instance.
-    if (this.host.isRecentlyDead(this.node.name)) return null;
-
-    const contact = this.host.noteContactForTransport(this);
-    ///if (contact.connection) contact.host.flog('connect existing', contact.sname, contact.counter);
-
-    const { host, node, isServerNode, bootstrapHost } = contact;
-    // Anyone can connect to a server node using the server's connect endpoint.
-    // Anyone in the DHT can connect to another DHT node through a sponsor.
-    if (contact.connection) return contact.connection;
-    contact.createWebRTC(true);
-    return await this.connection;
+    return Promise.race([channelPromise, timerPromise]);
   }
 
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
+    if (!channel) this.host.ilog('Tried to send without connection on', this.sname, message);
     if (!channel) return;
     if (channel.readyState !== 'open') {
       this.host.ilog('Tried to send on unopen channel on', this.sname, message);
-      return this.bye(); // Likely an impolite disconnect.
+      this.bye(); // Likely an impolite disconnect.
+      return;
     }
     try {
       channel.send(JSON.stringify(message));
@@ -174,6 +155,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     } catch (e) { // Some webrtc can change readyState in background.
       this.host.log(e);
     }
+  }
+  get isOpen() {
+    return this.unsafeData?.readyState === 'open';
   }
   serializeRequest(messageTag, method, sender, targetKey, ...rest) { // Stringify sender and targetKey.
     Node.assert(sender instanceof Contact, 'no sender', sender);

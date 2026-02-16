@@ -86,6 +86,22 @@ export class Contact {
   store(key, value) {
     return this.sendRPC('store', key, value);
   }
+  connectionQueue = Promise.resolve();
+  async connect() { // Connect from host to node, promising the connection.
+    if (this.host.isRecentlyDead(this.node.name)) return null;
+    let { host, node, connection } = this;
+    Node.assert(host.key !== node.key, 'connecting to self', host, node);
+    if (connection) return connection;
+    const start = Date.now();
+    return this.connection = this.host.contact.connectionQueue = this.host.contact.connectionQueue
+      .then(() => this.createConnection())
+      .finally(() => this.noteConnection(start));
+  }
+  noteConnection(start) { // Log and not statistic
+    this.host.noteStatistic(start, 'connection');
+    this.host.ilog(this.isOpen ? 'connected to' : 'failed connecting to', this.sname, 'in', Date.now() - start, 'ms.');
+  }
+
   async disconnect() { // Disconnect host node and all it's connections. Stages are:
     // (0: Testing only - Test cleanup globally sets Node.refreshTimeIntervalMS to zero.)
     // 1. Refresh all value storage.
@@ -231,7 +247,7 @@ export class Contact {
     //this.host.flog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
     const trySponsors = async () => {
       for (const sponsor of sponsors) {
-	if (!sponsor.connection) continue;
+	if (!sponsor.isOpen) continue;
 	const response = await sponsor.sendRPC('signals', this.key, payload);
 	//this.host.flog('sponsor:', sponsor.sname, 'response:', response);
 	if (response) return response;
@@ -259,14 +275,14 @@ export class Contact {
     const response = await this.host.recursiveSignals(this.key, payload, [], Date.now() + this.forwardingTimeout, this.sname);
 
     if (!response && reportEmpty) {
-      this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');
       this.host.signalCooldowns?.set(this.name, Date.now() + this.host.constructor.signalCooldownMS);
       return this.checkSignals(null);
     }
 
     const {forwardingExclusions, result} = response || {};
     if (!result && reportEmpty) {
-      this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');
       this.host.signalCooldowns?.set(this.name, Date.now() + this.host.constructor.signalCooldownMS);
     } else if (result) {
       this.host.signalCooldowns?.delete(this.name); // Successful: clear any cooldown.

@@ -88,7 +88,7 @@ export class NodeMessages extends NodeContacts {
     for (const contact of contacts) {
       if (!remainingThisNode--) break;
       if (!contact.isRunning) continue;
-      if (!contact.connection) continue;
+      if (!contact.isOpen) continue;
       if (forwardingExclusions.includes(contact.name)) continue;
       this.constructor.assert(contact.key !== this.key, 'forwarding through self');
       //this.flog('forwarding through', contact.sname);
