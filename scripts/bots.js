@@ -60,7 +60,7 @@ if (cluster.isPrimary) {
   });
 } else {
 
-  console.log(new Date(), 'launched', cluster.worker?.id);
+  console.log(new Date(), cluster.worker?.id, 'launched');
   process.title = 'kdht-bot-sleep-' + cluster.worker?.id;
   await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
   let contact;
