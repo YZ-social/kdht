@@ -86,6 +86,7 @@ export class NodeUtilities {
   healthReport() { // Log key metrics for diagnosing overload.
     const resolvers = this.messageResolvers?.size || 0;
     const connections = this.nConnections;
+    const open = this.connections.filter(c => c.isOpen).length;
     const forwards = this.pendingForwards || 0;
     const timers = this.timers?.size || 0;
     const loose = this.looseContacts?.length || 0;
@@ -101,7 +102,7 @@ export class NodeUtilities {
     const lagStart = Date.now();
     setTimeout(() => {
       const lag = Date.now() - lagStart;
-      this.flog(`HEALTH lag:${lag}ms resolvers:${resolvers} conns:${connections} contacts:${contacts} loose:${loose} fwds:${forwards} timers:${timers} cooldowns:${cooldowns} dead:${dead} stored:${stored} rss:${rss}MB heap:${heap}MB ext:${ext}MB`);
+      this.flog(`HEALTH lag:${lag}ms resolvers:${resolvers} open:${open} conns:${connections} contacts:${contacts} loose:${loose} fwds:${forwards} timers:${timers} cooldowns:${cooldowns} dead:${dead} stored:${stored} rss:${rss}MB heap:${heap}MB ext:${ext}MB`);
     }, 0);
   }
   report(logger = console.log) { // return logger( a string description of node )
