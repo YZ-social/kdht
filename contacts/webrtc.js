@@ -50,8 +50,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
     const start = Date.now();
     contact.connection = contact.createConnection(false)
-      .finally(() => this.noteConnection(start));
-    return await contact.webrtc.respond(signals);
+      .finally(() => contact.noteConnection(start));
+    return await contact.webrtc?.respond(signals);
   }
   createConnection(initiate = true, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
     // Return a promise for an open webrtc data channel:
@@ -82,10 +82,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 					     polite: this.host.key < this.node.key});
     const onmessage = event => this.receiveWebRTC(event.data);
     const onclose = normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
-      this.host.log('connection closed');
+      this.host.log('connection closed to', this.sname, 'normal:', !!normalClosure);
       if (this.webrtc && !this.host.isStopped()) {
 	// If called by timeout, normalClosure is falsy.
-	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Dropping contact.');
+	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Removing contact.');
 	this.host.removeContact(this, false);
       }
       this.unsafeData?.removeEventListener('close', onclose);
@@ -128,9 +128,18 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
-    if (channel?.readyState === 'open') return channel.send(JSON.stringify(message));
-    this.host.ilog('Tried to send on unopen channel on', this.sname, 'state:', channel?.readyState, message);
-    return this.bye(); // Likely an impoolite disconnect.
+    if (!channel) this.host.ilog('Tried to send without connection on', this.sname, message);
+    if (!channel) return;
+    if (channel.readyState !== 'open') {
+      this.host.ilog('Tried to send on unopen channel on', this.sname, message);
+      this.bye(); // Likely an impolite disconnect.
+      return;
+    }
+    try {
+      channel.send(JSON.stringify(message));
+    } catch (e) { // Some webrtc can change readyState in background.
+      this.host.log(e);
+    }
   }
   synchronousSend(message) { // this.send awaits channel open promise. This is if we know it has been opened.
     if (this.unsafeData?.readyState !== 'open') return; // But it may have since been closed.

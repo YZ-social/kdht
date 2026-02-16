@@ -68,6 +68,8 @@ export class KBucket {
       if (head.isOpen) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back, below.
+      } else {
+	this.ilog('full bucket removing unopen contact', head.sname);
       }
       // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
       this.removeKey(head.key);
