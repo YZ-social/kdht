@@ -10,6 +10,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get name() { return this.node.name; } // Key of remote node as a string (e.g., as a guid).
   get key() { return this.node.key; }   // Key of remote node as a BigInt.
   get isServerNode() { return this.node.isServerNode; } // It it reachable through a server.
+  static generateName() { return this.uuidv4(); }
 
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (response?.ok) return true;

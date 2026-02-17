@@ -5,6 +5,7 @@ export class SimulatedContact extends Contact {
   get name() { return this.node.name; }
   get key() { return this.node.key; }
   get isServerNode() { return this.node.isServerNode; }
+  static generateName() { return undefined; } // Let it come from Node default.
 
   connection = null;
   async connect() { return this.connection = this.node.contact; }
@@ -45,7 +46,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     this.connection = farContactForUs.connection = null;
   }
     
-  async connect(forMethod = 'findNodes') { // Connect from host to node, promising a possibly cloned contact that has been noted.
+  async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
     // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
     // TODO: Simulate webrtc signaling.
     const contact = this;
