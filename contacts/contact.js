@@ -88,14 +88,16 @@ export class Contact {
     return this.sendRPC('store', key, value);
   }
   connectionQueue = Promise.resolve();
-  async connect() { // Connect from host to node, promising the connection.
+  async connect() { // Connect from host to node, promising self.
     let { host, node, connection } = this;
     Node.assert(host.key !== node.key, 'connecting to self', host, node);
-    if (connection) return connection;
+    if (connection) return this;
     const start = Date.now();
-    return this.connection = this.host.contact.connectionQueue = this.host.contact.connectionQueue
-      .then(() => this.createConnection())
-      .finally(() => this.noteConnection(start));
+    this.connection = this.host.contact.connectionQueue = this.host.contact.connectionQueue
+      .then(() => this.createConnection());
+    await this.connection;
+    this.noteConnection(start);
+    return this;
   }
   noteConnection(start) { // Log and not statistic
     this.host.noteStatistic(start, 'connection');
