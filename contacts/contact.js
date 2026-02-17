@@ -25,6 +25,7 @@ export class Contact {
     return contact;
   }
   static async create(properties, host = undefined) {
+    if (typeof(properties) === 'object' && properties.name === undefined) properties = {...properties, name: this.generateName};
     return this.fromNode(await Node.create(properties), host);
   }
   static fromKey(key, host) {
@@ -79,6 +80,8 @@ export class Contact {
   }
 
   // Operations
+  publish(properties) { return this.host.publish(properties); }
+  subscribe(properties) { return this.host.subscribe(properties); }
   join(other) { return this.host.join(other); }
   storeValue(key, value) { return this.host.storeValue(key, value); }
   store(key, value) {
@@ -112,7 +115,7 @@ export class Contact {
     if (!this.host.isStopped()) {
       if (this.host.storage.size) this.host.ilog('Copying', this.host.storage.size, 'stored values');
       await Promise.all(this.host.storage.entries().map(([key, value]) => {
-	Node.assert(value !== undefined, 'disconnect/copy of undefined stored value');
+	Node.assert(value !== undefined, 'disconnect/copy of undefined stored value', this.host.storage);
 	return this.storeValue(key, Node.transportValue(value));
       }));
     }

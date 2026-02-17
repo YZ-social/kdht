@@ -13,6 +13,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;
   }
+  static generateName() { return this.uuidv4(); }
 
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (response?.ok) return true;

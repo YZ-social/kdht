@@ -5,6 +5,7 @@ export class SimulatedContact extends Contact {
   get name() { return this.node.name; }
   get key() { return this.node.key; }
   get isServerNode() { return this.node.isServerNode; }
+  static generateName() { return undefined; } // Let it come from Node default.
 
   connection = null;
   async createConnection() {
