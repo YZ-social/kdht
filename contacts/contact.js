@@ -102,7 +102,6 @@ export class Contact {
   subscribe(properties) { return this.host.subscribe(properties); }
   join(other) { return this.host.join(other); }
   storeValue(key, value) { return this.host.storeValue(key, value); }
-  store(key, value) { return this.sendRPC('store', key, value); }
   async bootstrapJoin(baseURL = new URL('/kdht', globalThis.location).href) { // Find a contact to bootstrap, and join it.
     const bootstrapName = await this.fetchBootstrap(baseURL);
     const bootstrapContact = await this.ensureRemoteContact(bootstrapName, baseURL);
@@ -141,26 +140,19 @@ export class Contact {
     // 4. Stop any other activity by setting host.isRunning to false.
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     // Attempt to ensure that there are other copies.
-    if (this.host.refreshTimeIntervalMS)
-      this.host.ilog('disconnecting from network');
-    if (!this.host.isStopped()) {
-      if (this.host.storage.size) this.host.ilog('Copying', this.host.storage.size, 'stored values');
-      await Promise.all(this.host.storage.entries().map(([key, value]) => {
-	Node.assert(value !== undefined, 'disconnect/copy of undefined stored value', this.host.storage);
-	return this.storeValue(key, Node.transportValue(value));
-      }));
-    }
+    if (this.host.refreshTimeIntervalMS) this.host.ilog('disconnecting from network');
+    if (!this.host.isStopped()) await this.host.replicateStorage();
     this.host.stopRefresh();
     for (const contact of this.host.connections) {
       const far = await contact.connection;
       if (!far) return;
       contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
-      await contact.disconnectTransport();
+      contact.disconnectTransport();
     }
     this.host.isRunning = false;
   }
-  async disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
-    if (andNotify && await this.connection) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
+  disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
+    if (andNotify && this.connection) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
   }
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
     this.host.ilog('closing disconnected contact', this.sname);

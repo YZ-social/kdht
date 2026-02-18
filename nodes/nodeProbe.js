@@ -159,7 +159,7 @@ export class NodeProbe extends NodeMessages {
           for (const h of sortedResponders) {
             if (h.key !== helper.key) { // Skip the one that returned the value
 	      this.constructor.assert(result.value !== undefined, 'migration of undefined result value');
-              h.contact.store(targetKey, this.constructor.transportValue(result.value));
+              h.contact.sendRPC('store', targetKey, result.value);
               break;
             }
           }

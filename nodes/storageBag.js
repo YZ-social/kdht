@@ -1,9 +1,10 @@
+import { Node } from './node.js';
+
 // A StorageBag instance is the in-memory storage for a specific DHT key.
 //
 // The DHT replicates this instance among the closest nodes to the key.
 // The DHT does this by determining the appropriate Contacts (via locateNodes)
-// and sending the store(key, storageBag) RPC to each of those Contacts.
-// Sending the RPC will involve JSON.stringify(storageBag) for transport on the wire.
+// and sendingRPC('store', key, storageBag.toJSON()) to each of those Contacts.
 //
 // (An application might produce this key as a hash of some string - perhaps a
 // string of multiple parts such as "scope:event". Or it might be a key of multiple
@@ -30,6 +31,19 @@
 
 export class StorageBag {
 
+  static ensureItems(value) { // Return an array of StorageItems representing value
+    if (value instanceof this) {
+      return value.toJSON();
+    }
+    if ((typeof(value) === 'number') ||
+	((typeof(value) === 'string') && !value.startsWith('[') && !value.startsWith('{'))) {
+      return [{payload: value}];
+    }
+    if (Array.isArray(value)) {
+      return value;
+    }
+    return Node.assert(false, 'Unrecognized storage value', value);
+  }
   types = {}; // {[type]: {[subject]: storageItem, ...}, ...}
   items = null; // caches [{type, subject, issuedTime, payload}, ...]
 
