@@ -29,6 +29,11 @@ const argv = yargs(hideBin(process.argv))
 	default: false,
 	description: "Do bots randomly disconnect and reconnect with no memory of previous data?"
       })
+      .option('rude', {
+	type: 'boolean',
+	default: false,
+	description: "When bots thrash, do they exit rudely without saying goodbye?"
+      })
       .option('info', {
 	alias: 'i',
 	type: 'boolean',
@@ -82,7 +87,7 @@ if (cluster.isPrimary) {
     // Don't disconnect — just drop everything, simulating a browser reload.
     process.exit(99);
   }
-  while (argv.thrash) {
+  while (argv.thrash && !argv.rude) {
     await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
     console.log(new Date(), 'disconnecting', contact.sname);
     await contact.disconnect();

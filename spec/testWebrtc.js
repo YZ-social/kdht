@@ -17,7 +17,8 @@ describe("DHT webrtc write/read", function () {
   console.log(`Model description "${cpus()[0].model}", ${logicalCores} logical cores.`);
   const nPortals = Math.max(2, logicalCores - 1);
   const thrash = true;
-  const nBots = Math.max(2, (thrash ? 0.5 : 1) * logicalCores);
+  const rude = thrash && false;
+  const nBots = Math.max(2, ((thrash || rude) ? 0.5 : 1) * logicalCores);
   const fixedSpacing  = 2; // Between portals.
   const variableSpacing = 5; // Additional random between portals.
   const nWrites = 40;
@@ -43,8 +44,9 @@ describe("DHT webrtc write/read", function () {
     await Node.delay(portalSeconds * 1e3);
 
     if (nBots) {
-      console.log(new Date(), 'starting', nBots, thrash ? 'thrashbots' : 'bots', 'over', botsMilliseconds/1e3, 'seconds');
-      botProcess = spawn('node', [path.resolve(__dirname, '../scripts/bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--info', botInfo, '--verbose', verbose.toString()]);
+      const botParameters = [path.resolve(__dirname, '../scripts/bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--rude', rude.toString(), '--info', botInfo, '--verbose', verbose.toString()];
+      console.log(new Date(), 'starting', nBots, rude ? 'crashbots' : (thrash ? 'thrashbots' : 'bots'), 'over', botsMilliseconds/1e3, 'seconds');
+      botProcess = spawn('node', botParameters);
       if (showBots) {
 	botProcess.stdout.on('data', echo);
 	botProcess.stderr.on('data', echo);
