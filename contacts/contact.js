@@ -24,7 +24,7 @@ export class Contact {
     host.addExistingContact(contact); // After contact.node (and thus contact.namem) is set.
     return contact;
   }
-  static async create(properties, host = undefined) {
+  static async create(properties = {}, host = undefined) {
     if (typeof(properties) === 'object' && properties.name === undefined) properties = {...properties, name: this.generateName()};
     return this.fromNode(await Node.create(properties), host);
   }
