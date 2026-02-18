@@ -35,7 +35,7 @@ export class NodeStorage extends NodeRefresh {
 	this.log('undefined (expired?) value for refresh, was', value);
 	return; // expired
       }
-      this.ilog('refresh value', key, found);
+      this.ilog('refresh value', key, !!found);
       // IF storeValue determines we are one of the nodes to store, then it will get scheduled again.
       this.storeValue(key, found);
     });

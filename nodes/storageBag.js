@@ -97,9 +97,8 @@ export class StorageItem {
     return this.payload === null;
   }
   toJSON() {
-    if (this.isCancelled) return undefined;
-    const {type, subject, issuedTime, payload} = this;
-    return {type, subject, issuedTime, payload};
+    const {timer, expiration, ...rest} = this;
+    return rest; // Without the stuff we added, but including any other properties defined by the app.
   }
   merge1(now, bag, node, key) { // Add this into subjects if allowed and return this, else null.
 
