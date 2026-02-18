@@ -25,7 +25,7 @@ export class Contact {
     return contact;
   }
   static async create(properties, host = undefined) {
-    if (typeof(properties) === 'object' && properties.name === undefined) properties = {...properties, name: this.generateName};
+    if (typeof(properties) === 'object' && properties.name === undefined) properties = {...properties, name: this.generateName()};
     return this.fromNode(await Node.create(properties), host);
   }
   static fromKey(key, host) {
@@ -78,23 +78,52 @@ export class Contact {
   get isRunning() { // Is the far node running. Non-simulations are never falsy unless we have other info such as from 'bye'.
     return this.node.isRunning;
   }
+  checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
+    if (response?.ok) return true;
+    this.host.flog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);
+    return false;
+  }
+  async fetchBootstrap(baseURL, label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
+    // worker index or the string 'random' to an available sname to which we can connect().
+    const url = `${baseURL}/name/${label}`;
+    // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
+    // https://github.com/nodejs/undici/issues/3492
+    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.flog(url, e));
+    if (!this.checkResponse(response)) { // The portal webserver is not available. Stop trying to reach this node.
+      // TODO: maintain a well-known list of portal servers to try, but even then, do not try to reach nodes that are on an unreachable server.
+      this.host.removeContact(this);
+      return '';
+    }
+    return await response.json();
+  }
 
-  // Operations
+  // Home contact perations
   publish(properties) { return this.host.publish(properties); }
   subscribe(properties) { return this.host.subscribe(properties); }
   join(other) { return this.host.join(other); }
   storeValue(key, value) { return this.host.storeValue(key, value); }
-  store(key, value) {
-    return this.sendRPC('store', key, value);
+  store(key, value) { return this.sendRPC('store', key, value); }
+  async bootstrapJoin(baseURL = new URL('/kdht', globalThis.location).href) { // Find a contact to bootstrap, and join it.
+    const bootstrapName = await this.fetchBootstrap(baseURL);
+    const bootstrapContact = await this.ensureRemoteContact(bootstrapName, baseURL);
+    await this.join(bootstrapContact);
+    return this;
   }
+
   connectionQueue = Promise.resolve();
-  async connect() { // Connect from host to node, promising self.
+  async connect(baseURL) { // Connect and promise self when connected
+    // If this is the home contact of node, bootstrapJoin();
+    // Otherwise (a contact for a remote node), connect from host to node.
     let { host, node, connection } = this;
+    if (host.key === node.key) { // Home contact
+      if (this.host.connections.length) return this;
+      return await this.bootstrapJoin(baseURL);
+    }
     Node.assert(host.key !== node.key, 'connecting to self', host, node);
     if (connection) return this;
     const start = Date.now();
-    this.connection = this.host.contact.connectionQueue = this.host.contact.connectionQueue
-      .then(() => this.createConnection());
+    this.connection = this.host.contact.connectionQueue =
+      this.host.contact.connectionQueue.then(() => this.createConnection());
     await this.connection;
     this.noteConnection(start);
     return this;

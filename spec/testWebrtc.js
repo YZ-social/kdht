@@ -3,7 +3,6 @@ const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } = glo
 import process from 'node:process';
 import { spawn, exec } from 'node:child_process';
 import {cpus, availableParallelism } from 'node:os';
-import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -53,11 +52,8 @@ describe("DHT webrtc write/read", function () {
       await Node.delay(botsMilliseconds);
     }
 
-    contact = await WebContact.create({name: uuidv4(), debug: testNodeVerbose});
-    const bootstrapName = await contact.fetchBootstrap(baseURL);
-    const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, baseURL);
-    console.log(new Date(), 'client node', contact.sname, 'joining', bootstrapContact.sname);
-    await contact.join(bootstrapContact);
+    contact = await WebContact.create({debug: testNodeVerbose});
+    await contact.connect(baseURL);
     console.log(new Date(), 'client node', contact.sname, 'joined');
     for (let index = 0; index < nWrites; index++) {
       const wrote = await contact.storeValue(index, index);

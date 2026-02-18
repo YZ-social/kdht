@@ -13,26 +13,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get webrtcLabel() {
     return `@${this.host.contact.sname} ==> ${this.sname}`;
   }
-  static generateName() { return this.uuidv4(); }
+  static generateName() { return uuidv4(); }
 
-  checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
-    if (response?.ok) return true;
-    this.host.flog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);
-    return false;
-  }
-  // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
-  // https://github.com/nodejs/undici/issues/3492
-  async fetchBootstrap(baseURL, label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
-    // worker index or the string 'random' to an available sname to which we can connect().
-    const url = `${baseURL}/name/${label}`;
-    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.flog(url, e));
-    if (!this.checkResponse(response)) { // The portal webserver is not available. Stop trying to reach this node.
-      // TODO: maintain a well-known list of portal servers to try, but even then, do not try to reach nodes that are on an unreachable server.
-      this.host.removeContact(this);
-      return '';
-    }
-    return await response.json();
-  }
   async fetchSignals(url, signalsToSend) { 
     const response = await fetch(url, {
       method: 'POST',
