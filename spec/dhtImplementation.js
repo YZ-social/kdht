@@ -146,6 +146,7 @@ function thrash(i, nServerNodes, refreshTimeIntervalMS) { // Start disconnect/re
     const contact = contacts[i];
     await serializeAction(contact, async old => {
       const bootstrapContact = getBootstrapContact(nServerNodes);
+      console.log('disconnect', old.name);
       await old.disconnect();
       // Because simulations invoke operations directly on the far node of their contacts,
       // we must arrange for the new nodes to be different names/keys so that we don't operate on

@@ -20,7 +20,7 @@ export class NodeProbe extends NodeMessages {
     let results = await contact.sendRPC(finder, targetKey);
     if (!results) { // disconnected
       if (trace) this.log(helper.name, '=> disconnected');
-      this.log('removing unconnected contact', contact.sname);
+      this.ilog('removing unresponsive contact', contact.sname);
       this.removeContact(contact);
       return null; // signal that there is *no* response from this contact - to distinguish from a response that confirms that the contact is alive, even if there are (after filtering) no new contacts to try.
     }
@@ -159,7 +159,7 @@ export class NodeProbe extends NodeMessages {
           for (const h of sortedResponders) {
             if (h.key !== helper.key) { // Skip the one that returned the value
 	      this.constructor.assert(result.value !== undefined, 'migration of undefined result value');
-              h.contact.store(targetKey, this.constructor.transportValue(result.value));
+              h.contact.sendRPC('store', targetKey, result.value);
               break;
             }
           }

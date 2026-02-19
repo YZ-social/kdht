@@ -3,7 +3,6 @@ const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } = glo
 import process from 'node:process';
 import { spawn, exec } from 'node:child_process';
 import {cpus, availableParallelism } from 'node:os';
-import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -18,7 +17,8 @@ describe("DHT webrtc write/read", function () {
   console.log(`Model description "${cpus()[0].model}", ${logicalCores} logical cores.`);
   const nPortals = Math.max(2, logicalCores - 1);
   const thrash = true;
-  const nBots = Math.max(2, (thrash ? 0.5 : 1) * logicalCores);
+  const rude = thrash && false;
+  const nBots = Math.max(2, ((thrash || rude) ? 0.5 : 1) * logicalCores);
   const fixedSpacing  = 2; // Between portals.
   const variableSpacing = 5; // Additional random between portals.
   const nWrites = 40;
@@ -44,8 +44,9 @@ describe("DHT webrtc write/read", function () {
     await Node.delay(portalSeconds * 1e3);
 
     if (nBots) {
-      console.log(new Date(), 'starting', nBots, thrash ? 'thrashbots' : 'bots', 'over', botsMilliseconds/1e3, 'seconds');
-      botProcess = spawn('node', [path.resolve(__dirname, '../scripts/bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--info', botInfo, '--verbose', verbose.toString()]);
+      const botParameters = [path.resolve(__dirname, '../scripts/bots.js'), '--nBots', nBots, '--thrash', thrash.toString(), '--rude', rude.toString(), '--info', botInfo, '--verbose', verbose.toString()];
+      console.log(new Date(), 'starting', nBots, rude ? 'crashbots' : (thrash ? 'thrashbots' : 'bots'), 'over', botsMilliseconds/1e3, 'seconds');
+      botProcess = spawn('node', botParameters);
       if (showBots) {
 	botProcess.stdout.on('data', echo);
 	botProcess.stderr.on('data', echo);
@@ -53,11 +54,8 @@ describe("DHT webrtc write/read", function () {
       await Node.delay(botsMilliseconds);
     }
 
-    contact = await WebContact.create({name: uuidv4(), debug: testNodeVerbose});
-    const bootstrapName = await contact.fetchBootstrap(baseURL);
-    const bootstrapContact = await contact.ensureRemoteContact(bootstrapName, baseURL);
-    console.log(new Date(), 'client node', contact.sname, 'joining', bootstrapContact.sname);
-    await contact.join(bootstrapContact);
+    contact = await WebContact.create({debug: testNodeVerbose});
+    await contact.connect(baseURL);
     console.log(new Date(), 'client node', contact.sname, 'joined');
     for (let index = 0; index < nWrites; index++) {
       const wrote = await contact.storeValue(index, index);

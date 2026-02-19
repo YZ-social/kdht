@@ -17,16 +17,14 @@ export class NodePubSub extends NodeProbe {
       issuedTime: Date.now()
     }]);
   }
-  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload}) {
+  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload, issuedTime = Date.now(), immediate = false}) {
     // Publish payload to all subscribers of key, which cn be specified by name or directly.
     // Cancel by specifying same subject as before, and null payload.
-
-    // TODO? Should this call event locally first (if subscribed) and then have event ignore same subject later, or is that for the application to do?
-    return await this.storeValue(await key, [{
-      type: 'pub',
-      subject,
-      payload, 
-      issuedTime: Date.now()}]);
+    key = await key;
+    if (immediate && this.eventHandlers.get(key)) {
+      this.event(key, {subject, issuedTime, payload}); // Receive event now, without waiting for network. We will ignore the echo.
+    }
+    return await this.storeValue(key, [{type: 'pub', subject, payload, issuedTime}]);
   }
   ourEventData = new Map(); // The current data to which we have subscribed.
   event(key, {subject, issuedTime, payload}) { // Handler for 'event' RPC. Dispatches to the handler.
@@ -42,7 +40,7 @@ export class EventStorageItem extends StorageItem { // An event received at a su
   static expiration = Infinity;
   merge1(now, storageBag, node, key) {
     const storageItem = super.merge1(now, storageBag, node, key);
-    if (!storageItem || storageItem.isCancelled || !node) return storageItem;
+    if (!storageItem || !node) return storageItem; // A new cancelled event DOES fire, so that apps can know.
     node.ilog('event @', key, storageItem);
     node.eventHandlers.get(key)?.(storageItem, key);
     return storageItem;
@@ -59,7 +57,7 @@ export class SubStorageItem extends StorageItem { // A subscription.
     const publications = Object.values(storageBag.types.pub || {});
     node?.contact?.ensureRemoteContact(subscriberItem.payload).then(contact => {
       for (const publicationItem of publications) {
-	if (publicationItem.isCancelled) continue;
+	if (publicationItem.isCancelled) continue; // We do NOT fire previously cancelled publications at new subscriptions.
 	contact.sendRPC('event', key, publicationItem.toJSON());
       }
     });
@@ -74,10 +72,11 @@ export class PubStorageItem extends StorageItem { // A published datum.
   static expiration = 10 * 60e3; // 10 minutes
   merge1(now, storageBag, node, key) {
     const publicationItem = super.merge1(now, storageBag, node, key);
-    if (!publicationItem || publicationItem.isCancelled) return publicationItem;
+    // We DO fire newly cancelled publication on existing (uncancelled) subsccriptions.
+    if (!publicationItem) return publicationItem;
     const subscriptions = Object.values(storageBag.types.sub || {});
     for (const subscriberItem of subscriptions) {
-      //fixme node?.log('publish', {subscriberItem, publicationItem});
+      if (subscriberItem.isCancelled) continue;
       node?.contact?.ensureRemoteContact(subscriberItem.payload)
 	.then(contact => {
 	  contact.sendRPC('event', key, publicationItem.toJSON());

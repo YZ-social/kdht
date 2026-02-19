@@ -8,7 +8,9 @@ export class SimulatedContact extends Contact {
   static generateName() { return undefined; } // Let it come from Node default.
 
   connection = null;
-  async connect() { return this.connection = this.node.contact; }
+  async createConnection() {
+    return this.isOpen = this.connection = this.node.contact;
+  }
   disconnectTransport(andNotify = true) {
     super.disconnectTransport(andNotify);
     this.connection = null;
@@ -43,24 +45,16 @@ export class SimulatedConnectionContact extends SimulatedContact {
     Node.assert(farContactForUs.key === this.host.key, 'Far contact backpointer', farContactForUs.node.name, 'does not point to us', this.host.name);
     Node.assert(farContactForUs.host.key === this.key, 'Far contact host', farContactForUs.host.name, 'is not hosted at contact', this.name);
     super.disconnectTransport(andNotify);
+    this.isOpen = farContactForUs.isOpen = false;
     this.connection = farContactForUs.connection = null;
   }
     
-  async connect() { // Connect from host to node, promising a possibly cloned contact that has been noted.
-    // Simulates the setup of a bilateral transport between this host and node, including bookkeeping.
-    // TODO: Simulate webrtc signaling.
-    const contact = this;
-    let { host, node, isServerNode, connection } = contact;
-    Node.assert(host.key !== node.key, 'connecting to self', host, node);
-    if (connection) return connection;
-    const start = Date.now();
-
-    return this.connection = new Promise(resolveHere => {
+  createConnection() {
+    return new Promise(resolveHere => {
+      const contact = this;
+      let { host, node, isServerNode, connection } = contact;
       const farContactForUs = node.ensureContact(host.contact);
       farContactForUs.connection = new Promise(async resolveFar => {
-
-	// Anyone can connect to a server node using the server's connect endpoint.
-	// Anyone in the DHT can connect to another DHT node through a sponsor.
 	if (isServerNode) {
 	  await Node.delay(200); // Connect through portal.
 	} else {
@@ -73,7 +67,6 @@ export class SimulatedConnectionContact extends SimulatedContact {
 	    this.connection = farContactForUs.connection = null;
 	    return;
 	  }
-	  this.host.ilog('connected to', this.sname, 'in', (Date.now() - start).toLocaleString(), 'ms.');
 	}
 
 	resolveHere(farContactForUs);
@@ -81,6 +74,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
 
 	resolveFar(contact);
 	node.noteContactForTransport(farContactForUs);
+	farContactForUs.isOpen = contact.isOpen = true;
       });
     });
   }

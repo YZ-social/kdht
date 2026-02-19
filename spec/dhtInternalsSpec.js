@@ -442,7 +442,7 @@ describe("DHT internals", function () {
 
       const storedTo = [];
       for (const helper of helpers.slice(0, k)) {
-        const stored = await helper.contact.store(targetKey, testValue);
+        const stored = await helper.contact.sendRPC('store', targetKey, testValue);
         if (stored) {
           storedTo.push({
             name: helper.name,

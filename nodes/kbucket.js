@@ -65,9 +65,11 @@ export class KBucket {
     if (this.isFull) {
       this.node.constructor.assert(added !== 'present', 'full bucket after removing contact');
       const head = this.contacts[0];
-      if (head.connection) { // still alive
+      if (head.isOpen) { // still alive
 	added = false;  // New contact will not be added.
 	contact = head; // Add head back, below.
+      } else {
+	this.node.ilog('full bucket removing unopen contact', head.sname);
       }
       // In either case (whether re-adding head to tail, or making room from a dead head), remove head now.
       this.removeKey(head.key);

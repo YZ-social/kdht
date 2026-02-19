@@ -1,3 +1,4 @@
+import { StorageBag } from './storageBag.js';
 import { NodePubSub } from './nodePubSub.js';
 
 /*
@@ -52,6 +53,7 @@ export class Node extends NodePubSub {
   async storeValue(targetKey, value) { // Convert targetKey to a bigint if necessary, and store k copies.
     // Promises the number of nodes that it was stored on.
     targetKey = await this.ensureKey(targetKey);
+    value = StorageBag.ensureItems(value);
     const trace = this.diagnosticTrace || this.constructor.diagnosticTrace;
 
     // Early exit if this node is no longer running (e.g., disconnected during scheduled replication)
@@ -80,7 +82,7 @@ export class Node extends NodePubSub {
     // Do what we can in parallel right away. This might not all be the very closest, but those stored will take care of migrating.
     const connected = contacts.filter(contact => contact.connection).slice(0, k);
     await Promise.all(connected.map(async contact => {
-      await contact.store(targetKey, value);
+      await contact.sendRPC('store', targetKey, value);
       storedTo.push(contact.name);
       remaining--;
     }));
@@ -90,7 +92,7 @@ export class Node extends NodePubSub {
     }
     while (contacts.length && remaining) {
       const contact = contacts.pop();
-      const stored = await contact.store(targetKey, value);
+      const stored = await contact.sendRPC('store', targetKey, value);
       if (stored) {
         remaining--;
         storedTo.push(contact.name);
@@ -112,7 +114,7 @@ export class Node extends NodePubSub {
       this.flog(`storeValue(${targetKey}, ${value}): stored to ${storedCount}/${k} nodes${storedTo.length ? ': ' + storedTo.join(', ') : ''}${reason}`);
     }
     if (!storedTo.includes(this.name) && this.storage.has(targetKey)) {
-      this.ilog('is now too distant from', targetKey, 'to store', value[0].payload || value);
+      this.ilog('is now too distant from', targetKey, 'to store', targetKey, value);
       this.storage.delete(targetKey);
     }
     return k - remaining;

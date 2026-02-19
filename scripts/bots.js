@@ -29,6 +29,11 @@ const argv = yargs(hideBin(process.argv))
 	default: false,
 	description: "Do bots randomly disconnect and reconnect with no memory of previous data?"
       })
+      .option('rude', {
+	type: 'boolean',
+	default: false,
+	description: "When bots thrash, do they exit rudely without saying goodbye?"
+      })
       .option('info', {
 	alias: 'i',
 	type: 'boolean',
@@ -43,43 +48,50 @@ const argv = yargs(hideBin(process.argv))
       })
       .parse();
 
-const host = uuidv4();
-process.title = 'kdht-bot-' + host;
-
 if (cluster.isPrimary) {
-  console.log(`${cpus()[0].model}, ${logicalCores} logical cores. Starting ${argv.nBots} ${argv.thrash ? 'thrashbots' : 'bots'} over ${Node.refreshTimeIntervalMS/1000} seconds.`);
-  for (let i = 1; i < argv.nBots; i++) { // The cluster primary becomes bot 0.
+  process.title = 'kdht-bot-master';
+  console.log(`${new Date()} ${cpus()[0].model}, ${logicalCores} logical cores. Starting ${argv.nBots} ${argv.thrash ? 'thrashbots' : 'bots'} over ${Node.refreshTimeIntervalMS/1000} seconds.`);
+  for (let i = 0; i < argv.nBots; i++) { // The cluster primary becomes bot 0.
     cluster.fork();
   }
   cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and restart them.
-    console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
+    if (code !== 0 && code !== 99) console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
+    cluster.fork();
   });
+} else {
+
+  process.title = 'kdht-bot-sleep-' + cluster.worker?.id;
+  await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
+  let contact;
+
+  async function launch() {
+    let host = uuidv4();
+    console.log(cluster.worker?.id || 0, host);
+    process.title = 'kdht-bot-' + host;
+    contact = await WebContact.create({name: host, info: argv.info, debug: argv.verbose});
+    let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
+    let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
+    await contact.join(bootstrapContact);
+  }
+  await launch();
+
+  process.on('SIGINT', async () => {
+    console.log(process.title, 'Shutdown for Ctrl+C');
+    await contact.disconnect();
+    process.exit(0);
+  });
+
+  if (argv.rude) {
+    await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
+    console.log(new Date(), 'abandoning', contact.sname);
+    // Don't disconnect — just drop everything, simulating a browser reload.
+    process.exit(99);
+  }
+  while (argv.thrash && !argv.rude) {
+    await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
+    console.log(new Date(), 'disconnecting', contact.sname);
+    await contact.disconnect();
+    await Node.delay(1e3);
+    await launch();
+  }
 }
-
-await Node.delay(Node.randomInteger(Node.refreshTimeIntervalMS));
-console.log(cluster.worker?.id || 0, host);
-let contact = await WebContact.create({name: host, info: argv.info, debug: argv.verbose});
-let bootstrapName = await contact.fetchBootstrap(argv.baseURL);
-let bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
-await contact.join(bootstrapContact);
-
-process.on('SIGINT', async () => {
-  console.log(process.title, 'Shutdown for Ctrl+C');
-  await contact.disconnect();
-  process.exit(0);
-});
-
-while (argv.thrash) {
-  await Node.delay(contact.host.fuzzyInterval(Node.refreshTimeIntervalMS));
-  const old = contact;
-  const next = uuidv4();
-  console.log('disconnecting', old.sname);
-  await contact.disconnect();
-  await Node.delay(1e3); // TODO: remove?
-
-  contact = await WebContact.create({name: next, info: argv.info, debug: argv.verbose});
-  bootstrapName = await contact.fetchBootstrap(argv.baseURL);
-  bootstrapContact = await contact.ensureRemoteContact(bootstrapName, argv.baseURL);
-  await contact.join(bootstrapContact);
-}
-

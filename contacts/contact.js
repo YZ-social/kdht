@@ -24,8 +24,8 @@ export class Contact {
     host.addExistingContact(contact); // After contact.node (and thus contact.namem) is set.
     return contact;
   }
-  static async create(properties, host = undefined) {
-    if (typeof(properties) === 'object' && properties.name === undefined) properties = {...properties, name: this.generateName};
+  static async create(properties = {}, host = undefined) {
+    if (typeof(properties) === 'object' && properties.name === undefined) properties = {...properties, name: this.generateName()};
     return this.fromNode(await Node.create(properties), host);
   }
   static fromKey(key, host) {
@@ -78,15 +78,60 @@ export class Contact {
   get isRunning() { // Is the far node running. Non-simulations are never falsy unless we have other info such as from 'bye'.
     return this.node.isRunning;
   }
+  checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
+    if (response?.ok) return true;
+    this.host.flog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);
+    return false;
+  }
+  async fetchBootstrap(baseURL, label = 'random') { // Promise to ask portal (over http(s)) to convert a portal
+    // worker index or the string 'random' to an available sname to which we can connect().
+    const url = `${baseURL}/name/${label}`;
+    // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
+    // https://github.com/nodejs/undici/issues/3492
+    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.flog(url, e));
+    if (!this.checkResponse(response)) { // The portal webserver is not available. Stop trying to reach this node.
+      // TODO: maintain a well-known list of portal servers to try, but even then, do not try to reach nodes that are on an unreachable server.
+      this.host.removeContact(this);
+      return '';
+    }
+    return await response.json();
+  }
 
-  // Operations
+  // Home contact operations
   publish(properties) { return this.host.publish(properties); }
   subscribe(properties) { return this.host.subscribe(properties); }
   join(other) { return this.host.join(other); }
   storeValue(key, value) { return this.host.storeValue(key, value); }
-  store(key, value) {
-    return this.sendRPC('store', key, value);
+  async bootstrapJoin(baseURL = new URL('/kdht', globalThis.location).href) { // Find a contact to bootstrap, and join it.
+    const bootstrapName = await this.fetchBootstrap(baseURL);
+    const bootstrapContact = await this.ensureRemoteContact(bootstrapName, baseURL);
+    await this.join(bootstrapContact);
+    return this;
   }
+
+  connectionQueue = Promise.resolve();
+  async connect(baseURL) { // Connect and promise self when connected
+    // If this is the home contact of node, bootstrapJoin();
+    // Otherwise (a contact for a remote node), connect from host to node.
+    let { host, node, connection } = this;
+    if (host.key === node.key) { // Home contact
+      if (this.host.connections.length) return this;
+      return await this.bootstrapJoin(baseURL);
+    }
+    Node.assert(host.key !== node.key, 'connecting to self', host, node);
+    if (connection) return this;
+    const start = Date.now();
+    this.connection = this.host.contact.connectionQueue =
+      this.host.contact.connectionQueue.then(() => this.createConnection());
+    await this.connection;
+    this.noteConnection(start);
+    return this;
+  }
+  noteConnection(start) { // Log and not statistic
+    this.host.noteStatistic(start, 'connection');
+    this.host.ilog(this.isOpen ? 'connected to' : 'failed connecting to', this.sname, 'in', Date.now() - start, 'ms.');
+  }
+
   async disconnect() { // Disconnect host node and all it's connections. Stages are:
     // (0: Testing only - Test cleanup globally sets Node.refreshTimeIntervalMS to zero.)
     // 1. Refresh all value storage.
@@ -95,26 +140,19 @@ export class Contact {
     // 4. Stop any other activity by setting host.isRunning to false.
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     // Attempt to ensure that there are other copies.
-    if (this.host.refreshTimeIntervalMS)
-      this.host.ilog('disconnecting from network');
-    if (!this.host.isStopped()) {
-      if (this.host.storage.size) this.host.ilog('Copying', this.host.storage.size, 'stored values');
-      await Promise.all(this.host.storage.entries().map(([key, value]) => {
-	Node.assert(value !== undefined, 'disconnect/copy of undefined stored value', this.host.storage);
-	return this.storeValue(key, Node.transportValue(value));
-      }));
-    }
+    if (this.host.refreshTimeIntervalMS) this.host.ilog('disconnecting from network');
+    if (!this.host.isStopped()) await this.host.replicateStorage();
     this.host.stopRefresh();
     for (const contact of this.host.connections) {
       const far = await contact.connection;
       if (!far) return;
       contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
-      await contact.disconnectTransport();
+      contact.disconnectTransport();
     }
     this.host.isRunning = false;
   }
-  async disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
-    if (andNotify && await this.connection) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
+  disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
+    if (andNotify && this.connection) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
   }
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
     this.host.ilog('closing disconnected contact', this.sname);
@@ -228,7 +266,7 @@ export class Contact {
     //this.host.flog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
     const trySponsors = async () => {
       for (const sponsor of sponsors) {
-	if (!sponsor.connection) continue;
+	if (!sponsor.isOpen) continue;
 	const response = await sponsor.sendRPC('signals', this.key, payload);
 	//this.host.flog('sponsor:', sponsor.sname, 'response:', response);
 	if (response) return response;
@@ -250,13 +288,13 @@ export class Contact {
     const response = await this.host.recursiveSignals(this.key, payload, [], Date.now() + this.forwardingTimeout, this.sname);
 
     if (!response && reportEmpty) {
-      this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');
       return this.checkSignals(null);
     }
     
     const {forwardingExclusions, result} = response || {};
     if (!result && reportEmpty) {
-      this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.connection).length, 'connected.');
+      this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');
     }
     return this.checkSignals(result);
   }

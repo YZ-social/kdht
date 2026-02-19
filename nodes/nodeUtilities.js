@@ -30,7 +30,7 @@ export class NodeUtilities {
     return {
       bucket: Object.assign({}, stat), // copy the model
       storage: Object.assign({}, stat),
-      webrtc: Object.assign({}, stat),
+      connection: Object.assign({}, stat),
       rpc: Object.assign({}, stat)
     };
   }
