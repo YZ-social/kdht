@@ -30,7 +30,6 @@ export class SimulatedContact extends Contact {
     // Use delay from the destination node if set, representing a laggy VM/connection
     const delayMs = this.node.delayMs;
     return await this.constructor.ensureTime(async () => {
-      if (!this.isRunning) return null; // Receiver closed.
       return await this.node.receiveRPC(method, this.node.ensureContact(this.host.contact), ...rest);
     }, delayMs);
   }
@@ -85,7 +84,6 @@ export class SimulatedConnectionContact extends SimulatedContact {
     return ['dummy answer', 'dummy candidate'];
   }
   async transmitRPC(messageTag, method, sender, ...rest) { // "transmit" the call (with sending contact added).
-    if (!this.isRunning) return null; // Receiver closed.
     const farContactForUs = await this.connection;
     if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
     // Use delay from the destination node if set, representing a laggy VM/connection

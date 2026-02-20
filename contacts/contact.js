@@ -195,6 +195,7 @@ export class Contact {
       if (!result) this.host.flog('no local result for method', method, ...rest);
       return result;
     }
+    if (!this.isRunning) return null; // Do not try to connect to contact if explicitly marked dead.
     if (!await this.connect()) return null;
     // uuid so that the two sides don't send a request with the same id to each other.
     // Alternatively, we could concatenate a counter to our host.name.
