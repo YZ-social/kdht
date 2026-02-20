@@ -3,34 +3,40 @@ import { StorageItem, StorageBag } from './storageBag.js';
 
 export class NodePubSub extends NodeProbe {
   eventHandlers = new Map(); // key => function(key, StorageItem)
-  async subscribe({eventName, key = NodeProbe.key(eventName), handler}) {
+  async subscribe({eventName, key = NodeProbe.key(eventName), handler, expiration = SubStorageItem.expiration, autoRenewal = false, ...rest}) {
     // Subscribe to events at key, which can be specified by name or directly.
     // Cancel by specifying same subject as before, and null payload.
+    //
+    // Each storing node will expire after min(expiration, SubStorageItem.expiration).
+    // Renewal is triggered here, as long as we are connected.
     key = await key;
+    const subject = this.name;
+    const issuedTime = Date.now();
+    const renewal = autoRenewal && handler && 0.9 * Math.min(expiration, SubStorageItem.expiration);
+    const payload = handler ? this.name : null;
     if (handler) this.eventHandlers.set(key, handler);
     else this.eventHandlers.delete(eventName);
 
-    return await this.storeValue(key, [{
-      type: 'sub',
-      subject: this.name,
-      payload: handler ? this.name : null,
-      issuedTime: Date.now()
-    }]);
+    if (renewal) {
+	setTimeout(() => this.eventHandlers.has(key) && // i.e., not since cancelled
+		   this.subscribe({...rest, eventName, key, handler, expiration, autoRenewal}), renewal);
+    }
+    return await this.storeValue(key, [{...rest, type: 'sub', subject, payload, issuedTime, expiration}]);
   }
-  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload, issuedTime = Date.now(), immediate = false}) {
+  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload, issuedTime = Date.now(), immediate = false, ...rest}) {
     // Publish payload to all subscribers of key, which cn be specified by name or directly.
     // Cancel by specifying same subject as before, and null payload.
     key = await key;
     if (immediate && this.eventHandlers.get(key)) {
-      this.event(key, {subject, issuedTime, payload}); // Receive event now, without waiting for network. We will ignore the echo.
+      this.event(key, {subject, issuedTime, payload, ...rest}); // Receive event now, without waiting for network. We will ignore the echo.
     }
-    return await this.storeValue(key, [{type: 'pub', subject, payload, issuedTime}]);
+    return await this.storeValue(key, [{...rest, type: 'pub', subject, payload, issuedTime}]);
   }
   ourEventData = new Map(); // The current data to which we have subscribed.
-  event(key, {subject, issuedTime, payload}) { // Handler for 'event' RPC. Dispatches to the handler.
+  event(key, {subject, issuedTime, payload, ...rest}) { // Handler for 'event' RPC. Dispatches to the handler.
     let existingValue = this.ourEventData.get(key);
     if (!existingValue) this.ourEventData.set(key, existingValue = new StorageBag());
-    existingValue.merge([{type: 'event', subject, issuedTime, payload}], this, key);
+    existingValue.merge([{...rest, type: 'event', subject, issuedTime, payload}], this, key);
     return 'pong';
   }
 }
@@ -75,6 +81,7 @@ export class PubStorageItem extends StorageItem { // A published datum.
     // We DO fire newly cancelled publication on existing (uncancelled) subsccriptions.
     if (!publicationItem) return publicationItem;
     const subscriptions = Object.values(storageBag.types.sub || {});
+    if (this.debug) node?.flog('subscripts for new publication', key, publicationItem, subscriptions);
     for (const subscriberItem of subscriptions) {
       if (subscriberItem.isCancelled) continue;
       node?.contact?.ensureRemoteContact(subscriberItem.payload)

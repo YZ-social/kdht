@@ -66,13 +66,14 @@ export class StorageBag {
     const now = Date.now();
     for (const storageItem of storageItems) {
       const proposed = StorageItem.create({now, ...storageItem});
-      if (!proposed.merge1(now, this, node, key)) this.items = null;
+      if (!proposed.merge1(now, this, node, key)) this.items = null; // Side effect is to clear items cache if item added.
     }
     return this;
   }
   delete(node, key, type, subject) { // Delete this.types[type][subject], and any empty parents through node.storage.
     const subjects = this.types[type];
     delete subjects[subject];
+    this.items = null; // Clear items cache.
     if (Object.keys(subjects).length) return;
     delete this.types[type];
     if (!node || Object.keys(this.types).length) return;
@@ -92,7 +93,7 @@ export class StorageItem {
   constructor({payload, subject = payload.toString(), now, issuedTime = now, type = this.constructor.type, expiration = Infinity, ...rest}) {
     // TODO: accept and cache a JWS and have getters that extract these same three parts.
     expiration = Math.min(expiration, this.constructor.expiration);
-    Object.assign(this, {subject, issuedTime, payload, type, expiration, ...rest});
+    Object.assign(this, {...rest, subject, issuedTime, payload, type, expiration});
   }
   static type = 'raw';
   static expiration = 5 * 60e3; // five minutes for development
@@ -115,14 +116,13 @@ export class StorageItem {
     return rest; // Without the stuff we added, but including any other properties defined by the app.
   }
   merge1(now, bag, node, key) { // Add this into subjects if allowed and return this, else null.
-
     const {type, subject, payload, issuedTime, expiration, debug} = this;
     let {issuedTime:existingTime = 0, timer} = bag.types[type]?.[subject] || {};
 
     const allowed = this.allowedTime(existingTime, now, issuedTime);
-    if (debug) console.log('merging', {type, subject, existingTime, issuedTime, now, expiration,
-				       staticExpiration: this.constructor.expiration,
-				       isFuture: issuedTime > now, isEarlier: issuedTime <= existingTime, allowed, self:this});
+    if (debug) node?.flog('merging', {type, key, subject, existingTime, timer, issuedTime, now, expiration,
+				      staticExpiration: this.constructor.expiration,
+				      isFuture: issuedTime > now, isEarlier: issuedTime <= existingTime, allowed, self:this});
     if (!allowed) return null;
         
     const timeout = issuedTime + expiration - now;
