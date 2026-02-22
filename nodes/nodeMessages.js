@@ -25,7 +25,7 @@ export class NodeMessages extends NodeContacts {
     if (value !== undefined) return {value};
     return this.findClosestHelpers(key);
   }
-  async signals(key, signals, forwardingExclusions = null, targetNameForDebugging) {
+  async signals(key, signals, forwardingExclusions = null, forwardingExpiration, targetNameForDebugging) {
     // Handle an exchange of signals, with a response that may include {result, forwardingExclusions}. See code.
 
     if (!this.isRunning) { // In case it happens in simulations.
@@ -50,7 +50,7 @@ export class NodeMessages extends NodeContacts {
     }
 
     // Forward recursively.
-    if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, Contact.forwardingTimeoutMS, targetNameForDebugging);
+    if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, forwardingExpiration, targetNameForDebugging);
 
     // We were a sponsor but for a contact has since disconnected. We do not know if they are still connected to others.
     //this.flog('\n*** sponsored disconnected ***');
@@ -80,7 +80,7 @@ export class NodeMessages extends NodeContacts {
       if (forwardingExclusions.includes(contact.name)) continue;
       this.constructor.assert(contact.key !== this.key, 'forwarding through self');
       //this.flog('forwarding through', contact.sname);
-      const response = await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
+      const response = await contact.sendRPC('signals', key, signals, forwardingExclusions, expiration, targetNameForDebugging);
       if (response) {
 	return response;
       } else { // No response at all: continue with further calls that exclude contact.

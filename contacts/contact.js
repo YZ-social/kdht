@@ -181,10 +181,11 @@ export class Contact {
   async deserializeResponse(result) { // Inverse of serializeResponse.
     return result;
   }
+  static recursiveHopsLimit = 15;
   rpcTimeout(method, ...rest) { // Promise to resolve to null at appriate timeout for RPC method
     let hops = 1;
-    if (method === 'signals') hops = rest[3] ? 15 : 2;
-    return Node.delay(hops * this.constructor.maxPingMS, null);
+    if (method === 'signals') hops = rest[3] ? Contact.recursiveHopsLimit : 2;
+    return Node.delay(hops * Contact.maxPingMS, null);
   }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
@@ -249,10 +250,6 @@ export class Contact {
   }
 
   // Signaling
-  get forwardingTimeout() { // How long to wait for a recursive signals message to get halfway.
-    const roundTrip = this.rpcTimeout('signals', 0, 1, 2, []);
-    return roundTrip - this.maxPingMS;
-  }
   async messageSignals(signals) { // send signals through the network, promising the response signals.
     // If contact cannot be reached, remove it and promise [].
     if (this.host.isStopped()) return [];
@@ -286,7 +283,8 @@ export class Contact {
     const reportEmpty = this.isRunning; // Of course, this is only ever false in simulations.
     if (reportEmpty) this.host.log('Using recursive signal routing to', this.sname, 'after trying', sponsors.length, 'sponsors.'); // No result yet to see if it is empty, but useful in debugging.
     const start = Date.now();
-    const response = await this.host.recursiveSignals(this.key, payload, [], Date.now() + this.forwardingTimeout, this.sname);
+    const expiration = start + this.constructor.maxPingMS * this.constructor.recursiveHopsLimit / 2;
+    const response = await this.host.recursiveSignals(this.key, payload, [], expiration, this.sname);
 
     if (!response && reportEmpty) {
       this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');
