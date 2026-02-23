@@ -42,7 +42,7 @@ export class NodeMessages extends NodeContacts {
     // If we have a direct connection to the key, pass it on and answer what it tells us.
     // (E.g., if we sponsored target for sender, we will have a direct connection that will answer as above.)
     let contact = this.findContactByKey(key);
-    if (contact && contact.connection) {
+    if (contact && contact.isOpen) {
       forwardingExclusions?.push(this.name); // Keeps stats accurate if sender is examining paths.
       const response = await contact.sendRPC('signals', key, signals, forwardingExclusions, targetNameForDebugging);
       if (response) return response;
