@@ -73,11 +73,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       }
       this.unsafeData?.removeEventListener('close', onclose);
       this.unsafeData?.removeEventListener('message', onmessage);
+      if (!this.anyOpen) this.host.contact.detached(this.host.contact);
       this.webrtc = this.connection = this.unsafeData = null;
       resolve(null); // closed promise
     };
     if (initiate) {
-      if (bootstrapHost && !host.connections.find(c => c.isOpen)) {
+      if (bootstrapHost && !this.anyOpen) {
 	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${host.contact.sname}/${this.sname}`;
 	this.webrtc.transferSignals = signals => this.fetchSignals(url, signals);
       } else {

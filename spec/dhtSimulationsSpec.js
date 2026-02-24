@@ -188,7 +188,9 @@ describe("DHT", function () {
   test({maxClientNodes: 10, startThrashingBefore: 'never', runtimeBeforeWriteMS: 0, runtimeBeforeReadMS: 0, notes: "Smoke: small stable"});
   test({setupTimeMS: 50e3, startThrashingBefore: 'never', runtimeBeforeWriteMS: 5e3, notes: "Large stable"}); // On my machine, each node contects to less than the total.
   // Meaningful maxTransports may depend on circumstances. Ensure "Dropping" logging in noteContactForTransport! Checked-in value is often too easy.
-  test({maxTransports: 15, startThrashingBefore: 'never', runtimeBeforeWriteMS: 5e3, notes: "Limited connections on stable"});
+  // On my machine, queued connections are slow enough that a max of 15 works well/
+  // Unqueued connections should use max of 29 or 30.
+  test({maxTransports: 29, startThrashingBefore: 'never', runtimeBeforeWriteMS: 5e3, notes: "Limited connections on stable"});
 
   // With disconnects:
   test({pingTimeMS: 0, refreshTimeIntervalMS: 5e3, notes: "Small-network thrashing"});

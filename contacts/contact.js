@@ -16,12 +16,19 @@ export class Contact {
     //if (!contact) host.log('Creating contact', node.name);
     contact ||= new this();
     // Every Contact is unique to a host Node, from which it sends messages to a specific "far" node.
-    // Every Node caches a contact property for that Node as it's own host, and from which Contacts for other hosts may be cloned.
-    node.contact ||= contact;
     contact.node = node;
     contact.host = host; // In whose buckets (or looseContacts) does this contact live?
     contact.counter = this.counter++;
-    host.addExistingContact(contact); // After contact.node (and thus contact.namem) is set.
+    host.addExistingContact(contact); // After contact.node (and thus contact.name) is set.
+
+    if (host !== node) return contact;
+    // Every Node caches a contact property for that Node as it's own host, and from which Contacts for other hosts may be cloned.
+    // This "home" contact is often what the application is operating on, and it has two promises to indicate the overall
+    // connection to the network. E.g., publish and subscribe await attachment, because they're not very useful before that.
+    node.contact ||= contact;
+    const {promise:attachment, resolve:attached} = Promise.withResolvers(); // Resolves to home contact when join completes.
+    const {promise:detachment, resolve:detached} = Promise.withResolvers(); // Resolves to home contact when completely disconnected.
+    Object.assign(contact, {attachment, detachment, attached, detached});
     return contact;
   }
   static async create(properties = {}, host = undefined) {
@@ -78,6 +85,9 @@ export class Contact {
   get isRunning() { // Is the far node running. Non-simulations are never falsy unless we have other info such as from 'bye'.
     return this.node.isRunning;
   }
+  get anyOpen() {
+    return this.host.connections.find(c => c.isOpen);
+  }
   checkResponse(response) { // Return a fetch response, or throw error if response is not a 200 series.
     if (response?.ok) return true;
     this.host.flog(`*** Unable to reach portal ${response?.url || this.sname}, ${response?.status || 'failed fetch'}: ${response?.statusText || 'Unknown reason'}. ***`);
@@ -98,10 +108,10 @@ export class Contact {
   }
 
   // Home contact operations
-  publish(properties) { return this.host.publish(properties); }
-  subscribe(properties) { return this.host.subscribe(properties); }
-  join(other) { return this.host.join(other); }
-  storeValue(key, value) { return this.host.storeValue(key, value); }
+  publish(properties) { return this.attachment.then(home => home.host.publish(properties)); }
+  subscribe(properties) { return this.attachment.then(home => home.host.subscribe(properties)); }
+  storeValue(key, value) { return this.attachment.then(home => home.host.storeValue(key, value)); }
+  join(other) { return this.host.join(other).then(home => home.attached(home)); }
   async bootstrapJoin(baseURL = new URL('/kdht', globalThis.location).href) { // Find a contact to bootstrap, and join it.
     const bootstrapName = await this.fetchBootstrap(baseURL);
     const bootstrapContact = await this.ensureRemoteContact(bootstrapName, baseURL);
@@ -115,17 +125,23 @@ export class Contact {
     // Otherwise (a contact for a remote node), connect from host to node.
     let { host, node, connection } = this;
     if (host.key === node.key) { // Home contact
-      if (this.host.connections.length) return this;
-      return await this.bootstrapJoin(baseURL);
+      if (this.connection) return this.connection;
+      await this.bootstrapJoin(baseURL);
+      this.host.contact.detachment.then(() => this.host.contact.connection = this.host.isRunning = null);
+      return this.connection;
     }
     Node.assert(host.key !== node.key, 'connecting to self', host, node);
     if (connection) return this;
     const start = Date.now();
-    this.connection = this.host.contact.connectionQueue =
-      this.host.contact.connectionQueue.then(() => this.createConnection());
+    this.connection =
+      //this.host.contact.connectionQueue = this.host.contact.connectionQueue.then(() =>
+         this.createConnection();
+      //);
+    // Let the home contact know about whether there are any connections among all its contacts. I.e., is it online?
+    this.host.contact.connection ||= this.connection;
     await this.connection;
     this.noteConnection(start);
-    return this;
+    return this.connection;
   }
   noteConnection(start) { // Log and not statistic
     this.host.noteStatistic(start, 'connection');
@@ -190,13 +206,13 @@ export class Contact {
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;
 
-    if (!sender.isRunning) return null; // sender closed before call.
+    if (!sender.isRunning) return null; // Sender closed before call.
+    if (!this.isRunning) return null;   // We've marked this node dead.
     if (sender.key === this.key) { // self-send short-circuit
       const result = this.host.receiveRPC(method, sender, ...rest);
       if (!result) this.host.flog('no local result for method', method, ...rest);
       return result;
     }
-    if (!this.isRunning) return null; // Do not try to connect to contact if explicitly marked dead.
     if (!await this.connect()) return null;
     // uuid so that the two sides don't send a request with the same id to each other.
     // Alternatively, we could concatenate a counter to our host.name.
