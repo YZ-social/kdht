@@ -1,11 +1,13 @@
 # KDHT
 
-A Kademlia Distributed Hash Table
-See [paper](https://www.scs.stanford.edu/~dm/home/papers/kpos.pdf) and [wikipedia](https://en.wikipedia.org/wiki/Kademlia)
+A Kademlia Distributed Hash Table.
+See [original paper](https://www.scs.stanford.edu/~dm/home/papers/kpos.pdf) and [wikipedia](https://en.wikipedia.org/wiki/Kademlia)
 
 Our system works in browsers (and in NodeJS), using WebRTC data channels to pass information from one node to another. (WebRTC is the only peer-to-peer messaging mechanism built into every browser.) This is different from the original Kademlia, in which information was passed over connectionless UDP. A node kept a small set of data about the other nodes that it knew of, such as IP address and port number, and no long-lived limited resources such as sockets. 
 
 For testing and development, our system also allows the data channel connection to be simulated, so that large number of nodes can run directly in the same Javascript process, invoking RPC on each other directly rather than over the wire.
+
+KDHT is used in the [YZ p2p network](https://yz.social/).
 
 ## Basic API
 
