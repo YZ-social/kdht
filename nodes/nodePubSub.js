@@ -15,7 +15,10 @@ export class NodePubSub extends NodeProbe {
     const renewal = autoRenewal && handler && 0.9 * Math.min(expiration, SubStorageItem.expiration);
     const payload = handler ? this.name : null;
     if (handler) this.eventHandlers.set(key, handler);
-    else this.eventHandlers.delete(eventName);
+    else {
+      this.ourEventData.delete(key);
+      this.eventHandlers.delete(eventName);
+    }
 
     if (renewal) {
 	setTimeout(() => this.eventHandlers.has(key) && // i.e., not since cancelled
@@ -23,8 +26,8 @@ export class NodePubSub extends NodeProbe {
     }
     return await this.storeValue(key, [{...rest, type: 'sub', subject, payload, issuedTime, expiration}]);
   }
-  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload, issuedTime = Date.now(), immediate = false, ...rest}) {
-    // Publish payload to all subscribers of key, which cn be specified by name or directly.
+  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload.toString(), issuedTime = Date.now(), immediate = false, ...rest}) {
+    // Publish payload to all subscribers of key, which can be specified by name or directly.
     // Cancel by specifying same subject as before, and null payload.
     key = await key;
     if (immediate && this.eventHandlers.get(key)) {
