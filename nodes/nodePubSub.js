@@ -35,6 +35,11 @@ export class NodePubSub extends NodeProbe {
     }
     return await this.storeValue(key, [{...rest, type: 'pub', subject, payload, issuedTime}]);
   }
+  async extend({eventName, key = NodeProbe.key(eventName), subject, issuedTime = Date.now(), ...rest}) {
+    // Extend the expiration on key/subject, as if the original publisher had republished the same data.
+    key = await key;
+    return await this.storeValue(key, [{...rest, type: 'ext', subject, issuedTime}]);
+  }
   ourEventData = new Map(); // The current data to which we have subscribed.
   event(key, {subject, issuedTime, payload, ...rest}) { // Handler for 'event' RPC. Dispatches to the handler.
     let existingValue = this.ourEventData.get(key);
@@ -79,10 +84,19 @@ SubStorageItem.register();
 export class PubStorageItem extends StorageItem { // A published datum.
   static type = 'pub';
   static expiration = 10 * 60e3; // 10 minutes
+  matchingExtension(storageBag) { // Extention matching this publication, if any.
+    return storageBag.types.ext?.[this.subject];
+  }
   merge1(now, storageBag, node, key) {
     const publicationItem = super.merge1(now, storageBag, node, key);
     // We DO fire newly cancelled publication on existing (uncancelled) subsccriptions.
     if (!publicationItem) return publicationItem;
+    const extensionItem = this.matchingExtension(storageBag);
+    if (extensionItem) {
+      const timeout = Math.max(extensionItem.getTimeout(now),
+			       this.getTimeout(now));
+      this.resetTimer({now, storageBag, node, key, timeout});
+    }
     const subscriptions = Object.values(storageBag.types.sub || {});
     if (this.debug) node?.flog('subscripts for new publication', key, publicationItem, subscriptions);
     for (const subscriberItem of subscriptions) {
@@ -96,3 +110,25 @@ export class PubStorageItem extends StorageItem { // A published datum.
   }
 }
 PubStorageItem.register();
+
+export class ExtStorageItem extends StorageItem { // Extended expiration on a published item.
+  // Signed data just like 'pub' and 'sub', but typically by a different owner than the 'pub'.
+  static type = 'ext';
+  static expiration = PubStorageItem.expiration;
+  matchingPublication(storageBag) { // Publication matching this extension, if any.
+    return storageBag.types.pub?.[this.subject];
+  }
+  merge1(now, storageBag, node, key) {
+    NodeProbe.assert(this.payload === undefined, 'Cannot specify payload in extension', this);
+    const extensionItem = super.merge1(now, storageBag, node, key);
+    // Side effect of successful merge is to reset the expiration of any matching 'pub'.
+    const publicationItem = this.matchingPublication(storageBag);
+    if (publicationItem) {
+      const timeout = Math.max(publicationItem.getTimeout(now),
+			       this.getTimeout(now));
+      publicationItem.resetTimer({now, storageBag, node, key, timeout});
+    }
+    return extensionItem;
+  }
+}
+ExtStorageItem.register();
