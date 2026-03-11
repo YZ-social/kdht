@@ -46,8 +46,8 @@ export class SimulatedConnectionContact extends SimulatedContact {
     super.disconnectTransport(andNotify);
     this.isOpen = farContactForUs.isOpen = false;
     this.connection = farContactForUs.connection = null;
-    if (!this.host.anyOpen) this.host.contact.detached(this.host.contact);
-    if (!farContactForUs.host.anyOpen) farContactForUs.host.contact.detached(farContactForUs.host.contact);
+    if (!this.host.anyOpen) this.host.contact.detached(this.host.stopRefresh() ? this.host.contact : false);
+    if (!farContactForUs.host.anyOpen) farContactForUs.host.contact.detached(false);
   }
     
   createConnection() {

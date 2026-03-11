@@ -50,7 +50,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     this.host.log('starting connection', this.sname, this.counter);
     this.host.noteContactForTransport(this);
     const { host, node, bootstrapHost } = this;
-    let {promise, resolve} = Promise.withResolvers();
+    let {promise, resolve} = Promise.withResolvers(); // That this specific contact has closed. Commpare host.contact.detachment.
     this.closed = promise;
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
 					     debug: host.debug,
@@ -73,7 +73,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       }
       this.unsafeData?.removeEventListener('close', onclose);
       this.unsafeData?.removeEventListener('message', onmessage);
-      if (!this.anyOpen) this.host.contact.detached(this.host.contact);
+      if (!this.anyOpen) this.host.contact.detached(this.host.stopRefresh() ? this.host.contact : false);
       this.webrtc = this.connection = this.unsafeData = null;
       resolve(null); // closed promise
     };

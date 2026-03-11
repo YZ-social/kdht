@@ -23,13 +23,16 @@ property `attachment`
 A promise that resolves to the `WebContact` instance once it is connected to the network. This can be used to, e.g., change the user interface when the node is connected and ready.
 
 property `detachment`
-A promise that resolves to the `WebContact` instance once it has disconnected from the network, either by explicit `disconnect()` by the application, or from network conditions. This can be use to, e.g., change the user interface or create a new `WebContact` when the ability to interact with the network goes away.
+A promise that resolves once it has disconnected from the network, either by explicit `disconnect()` by the application and returning truthy, or from network conditions (such as the other side closing) and returning falsy. This can be use to, e.g., change the user interface or create a new `WebContact` when the ability to interact with the network goes away.
 
 method `connect(baseURL = new URL('/kdht', globalThis.location).href)`
 Connects through the portal at the specified baseURL. Returns a promise that resolves when connected and `attachement` has resolved. The portal is used only for initial WebRTC signaling to connect to the first other node, after which subsequent connections are made through the network itself. Note that the default is meaningless in NodeJS applications, and must be explicitly supplied. 
 
 method `disconnect()`
 Disconnects from all other nodes. Returns a promise that resolves when disconnected and `detachement` has resolved.
+
+method `replicateStorage()`
+Use this if your application is not disconnecting, but may be shutdown by the operating system, such as when a browser document visibility changes to hidden.
 
 method `subscribe({eventName, key, handler, expiration = 60 * 60e3, autoRenewal = false})`
 Arranges with the network to call `handler(item, key)` when someone on the network publishes to the key. The subscription lasts only for `expiration` milliseconds (clamped to one hour), after which the subscription is removed from the network and the instance, and must be renewed if needed. The `autoRenewal` parameter can be specified truthy to automatically renew the subscription before expiration, for as long as the instance is attached to the network.

@@ -112,6 +112,7 @@ export class Contact {
   subscribe(properties) { return this.attachment.then(home => home.host.subscribe(properties)); }
   storeValue(key, value) { return this.attachment.then(home => home.host.storeValue(key, value)); }
   join(other) { return this.host.join(other).then(home => home.attached(home)); }
+  replicateStorage() { return this.host.replicateStorage(); }
   async bootstrapJoin(baseURL = new URL('/kdht', globalThis.location).href) { // Find a contact to bootstrap, and join it.
     const bootstrapName = await this.fetchBootstrap(baseURL);
     const bootstrapContact = await this.ensureRemoteContact(bootstrapName, baseURL);
@@ -157,7 +158,7 @@ export class Contact {
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     // Attempt to ensure that there are other copies.
     if (this.host.refreshTimeIntervalMS) this.host.ilog('disconnecting from network');
-    if (!this.host.isStopped()) await this.host.replicateStorage();
+    if (!this.host.isStopped()) await this.replicateStorage();
     this.host.stopRefresh();
     for (const contact of this.host.connections) {
       const far = await contact.connection;
