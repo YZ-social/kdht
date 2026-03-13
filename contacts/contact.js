@@ -11,21 +11,26 @@ export class Contact {
   // node is the far end of the contact, and could be Node (for in-process simulation) or a serialization of a key.
   static counter = 0;
   static fromNode(node, host = node) {
+    // host only differs from node in simulation
     let contact = host.existingContact(node.name);
     if (contact) Node.assert(contact.host === host, 'Existing contact host', contact.host.name, 'does not match specified host', host.name, 'for', node.name);
+    const reusingContact = !!contact;
     //if (!contact) host.log('Creating contact', node.name);
     contact ||= new this();
     // Every Contact is unique to a host Node, from which it sends messages to a specific "far" node.
     contact.node = node;
     contact.host = host; // In whose buckets (or looseContacts) does this contact live?
-    contact.counter = this.counter++;
+    if (!reusingContact) contact.counter = this.counter++;
     host.addExistingContact(contact); // After contact.node (and thus contact.name) is set.
 
     if (host !== node) return contact;
+
     // Every Node caches a contact property for that Node as it's own host, and from which Contacts for other hosts may be cloned.
+    // [st]: TODO: is it guaranteed that if node.contact already exists it'll be the same as the contact found above?  otherwise we'll be putting the one we just found into the dictionary but the node will have the old one.
+    node.contact ||= contact;
+
     // This "home" contact is often what the application is operating on, and it has two promises to indicate the overall
     // connection to the network. E.g., publish and subscribe await attachment, because they're not very useful before that.
-    node.contact ||= contact;
     const {promise:attachment, resolve:attached} = Promise.withResolvers(); // Resolves to home contact when join completes.
     const {promise:detachment, resolve:detached} = Promise.withResolvers(); // Resolves to home contact when completely disconnected.
     Object.assign(contact, {attachment, detachment, attached, detached});
@@ -42,6 +47,7 @@ export class Contact {
   clone(hostNode, searchHost = true) { // Answer a Contact that is set up for hostNode - either this instance or a new one.
     // I.e., a Contact with node: this.node and host: hostNode.
     // Unless searchHost is null, a matching existing contact on hostNode will be returned.
+    // In normal running (as opposed to a simulation that runs multiple hosts in the same process, for testing purposes), the following test will always be true; clone() _never_ creates a new node.
     if (this.host === hostNode) return this; // All good.
 
     // Reuse existing contact in hostNode -- if still running.
@@ -164,17 +170,17 @@ export class Contact {
       const far = await contact.connection;
       if (!far) return;
       contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
-      contact.disconnectTransport();
+      contact.disconnectTransport(false); // no need to send 'close' after 'bye'
     }
     this.host.isRunning = false;
   }
   disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
-    if (andNotify && this.connection) this.synchronousSend(['-', 'close']);  // May have already send "bye" and closed.
+    if (andNotify && this.connection) this.synchronousSend(['-', 'close']);  // May have already sent "bye" and closed.
   }
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
     this.host.ilog('closing disconnected contact', this.sname);
     this.host.removeLooseContact(this.key); // If any.
-    this.disconnectTransport(false);
+    this.disconnectTransport(false); // The sender told us, so we don't need to send a notification back.
   }
   bye() { // The sender is disconnecting from the network
     this.host.ilog('removing disconnected contact', this.sname);
@@ -232,7 +238,7 @@ export class Contact {
     return new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));
   }
   async receiveRPC(messageTag, methodOrResult, ...data) { // Handle a message from another node.
-    if (!this.host.isRunning) return this.disconnectTransport();
+    if (!this.host.isRunning) return this.disconnectTransport(); // contact is already dead
     // Messages handled directly by the connection, rather than the node.
     if (methodOrResult === 'close') return this.close();
     if (methodOrResult === 'bye') return this.bye();
@@ -248,7 +254,7 @@ export class Contact {
     const deserialized = await this.deserializeRequest(methodOrResult, ...data);
     let response = await this.host.receiveRPC(...deserialized);
     response = this.serializeResponse(response);
-    return await this.send([messageTag, response]);
+    return this.send([messageTag, response]); // async call
   }
   // Sponsorship
   _sponsors = new Map(); // maps key => contact
@@ -274,8 +280,8 @@ export class Contact {
     // sendRPC('signals', key, payload, optional) answers {result, forwardingExclusions} or null.
     // result may be null if the target could not be reached.
     // forwardingExclusions is a list of everything we tried, whether successful or not.
-    const payload = [this.host.contact.sname, ...signals]; // 
-    
+    const payload = [this.host.contact.sname, ...signals]; //
+
     // Try sponsors first. (Just two round trips if connected.)
     const sponsors = Array.from(this._sponsors.values());
     //this.host.flog('messageSignals payload/sponsors', this.sname, payload, sponsors.length);
@@ -307,7 +313,7 @@ export class Contact {
       this.host.flog('No recursive response from', this.sname, 'after', (Date.now() - start).toLocaleString(), 'ms and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');
       return this.checkSignals(null);
     }
-    
+
     const {forwardingExclusions, result} = response || {};
     if (!result && reportEmpty) {
       this.host.flog('Empty recursive response from', this.sname, 'after', Date.now() - start, 'ms,', forwardingExclusions?.length, 'sends, and', sponsors.length, 'sponsors', sponsors.filter(c => c.isOpen).length, 'open.');

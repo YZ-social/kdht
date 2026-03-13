@@ -15,7 +15,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   static generateName() { return uuidv4(); }
 
-  async fetchSignals(url, signalsToSend) { 
+  async fetchSignals(url, signalsToSend) {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
@@ -112,11 +112,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
+    // null channel implies no connection
     if (!channel) this.host.ilog('Tried to send without connection on', this.sname);
     if (!channel) return;
     if (channel.readyState !== 'open') {
       this.host.ilog('Tried to send on', channel.readyState, 'channel on', this.sname, this.host.isRunning, this.host.isStopped());
-      this.bye(); // Likely an impolite disconnect.
+      this.bye(); // Likely an impolite disconnect.  Count this contact as dead.
       return;
     }
     try {
@@ -131,7 +132,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     try {
       this.unsafeData.send(JSON.stringify(message));
     } catch (e) { // Some webrtc can change readyState in background.
-      this.host.log(e); 
+      this.host.log(e);
     }
   }
   get isOpen() {
