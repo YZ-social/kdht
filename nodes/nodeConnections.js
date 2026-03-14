@@ -59,7 +59,7 @@ export class NodeConnections extends NodeStorage {
         if (!dropped) this.flog('Unable to find something to drop among', bestBucket.index, 'in', this.report(null));
         else this.flog('dropping transport', dropped.name, 'in bucket', bestBucket.index, 'among', bestCount, 'contacts.');
       }
-      dropped.disconnectTransport();
+      dropped?.disconnectTransport(); // if one was found
     }
 
     this.looseContacts.push(contact); // Now add it as loose. If we later addToRoutingTable, it will then be moved from looseContacts.
