@@ -13,6 +13,7 @@ describe("DHT storageBag", function () {
     contact: {
       ensureRemoteContact(nodeName) {
 	return Promise.resolve({
+	  isRunning: true,
 	  sendRPC(method, key, {payload}) {
 	    if (method !== 'event') throw new Error('Unexpected method', method);
 	    if (key !== 42) throw new Error('Unexpected key', key);
