@@ -13,6 +13,8 @@ export class NodeRefresh extends NodeKeys {
     this.refreshTimeIntervalMS = 0;
   }
   isStopped(interval) {
+    // [st]: TODO: it appears that no caller specifies an interval, so it could be removed
+    // setting either the instance or static rTIMS to zero is used to bring this node or all nodes, respectively, to a graceful halt (either on a user-controlled local node or as part of a test script)
     return !this.isRunning || 0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval;
   }
   // The refreshTimeIntervalMS is the number of nominal number milliseconds we expect to be able to handle for short session timems.
@@ -47,11 +49,11 @@ export class NodeRefresh extends NodeKeys {
       const lag = elapsed - timeout;
       this.timers.delete(timerKey);
       if (this.isStopped()) return;
-      this.ilog('refresh', statisticsKey, timerKey, 'last/lag ms:', elapsed.toLocaleString(), lag.toLocaleString());
+      this.log('refresh', statisticsKey, timerKey, 'last/lag ms:', elapsed.toLocaleString(), lag.toLocaleString());
       if (lag > 250) console.log(`** System is overloaded by ${lag.toLocaleString()} ms. **`);
       await thunk();
       this.noteStatistic(now, statisticsKey);
     }, timeout));
   }
 }
-  
+

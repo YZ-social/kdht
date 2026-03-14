@@ -121,7 +121,7 @@ export class Node extends NodePubSub {
   }
   async join(contact) {
     this.ilog('joining', contact.sname);
-    contact = this.ensureContact(contact);
+    contact = this.ensureContact(contact); // in non-simulation context, this is effectively a no-op because only a single host exists (and we're not providing a sponsor argument)
     await contact.connect();
     this.addToRoutingTable(contact);
     await this.locateNodes(this.key); // Discovers between us and otherNode.

@@ -4,4 +4,10 @@ package-lock.json
 server.log
 notes.txt
 node_modules
+
+# ST additions
+.claude/
 CLAUDE.md
+claude-assisted-debugging.txt
+kdht-annotations
+kdht-reference.html

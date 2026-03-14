@@ -15,7 +15,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   static generateName() { return uuidv4(); }
 
-  async fetchSignals(url, signalsToSend) { 
+  async fetchSignals(url, signalsToSend) {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
@@ -50,7 +50,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     this.host.log('starting connection', this.sname, this.counter);
     this.host.noteContactForTransport(this);
     const { host, node, bootstrapHost } = this;
-    let {promise, resolve} = Promise.withResolvers();
+    let {promise, resolve} = Promise.withResolvers(); // That this specific contact has closed. Commpare host.contact.detachment.
     this.closed = promise;
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
 					     debug: host.debug,
@@ -73,11 +73,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       }
       this.unsafeData?.removeEventListener('close', onclose);
       this.unsafeData?.removeEventListener('message', onmessage);
+      if (!this.anyOpen) this.host.contact.detached(this.host.stopRefresh() ? this.host.contact : false);
       this.webrtc = this.connection = this.unsafeData = null;
       resolve(null); // closed promise
     };
     if (initiate) {
-      if (bootstrapHost && !host.connections.find(c => c.isOpen)) {
+      if (bootstrapHost && !this.anyOpen) {
 	const url = `${bootstrapHost || 'http://localhost:3000/kdht'}/join/${host.contact.sname}/${this.sname}`;
 	this.webrtc.transferSignals = signals => this.fetchSignals(url, signals);
       } else {
@@ -111,11 +112,12 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
   async send(message) { // Promise to send through previously opened connection promise.
     let channel = await this.connection;
+    // null channel implies no connection
     if (!channel) this.host.ilog('Tried to send without connection on', this.sname);
     if (!channel) return;
     if (channel.readyState !== 'open') {
       this.host.ilog('Tried to send on', channel.readyState, 'channel on', this.sname, this.host.isRunning, this.host.isStopped());
-      this.bye(); // Likely an impolite disconnect.
+      this.bye(); // Likely an impolite disconnect.  Count this contact as dead.
       return;
     }
     try {
@@ -130,7 +132,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     try {
       this.unsafeData.send(JSON.stringify(message));
     } catch (e) { // Some webrtc can change readyState in background.
-      this.host.log(e); 
+      this.host.log(e);
     }
   }
   get isOpen() {

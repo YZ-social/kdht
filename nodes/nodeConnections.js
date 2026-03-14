@@ -27,37 +27,39 @@ export class NodeConnections extends NodeStorage {
     assert(contact.host.key === this.key, 'Contact', contact.report, 'is not hosted by', this.contact.report);
     let existing = this.findContactByKey(contact.key);
     if (existing) return existing;
-    
+
     if (this.nConnections >= this.constructor.maxTransports) { // Determine if we have to drop one first, and do so.
       //console.log(this.name, 'needs to drop a transport');
       const k = this.constructor.k/2;
       function removeLast(list, allowSponsor = false) { // Remove and return the last element of list that has connection and is NOT sponsor.
-	// I have observed cases where a bunch of nodes run over as someone joins, and they all then try to remove the same
-	// most-recently added contact. So here instead of taking the last valid contact from the last, we take the last but [0..3].
-	if (!list) return null;
-	let randomizer = Math.floor(Math.random() * Math.min(k, list.length - 1));
-	const index = list.findLastIndex(element => element.connection && (allowSponsor || !contact.hasSponsor(element.key)) && randomizer-- <= 0 );
-	if (index < 0) return null;
-	const sub = list.splice(index, 1);
-	return sub[0];
+        // I have observed cases where a bunch of nodes run over as someone joins, and they all then try to remove the same
+        // most-recently added contact. So here instead of taking the last valid contact from the last, we take the last but [0..3].
+        if (!list) return null;
+        let randomizer = Math.floor(Math.random() * Math.min(k, list.length - 1));
+        const index = list.findLastIndex(element => element.connection && (allowSponsor || !contact.hasSponsor(element.key)) && randomizer-- <= 0 );
+        if (index < 0) return null;
+        const sub = list.splice(index, 1);
+        return sub[0];
       }
+
       let dropped = removeLast(this.looseContacts);
       if (dropped) {
-	this.flog('dropping loose transport', dropped.name);
+        this.flog('dropping loose transport', dropped.name);
       } else { // Find the bucket with the most connections.
-	let bestBucket = null, bestCount = 0;
-	this.forEachBucket(bucket => {
-	  const count = bucket.nConnections;
-	  if (count < bestCount) return true;
-	  bestBucket = bucket;
-	  bestCount = count;
-	  return true;
-	});
-	dropped = removeLast(bestBucket.contacts) || removeLast(bestBucket.contacts, true);
-	if (!dropped) this.flog('Unable to find something to drop among', bestBucket.index, 'in', this.report(null));
-	else this.flog('dropping transport', dropped.name, 'in bucket', bestBucket.index, 'among', bestCount, 'contacts.');
+        let bestBucket = null, bestCount = 0;
+        this.forEachBucket(bucket => {
+          const count = bucket.nConnections;
+          // in the case of a tie, arbitrarily return the last bucket among equals
+          if (count < bestCount) return true; // true => continue iterating
+          bestBucket = bucket;
+          bestCount = count;
+          return true;
+        });
+        dropped = removeLast(bestBucket.contacts) || removeLast(bestBucket.contacts, true);
+        if (!dropped) this.flog('Unable to find something to drop among', bestBucket.index, 'in', this.report(null));
+        else this.flog('dropping transport', dropped.name, 'in bucket', bestBucket.index, 'among', bestCount, 'contacts.');
       }
-      dropped.disconnectTransport();
+      dropped?.disconnectTransport(); // if one was found
     }
 
     this.looseContacts.push(contact); // Now add it as loose. If we later addToRoutingTable, it will then be moved from looseContacts.

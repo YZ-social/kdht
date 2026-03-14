@@ -124,10 +124,8 @@ export class StorageItem {
 				      staticExpiration: this.constructor.expiration,
 				      isFuture: issuedTime > now, isEarlier: issuedTime <= existingTime, allowed, self:this});
     if (!allowed) return null;
-        
-    const timeout = issuedTime + expiration - now;
-    clearTimeout(timer);
-    this.timer = timeout < Infinity && setTimeout(() => this.delete(bag, node, key, type, subject), timeout);
+
+    this.resetTimer({now, bag, node, key, timer});
 
     const subjects = bag.types[type] ||= {};
     subjects[subject] = this;
@@ -138,7 +136,15 @@ export class StorageItem {
     if (issuedTime <= existingTime) return false;
     return true;
   }
-  delete(bag, node, key, type, subject) {
+  getTimeout(now) {
+    const { issuedTime, expiration } = this;
+    return issuedTime + expiration - now;
+  }
+  resetTimer({now, bag, node, key, timeout = this.getTimeout(now), timer = this.timer}) {
+    clearTimeout(timer);
+    this.timer = timeout < Infinity && setTimeout(() => this.delete(bag, node, key), timeout);
+  }
+  delete(bag, node, key, type = this.type, subject = this.subject) {
     bag.delete(node, key, type, subject);
   }
 }

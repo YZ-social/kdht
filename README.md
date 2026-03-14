@@ -3,7 +3,7 @@
 A Kademlia Distributed Hash Table.
 See [original paper](https://www.scs.stanford.edu/~dm/home/papers/kpos.pdf) and [wikipedia](https://en.wikipedia.org/wiki/Kademlia)
 
-Our system works in browsers (and in NodeJS), using WebRTC data channels to pass information from one node to another. (WebRTC is the only peer-to-peer messaging mechanism built into every browser.) This is different from the original Kademlia, in which information was passed over connectionless UDP. A node kept a small set of data about the other nodes that it knew of, such as IP address and port number, and no long-lived limited resources such as sockets. 
+Our system works in browsers (and in NodeJS), using WebRTC data channels to pass information from one node to another. (WebRTC is the only peer-to-peer messaging mechanism built into every browser.) This is different from the original Kademlia, in which information was passed over connectionless UDP. A node kept a small set of data about the other nodes that it knew of, such as IP address and port number, and no long-lived limited resources such as sockets.
 
 For testing and development, our system also allows the data channel connection to be simulated, so that large number of nodes can run directly in the same Javascript process, invoking RPC on each other directly rather than over the wire.
 
@@ -25,13 +25,16 @@ property `attachment`
 A promise that resolves to the `WebContact` instance once it is connected to the network. This can be used to, e.g., change the user interface when the node is connected and ready.
 
 property `detachment`
-A promise that resolves to the `WebContact` instance once it has disconnected from the network, either by explicit `disconnect()` by the application, or from network conditions. This can be use to, e.g., change the user interface or create a new `WebContact` when the ability to interact with the network goes away.
+A promise that resolves once it has disconnected from the network, either by explicit `disconnect()` by the application and returning truthy, or from network conditions (such as the other side closing) and returning falsy. This can be use to, e.g., change the user interface or create a new `WebContact` when the ability to interact with the network goes away.
 
 method `connect(baseURL = new URL('/kdht', globalThis.location).href)`
-Connects through the portal at the specified baseURL. Returns a promise that resolves when connected and `attachement` has resolved. The portal is used only for initial WebRTC signaling to connect to the first other node, after which subsequent connections are made through the network itself. Note that the default is meaningless in NodeJS applications, and must be explicitly supplied. 
+Connects through the portal at the specified baseURL. Returns a promise that resolves when connected and `attachement` has resolved. The portal is used only for initial WebRTC signaling to connect to the first other node, after which subsequent connections are made through the network itself. Note that the default is meaningless in NodeJS applications, and must be explicitly supplied.
 
 method `disconnect()`
 Disconnects from all other nodes. Returns a promise that resolves when disconnected and `detachement` has resolved.
+
+method `replicateStorage()`
+Use this if your application is not disconnecting, but may be shutdown by the operating system, such as when a browser document visibility changes to hidden.
 
 method `subscribe({eventName, key, handler, expiration = 60 * 60e3, autoRenewal = false})`
 Arranges with the network to call `handler(item, key)` when someone on the network publishes to the key. The subscription lasts only for `expiration` milliseconds (clamped to one hour), after which the subscription is removed from the network and the instance, and must be renewed if needed. The `autoRenewal` parameter can be specified truthy to automatically renew the subscription before expiration, for as long as the instance is attached to the network.
@@ -45,7 +48,9 @@ Arranges with the network for each subscribed node to call `handler({payload, su
 
 If `immediate` is truthy and the Contact has subscribed to the specified `key`, then the `handler` is called immediately and synchronously within the `publish()`, and not called again when the information gets reflected through the network. Otherwise, the `handler` is not called until the publication "comes back".
 
-Each published datum is individually expired at the `issuedTime + expiration`, and removed from the network. Data may be republished by publishing to the same `key` and `subject`, or cancelled by doing the same with a `null payaload`. Subscribed nodes do have the `handler` called with the updated or explicitloy cancelled payloads, but not for expired data. A newly subscribed node receives previously published data that has not expired or been cancelled.
+Each published datum is individually expired at the `issuedTime + expiration`, and removed from the network. Data may be republished by publishing to the same `key` and `subject`, or cancelled by doing the same with a `null payload`. Subscribed nodes do have the `handler` called with the updated or explicitly cancelled payloads, but not for expired data. A newly subscribed node receives previously published data that has not expired or been cancelled.
+
+The `payload` may also be omitted, which does not change any existing payload data, but extends the expiration time based on the other parameters, with the limitation that the new expiration is never earlier than has been the case before.
 
 The `subject` property is used to allow multiple publications to the same `key`. The network fires the `handler` for published data when it receives data whose `issuedTime` is strictly newer than any data that it already has for that `subject + key`. For example, to have multiple nodes publish, update, or cancel their own data to the same `key`, and to have every node receive the latest such value from all, then the application can have each node publish with, e.g., their `contact.name` as the `subject`.
 
@@ -75,7 +80,7 @@ While a `Node` maintains several `Contacts` in its `KBucket`s, these are organiz
 
 Nodes learn about other node `name`s through those that with which they are already connected. In Kademlia, the node will, from time to time, directly connect to these newly discovered nodes.
 
-Browsers do not allow pages to listen for incoming connections. Instead, two WebRTC peers must exchange "signal" information that allows them to simultaneously find each other on the Internet. 
+Browsers do not allow pages to listen for incoming connections. Instead, two WebRTC peers must exchange "signal" information that allows them to simultaneously find each other on the Internet.
 When a node A needs to directly connect to another node B, A sends signals to B, which responds with its own signals back to A. This happens a couple of times until agreement is reached on how to directly connect. Obviously, these signals messages cannot go directly between two unconnected peers, but must be carried through some intermediary. Once connected to any node in the network, the signals can pass as network messages through the already connected node.
 
 To form that initial connection to another node, a new unconnected node must go through a "portal" server. This consists of an ordinary Web server that handles a GET request that answers the `name` of one of the nodes that are run by that server and with which the server can directly communicate. The joining node then makes a POST to that same server, specifying its own name and that of the portal's node, as well as the signals. The server passes those signals to the specified portal node, and responds with that portal node's answering signals.  As long as the joined node remains connected to any other node in the network, it will connect to other nodes by passing the signals through the network itsef, rather than the portal web server, even if connecting to a node that happens to be on the portal server.
@@ -88,9 +93,9 @@ In the original Kademlia, a `ping` RPC was sent to nodes during `KBucket` mainte
 
 ### Scripts
 
-The [NodeJS](https://nodejs.org/) script [`portal.js`](./scripts/portal.js) runs a little [ExpressJS](https://expressjs.com/) Web server and associated portal nodes. (See [Connecting](#connecting), above.). Each portal node is run its own NodeJS sub-process (using NodeJS's [`cluster`](https://nodejs.org/api/cluster.html) mechanism). By default, it runs one portal node for each CPU core but one, allowing one core for the Web server process. The portal nodes are started one at a time, with each after the first connecting to one of the previous portal nodes through the script's own Web server at `http://localhost:3000/kdht`. 
-- If an `externalBaseURL` is specified, the first portal node will connect to the compatible portal server running at the specified URL, forming one big network. Otherwise, the portal nodes and any other nodes that connect to it will be distinct. 
-- `npm start` runs the script to connect with ki1r0y.com/kdht, while `npm run withoutExternal` runs separately. 
+The [NodeJS](https://nodejs.org/) script [`portal.js`](./scripts/portal.js) runs a little [ExpressJS](https://expressjs.com/) Web server and associated portal nodes. (See [Connecting](#connecting), above.). Each portal node is run its own NodeJS sub-process (using NodeJS's [`cluster`](https://nodejs.org/api/cluster.html) mechanism). By default, it runs one portal node for each CPU core but one, allowing one core for the Web server process. The portal nodes are started one at a time, with each after the first connecting to one of the previous portal nodes through the script's own Web server at `http://localhost:3000/kdht`.
+- If an `externalBaseURL` is specified, the first portal node will connect to the compatible portal server running at the specified URL, forming one big network. Otherwise, the portal nodes and any other nodes that connect to it will be distinct.
+- `npm start` runs the script to connect with ki1r0y.com/kdht, while `npm run withoutExternal` runs separately.
 - The ExpressJS routing parts of `portal.js` is also available separately as `router.js`, so that it can be used as middleware within existing ExpressJS applications.
 - A very basic Web page is also servered at `http://localhost:3000/node.html` that joins the same network.
 

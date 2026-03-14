@@ -8,10 +8,10 @@ export class NodeContacts extends NodeConnections {
   static k = 20; // Chosen so that for any k nodes, it is highly likely that at least one is still up after refreshTimeIntervalMS.
   static commonPrefixLength(distance) { // Number of leading zeros of distance (within fixed keySize).
     if (distance === this.zero) return this.keySize; // I.e., zero distance => our own Node => 128 (i.e., one past the farthest bucket).
-    
+
     let length = 0;
     let mask = this.one << BigInt(this.keySize - 1);
-    
+
     for (let i = 0; i < this.keySize; i++) {
       if ((distance & mask) !== this.zero) {
         return length;
@@ -19,7 +19,7 @@ export class NodeContacts extends NodeConnections {
       length++;
       mask >>= this.one;
     }
-    
+
     return this.keySize;
   }
   routingTable = new Map(); // Maps bit prefix length to KBucket
@@ -80,7 +80,7 @@ export class NodeContacts extends NodeConnections {
     // I.e., a Contact with node: contact.node and host: this.
     // Subtle: Contact clone uses existingContact (above) to reuse an existing contact on the host, if possible.
     // This is vital for bookkeeping through connections and sponsorship.
-    contact = contact.clone(this);
+    contact = contact.clone(this); // in non-simulation context, this is effectively a no-op because only a single host exists
     if (sponsor) contact.noteSponsor(sponsor);
     return contact;
   }
@@ -97,6 +97,7 @@ export class NodeContacts extends NodeConnections {
     const bucketIndex = this.getBucketIndex(key);
     const bucket = this.routingTable.get(bucketIndex);
     // Host might not yet have added node or anyone else as contact for that bucket yet, so maybe no bucket.
+    // [st]: TODO: since removeKey defaults to deleteIfEmpty, the returned bucket may have been removed from the routing table.  do all callers handle that appropriately?
     return bucket?.removeKey(key) ? bucket : null;
   }
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.

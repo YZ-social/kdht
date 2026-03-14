@@ -15,7 +15,10 @@ export class NodePubSub extends NodeProbe {
     const renewal = autoRenewal && handler && 0.9 * Math.min(expiration, SubStorageItem.expiration);
     const payload = handler ? this.name : null;
     if (handler) this.eventHandlers.set(key, handler);
-    else this.eventHandlers.delete(eventName);
+    else {
+      this.ourEventData.delete(key);
+      this.eventHandlers.delete(eventName);
+    }
 
     if (renewal) {
 	setTimeout(() => this.eventHandlers.has(key) && // i.e., not since cancelled
@@ -23,14 +26,19 @@ export class NodePubSub extends NodeProbe {
     }
     return await this.storeValue(key, [{...rest, type: 'sub', subject, payload, issuedTime, expiration}]);
   }
-  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload, issuedTime = Date.now(), immediate = false, ...rest}) {
-    // Publish payload to all subscribers of key, which cn be specified by name or directly.
+  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload.toString(), issuedTime = Date.now(), immediate = false, ...rest}) {
+    // Publish payload to all subscribers of key, which can be specified by name or directly.
     // Cancel by specifying same subject as before, and null payload.
     key = await key;
     if (immediate && this.eventHandlers.get(key)) {
       this.event(key, {subject, issuedTime, payload, ...rest}); // Receive event now, without waiting for network. We will ignore the echo.
     }
     return await this.storeValue(key, [{...rest, type: 'pub', subject, payload, issuedTime}]);
+  }
+  async extend({eventName, key = NodeProbe.key(eventName), subject, issuedTime = Date.now(), ...rest}) {
+    // Extend the expiration on key/subject, as if the original publisher had republished the same data.
+    key = await key;
+    return await this.storeValue(key, [{...rest, type: 'ext', subject, issuedTime}]);
   }
   ourEventData = new Map(); // The current data to which we have subscribed.
   event(key, {subject, issuedTime, payload, ...rest}) { // Handler for 'event' RPC. Dispatches to the handler.
@@ -62,6 +70,7 @@ export class SubStorageItem extends StorageItem { // A subscription.
     if (!subscriberItem || subscriberItem.isCancelled) return subscriberItem;
     const publications = Object.values(storageBag.types.pub || {});
     node?.contact?.ensureRemoteContact(subscriberItem.payload).then(contact => {
+      if (!contact.isRunning) return; // Don't attempt delivery to known-dead subscribers (J1).
       for (const publicationItem of publications) {
 	if (publicationItem.isCancelled) continue; // We do NOT fire previously cancelled publications at new subscriptions.
 	contact.sendRPC('event', key, publicationItem.toJSON());
@@ -76,16 +85,26 @@ SubStorageItem.register();
 export class PubStorageItem extends StorageItem { // A published datum.
   static type = 'pub';
   static expiration = 10 * 60e3; // 10 minutes
+  matchingExtension(storageBag) { // Extention matching this publication, if any.
+    return storageBag.types.ext?.[this.subject];
+  }
   merge1(now, storageBag, node, key) {
     const publicationItem = super.merge1(now, storageBag, node, key);
     // We DO fire newly cancelled publication on existing (uncancelled) subsccriptions.
     if (!publicationItem) return publicationItem;
+    const extensionItem = this.matchingExtension(storageBag);
+    if (extensionItem) {
+      const timeout = Math.max(extensionItem.getTimeout(now),
+			       this.getTimeout(now));
+      this.resetTimer({now, storageBag, node, key, timeout});
+    }
     const subscriptions = Object.values(storageBag.types.sub || {});
     if (this.debug) node?.flog('subscripts for new publication', key, publicationItem, subscriptions);
     for (const subscriberItem of subscriptions) {
       if (subscriberItem.isCancelled) continue;
       node?.contact?.ensureRemoteContact(subscriberItem.payload)
 	.then(contact => {
+	  if (!contact.isRunning) return; // Don't attempt delivery to known-dead subscribers (J1).
 	  contact.sendRPC('event', key, publicationItem.toJSON());
 	});
     }
@@ -93,3 +112,25 @@ export class PubStorageItem extends StorageItem { // A published datum.
   }
 }
 PubStorageItem.register();
+
+export class ExtStorageItem extends StorageItem { // Extended expiration on a published item.
+  // Signed data just like 'pub' and 'sub', but typically by a different owner than the 'pub'.
+  static type = 'ext';
+  static expiration = PubStorageItem.expiration;
+  matchingPublication(storageBag) { // Publication matching this extension, if any.
+    return storageBag.types.pub?.[this.subject];
+  }
+  merge1(now, storageBag, node, key) {
+    NodeProbe.assert(this.payload === undefined, 'Cannot specify payload in extension', this);
+    const extensionItem = super.merge1(now, storageBag, node, key);
+    // Side effect of successful merge is to reset the expiration of any matching 'pub'.
+    const publicationItem = this.matchingPublication(storageBag);
+    if (publicationItem) {
+      const timeout = Math.max(publicationItem.getTimeout(now),
+			       this.getTimeout(now));
+      publicationItem.resetTimer({now, storageBag, node, key, timeout});
+    }
+    return extensionItem;
+  }
+}
+ExtStorageItem.register();
