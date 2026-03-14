@@ -70,6 +70,7 @@ export class SubStorageItem extends StorageItem { // A subscription.
     if (!subscriberItem || subscriberItem.isCancelled) return subscriberItem;
     const publications = Object.values(storageBag.types.pub || {});
     node?.contact?.ensureRemoteContact(subscriberItem.payload).then(contact => {
+      if (!contact.isRunning) return; // Don't attempt delivery to known-dead subscribers (J1).
       for (const publicationItem of publications) {
 	if (publicationItem.isCancelled) continue; // We do NOT fire previously cancelled publications at new subscriptions.
 	contact.sendRPC('event', key, publicationItem.toJSON());
@@ -103,6 +104,7 @@ export class PubStorageItem extends StorageItem { // A published datum.
       if (subscriberItem.isCancelled) continue;
       node?.contact?.ensureRemoteContact(subscriberItem.payload)
 	.then(contact => {
+	  if (!contact.isRunning) return; // Don't attempt delivery to known-dead subscribers (J1).
 	  contact.sendRPC('event', key, publicationItem.toJSON());
 	});
     }
