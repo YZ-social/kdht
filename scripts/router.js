@@ -1,5 +1,7 @@
 import cluster from 'node:cluster';
 import express from 'express';
+import { WebRTC } from '@yz-social/webrtc';
+import Turn from 'node-turn';
 import { Node } from '../index.js';
 
 export const router = express.Router();
@@ -64,3 +66,12 @@ router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON P
 
   return res.send(response);
 });
+
+// Run a TURN server on the default port (3478).
+var server = new Turn({
+  externalIps: await WebRTC.getPublicIP(),
+  logLevel: 'ALL',
+  authMech: 'none', //'long-term',
+  //credentials: { username: "password" }
+});
+server.start();

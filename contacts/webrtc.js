@@ -52,15 +52,20 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const { host, node, bootstrapHost } = this;
     let {promise, resolve} = Promise.withResolvers(); // That this specific contact has closed. Commpare host.contact.detachment.
     this.closed = promise;
+
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
 					     debug: host.debug,
 					     configuration: {iceServers: [
-					       {urls: [
-						 'stun:stun1.l.google.com:19302',
-						 'stun:stun2.l.google.com:19302',
-						 'stun:stun3.l.google.com:19302',
-						 'stun:stun4.l.google.com:19302'
-					       ]},
+					       {urls: 'stun:stun.l.google.com:19302'},
+					       {
+						 urls: [
+						   `turn:${globalThis.location?.hostname || 'localhost'}:3478`, // FIXME getPublicIP()
+						   `turn:${globalThis.location?.hostname || 'localhost'}:3478?transport=tcp`, // FIXME getPublicIP()
+						 ],
+						 // Even with no auth at server, some RTCPeerConnection requires creds for turn.
+						 username: "dummy",
+						 credential: "nothing"
+					       }
 					     ]},
 					     polite: this.host.key < this.node.key});
     const onmessage = event => this.receiveWebRTC(event.data);
@@ -95,7 +100,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       this.unsafeData = dataChannel;
       dataChannel.addEventListener('close', onclose);
       dataChannel.addEventListener('message', onmessage);
-      if (this.info || this.debug) await webrtc.reportConnection(true);
+      if (host.info || host.debug) await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
     });
     if (!timeoutMS) return channelPromise;
