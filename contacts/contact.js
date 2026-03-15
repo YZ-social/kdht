@@ -187,14 +187,14 @@ export class Contact {
   }
   bye() { // The sender is disconnecting from the network
     this.host.ilog('removing disconnected contact', this.sname);
-    const bucket = this.host.removeContact(this);
+    const bucket = this.host.removeContact(this, false);
     this.disconnectTransport(false);
     bucket?.refresh(); // Accelerate the bucket refresh
   }
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
   // RPC
-  static maxPingMS = 330; // Not including connect time. These are single-hop WebRTC data channels.
+  static maxPingMS = 1330; // Not including connect time. These are single-hop WebRTC data channels.
   serializeRequest(...rest) { // Return the composite datum suitable for transport over the wire.
     return rest; // Non-simulation subclases must override.
   }
