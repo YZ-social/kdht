@@ -69,7 +69,7 @@ router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON P
 
 // Run a TURN server on the default port (3478).
 var server = new Turn({
-  externalIps: await WebRTC.getPublicIP(),
+  externalIps: await fetch('https://api.ipify.org?format=text').then(response => response.text()), // I'd rather WebRTC.getPublicIP() but that's not working when webrtc needs turn.
   logLevel: 'ALL',
   authMech: 'none', //'long-term',
   //credentials: { username: "password" }
