@@ -46,9 +46,9 @@ export class NodeStorage extends NodeRefresh {
   async replicateStorage() { // Replicate all of our data.
     if (!this.storage.size) return;
     this.ilog('Copying', this.storage.size, 'stored values');
-    await Promise.all(this.storage.entries().map(([key, value]) => {
+    await Promise.all(this.storage.entries().map(async ([key, value]) => {
       this.constructor.assert(value !== undefined, 'disconnect/copy of undefined stored value', this.storage);
-      return this.storeValue(key, value);
+      await this.storeValue(key, value);
     }));
   }
   async replicateCloserStorage(contact) { // Replicate to new contact any of our data for which contact is closer than us.

@@ -131,11 +131,12 @@ describe("DHT", function () {
 	await timed(_ => setupServerNodes(nServerNodes, refreshTimeIntervalMS, pingTimeMS, maxTransports),
 		    elapsed => `Server setup ${nServerNodes} / ${elapsed} = ${Math.round(nServerNodes/elapsed)} nodes/second.`);
 	expect(await getContactsLength()).toBe(nServerNodes); // sanity check
+
 	console.log(new Date(), 'end server setup');
       }, 20e3);
       afterAll(async function () {
 	console.log(new Date(), 'start server shutdown');
-	await shutdownServerNodes(nServerNodes);
+	await shutdownServerNodes(nServerNodes, notes);
 	expect(await getContactsLength()).toBe(0); // sanity check
 	console.log(new Date(), 'end server shutdown');
       }, 20e3);

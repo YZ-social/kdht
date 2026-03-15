@@ -25,8 +25,10 @@ export class NodeUtilities {
     globalThis.process?.exit(1);
   }
 
-  static initialStatisticBuckets() {
-    const stat = {count:0, elapsed:0};
+  // Statistics
+  static initialStatisticBuckets() { // Return an accumulator in which to track statistics.
+    // Tracks {count, elapsedMS} for every webrtc connection, storage and bucket refresh, and rpc send.
+    const stat = {count:0, elapsedMS:0};
     return {
       bucket: Object.assign({}, stat), // copy the model
       storage: Object.assign({}, stat),
@@ -34,55 +36,33 @@ export class NodeUtilities {
       rpc: Object.assign({}, stat)
     };
   }
-  static recordStatistic(accumulator, startTimeMS, name) {
+  statistics = NodeUtilities.initialStatisticBuckets();
+  static publishStatistics = true;
+  accumulate1Statistic(name, startTimeMS, accumulator = this.statistics) { // Add to count and elapsedMS in accumulator[name]. Answer count;
     const stat = accumulator?.[name];
     if (!stat) return;
-    stat.count++;
-    stat.elapsed += Date.now() - startTimeMS;
+    stat.elapsedMS += Date.now() - startTimeMS;
+    ++stat.count;
   }
-  static publishStatistics = false;
-  statistics = NodeUtilities.initialStatisticBuckets();
-  noteStatistic(startTimeMS, name) {
+  noteStatistic(name, startTimeMS) { // Add to the specified statistic[name], and maybe publish all totals.
     if (!this.constructor.publishStatistics) return;
-    this.constructor.recordStatistic(this.statistics, startTimeMS, name);
-    this.constructor.noteStatistic(startTimeMS, name);
-    if (name !== 'rpc') this.publish({eventName: 'network statistics',
-				      subject: this.name,
-				      payload: this.getStatisticsJSON()});
+    if (this.isStopped()) return;
+    this.accumulate1Statistic(name, startTimeMS);
+    if (name === 'rpc' || name === 'connection') return; // The act of publishing shouldn't increase the counts each time.
+    this.publishStatistics(name);
   }
-  getStatisticsJSON() {
+  async publishStatistics(triggerName) { // Publish totals.
+    const key = this.constructor.statisticsPubKey ||= await this.constructor.key('network statistics');
+    return this.contact.publish({key, // contact.publish doesn't fire until we are attached.
+				 subject: this.name,
+				 payload: this.getStatisticsJSON()});
+  }
+  getStatisticsJSON() { // Answer the stastics we publish, including a list of live connections snames.
     const {statistics} = this;
-    statistics.connections = this.contacts.map(c => c.connection && c.name).filter(n => n);
+    statistics.connections = this.contacts.map(c => c.connection && c.sname).filter(n => n);
     return statistics;
   }
 
-  // I expect this class/global version  to be phased out, in favor of the instance/publishing version, above.
-  static _stats = {};
-  static get statistics() { // Return {bucket, storage, rpc}, where each value is [elapsedInSeconds, count, averageInMSToNearestTenth].
-    // If Nodes.contacts is populated, also report average number of buckets and contacts.
-    const { _stats } = this;
-    if (this.contacts?.length) {
-      let buckets = 0, contacts = 0, stored = 0;
-      for (const {node} of this.contacts) {
-	stored += node.storage.size;
-	node.forEachBucket(bucket => {
-	  buckets++;
-	  contacts += bucket.contacts.length;
-	  return true;
-	});
-      }
-      _stats.contacts = Math.round(contacts/this.contacts.length);
-      _stats.stored = Math.round(stored/this.contacts.length);
-      _stats.buckets = Math.round(buckets/this.contacts.length);
-    }
-    return _stats;
-  }
-  static resetStatistics() { // Reset statistics to zero.
-    this._stats = this.initialStatisticBuckets();
-  }
-  static noteStatistic(startTimeMS, name) { // Given a startTimeMS, update statistics bucket for name.
-    this.recordStatistic(this._stats, startTimeMS, name);
-  }
   report(logger = console.log) { // return logger( a string description of node )
     let report = `Node: ${this.contact?.report || this.name}, ${this.nConnections} connections`;
     function contactsString(contacts) { return contacts.map(contact => contact.report).join(', '); }

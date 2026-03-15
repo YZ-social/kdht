@@ -151,11 +151,11 @@ export class Contact {
     return this.connection;
   }
   noteConnection(start) { // Log and not statistic
-    this.host.noteStatistic(start, 'connection');
+    this.host.noteStatistic('connection', start);
     this.host.ilog(this.isOpen ? 'connected to' : 'failed connecting to', this.sname, 'in', Date.now() - start, 'ms.');
   }
 
-  async disconnect() { // Disconnect host node and all it's connections. Stages are:
+  async disconnect(replicateStorage = !this.host.isStopped()) { // Disconnect host node and all it's connections. Stages are:
     // (0: Testing only - Test cleanup globally sets Node.refreshTimeIntervalMS to zero.)
     // 1. Refresh all value storage.
     // 2. Stop refreshes at this host by setting host.refreshTimeIntervalMS to zero.
@@ -164,7 +164,10 @@ export class Contact {
     Node.assert(this.host === this.node, "Disconnect", this.name, "not invoked on home contact", this.host.name);
     // Attempt to ensure that there are other copies.
     if (this.host.refreshTimeIntervalMS) this.host.ilog('disconnecting from network');
-    if (!this.host.isStopped()) await this.replicateStorage();
+    if (replicateStorage) {
+      await this.replicateStorage(); // Included in following stats.
+      await this.host.publishStatistics(); // Stored in nodes as understood from the replication above.
+    }
     this.host.stopRefresh();
     for (const contact of this.host.connections) {
       const far = await contact.connection;
@@ -232,7 +235,7 @@ export class Contact {
 	if (!sender.isRunning) return null; // Sender closed after call.
 	return result;
       })
-      .finally(() => this.host.noteStatistic(start, 'rpc'));
+      .finally(() => this.host.noteStatistic('rpc', start));
   }
   getResponsePromise(messageTag) { // Get a promise that will resolve when a response comes in as messageTag.
     return new Promise(resolve => this.host.messageResolvers.set(messageTag, resolve));

@@ -46,10 +46,10 @@ export async function startServerNode(name, bootstrapContact, refreshTimeInterva
   return await start1(name, bootstrapContact, refreshTimeIntervalMS, true);
 }
 
-export function stop1(contact) {
-  return serializeAction(contact, promised => {
-    logLevel(promised, true);
-    promised.disconnect();
+export function stop1(contact, replicateStorage = true, info = true) {
+  return serializeAction(contact, async promised => {
+    logLevel(promised, info);
+    await promised.disconnect(replicateStorage);
     logLevel(promised, false);
     return promised;
   });
@@ -173,9 +173,16 @@ export async function stopThrashing() {
 async function shutdown(startIndex, stopIndex) { // Internal
   // Shutdown n nodes.
   Node.refreshTimeIntervalMS = 0;
+  let lastContact = contacts[startIndex];
   for (let i = startIndex; i < stopIndex; i++) {
-    await stop1(contacts.pop());
+    // By specifying true here, clearing refreshTimeIntervalMS, we are deliberately collpasing all storage (including stats)
+    // to the last node. This is a stress test, and provides stats. Even if we had contacts[0] subscribe to stats from the beginning,
+    // one of the nodes storing the pubs and subs still needs to be alive to deliver the message.
+    const contact = contacts.pop();
+    const more = contacts.length;
+    await stop1(contact, more, false);
   }
+  return lastContact;
 }
 
 
@@ -202,15 +209,34 @@ export async function setupServerNodes(nServerNodes, refreshTimeIntervalMS, ping
     contacts.push(node);
   }
 }
-export async function shutdownServerNodes(nServerNodes) {
+export async function shutdownServerNodes(nServerNodes, label) {
   // Shut down the specified number of server nodes, resolving when complete.
   // The nServerNodes will match that of the preceding setupServerNodes.
   // The purpose here is to kill any persisted data so that the next call
   // to setupServerNodes will start fresh.
-  await shutdown(0, nServerNodes);
+  const lastContact = await shutdown(0, nServerNodes);
   Contact.pingTimeMS = ping;
   Node.maxTransports = transports;
   Node.contacts = [];
+
+  const statsKey = Node.statisticsPubKey;
+  // Get contact[0]'s data into the storage bag. This is peeking under the hood a bit so as to not hang.
+  lastContact.host.storeLocally(statsKey, [{type: 'pub', subject: lastContact.name, payload: lastContact.host.getStatisticsJSON(), issuedTime: Date.now()}]);
+  const statsBag = lastContact.host.storage.get(Node.statisticsPubKey);
+  const data = Object.values(statsBag.types.pub).map(item => item.payload);
+  const nNodes = data.length;
+  const totals = Node.initialStatisticBuckets();
+  const labels = ['bucket', 'storage', 'connection', 'rpc'];
+  data.forEach(item => labels.forEach(label => {
+    totals[label].count += item[label].count;
+    totals[label].elapsedMS += item[label].elapsedMS;
+  }));
+  console.log(label, '-', nNodes, 'total nodes');
+  labels.forEach(label => {
+    const { count, elapsedMS } = totals[label];
+    if (!count) return;
+    console.log(Math.round(count/nNodes), label, 'per node, averaging', Math.round(elapsedMS / count), 'ms.');
+  });
 }
 
 export async function setupClientsByTime(...rest) {
