@@ -122,7 +122,8 @@ export class NodeContacts extends NodeConnections {
     if (!this.contact) return []; // Can happen while we are shutting down during a probe.
     const contacts = this.contacts; // Always a fresh copy.
     const dead = contacts.find(c => !c.isRunning);
-    this.constructor.assert(!dead, 'HAS DEAD HELPER', dead);
+    // In simulation we may know of a dead node that we would not know of on the network -- but on network we would not know it's node was stopped.
+    this.constructor.assert(!dead || dead.node.isStopped(), 'HAS DEAD HELPER', dead, this);
     contacts.push(this.contact); // We are a candidate, too! TODO: Handle this separately in iterate so that we don't have to marshal our contacts.
     return Helper.findClosest(targetKey, contacts, count);
   }
