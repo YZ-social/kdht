@@ -45,9 +45,9 @@ export class NodeUtilities {
     ++stat.count;
   }
   noteStatistic(name, startTimeMS) { // Add to the specified statistic[name], and maybe publish all totals.
-    if (!this.constructor.publishStatistics) return;
     if (this.isStopped()) return;
     this.accumulate1Statistic(name, startTimeMS);
+    if (!this.constructor.publishStatistics) return;
     if (name === 'rpc' || name === 'connection') return; // The act of publishing shouldn't increase the counts each time.
     this.publishStatistics(name);
   }
