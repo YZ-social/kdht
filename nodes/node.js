@@ -61,6 +61,7 @@ export class Node extends NodePubSub {
       if (trace) this.flog(`storeValue(${targetKey}, ${value}): aborted - node disconnected`);
       return 0;
     }
+    if (!value.length) return 0; // expired and nothing to store.
 
     // Go until we are sure have written k.
     const k = this.constructor.k;
@@ -114,7 +115,7 @@ export class Node extends NodePubSub {
       this.flog(`storeValue(${targetKey}, ${value}): stored to ${storedCount}/${k} nodes${storedTo.length ? ': ' + storedTo.join(', ') : ''}${reason}`);
     }
     if (!storedTo.includes(this.name) && this.storage.has(targetKey)) {
-      this.ilog('is now too distant from', targetKey, 'to store', targetKey, value);
+      this.ilog('is now too distant from', targetKey, 'to store', value);
       this.storage.delete(targetKey);
     }
     return k - remaining;

@@ -194,7 +194,7 @@ export class Contact {
   distance(key) { return this.host.constructor.distance(this.key, key); }
 
   // RPC
-  static maxPingMS = 1330; // Not including connect time. These are single-hop WebRTC data channels.
+  static maxPingMS = 3e3; // Not including connect time. These are single-hop WebRTC data channels.
   serializeRequest(...rest) { // Return the composite datum suitable for transport over the wire.
     return rest; // Non-simulation subclases must override.
   }
