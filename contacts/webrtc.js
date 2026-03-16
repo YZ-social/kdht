@@ -36,6 +36,17 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       .finally(() => contact.noteConnection(start));
     return await contact.webrtc?.respond(signals);
   }
+  static iceServers = [{
+    urls: 'stun:stun.l.google.com:19302'
+  }, {
+    urls: [
+      `turn:${globalThis.location?.hostname || 'localhost'}:3478`, // FIXME getPublicIP()
+      `turn:${globalThis.location?.hostname || 'localhost'}:3478?transport=tcp`, // FIXME getPublicIP()
+    ],
+    // Even with no auth at server, some RTCPeerConnection requires creds for turn.
+    username: "dummy",
+    credential: "nothing"
+  }];
   createConnection(initiate = true, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
     // Return a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
@@ -55,18 +66,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
 					     debug: host.debug,
-					     configuration: {iceServers: [
-					       {urls: 'stun:stun.l.google.com:19302'},
-					       {
-						 urls: [
-						   `turn:${globalThis.location?.hostname || 'localhost'}:3478`, // FIXME getPublicIP()
-						   `turn:${globalThis.location?.hostname || 'localhost'}:3478?transport=tcp`, // FIXME getPublicIP()
-						 ],
-						 // Even with no auth at server, some RTCPeerConnection requires creds for turn.
-						 username: "dummy",
-						 credential: "nothing"
-					       }
-					     ]},
+					     configuration: {iceServers: this.constructor.iceServers},
 					     polite: this.host.key < this.node.key});
     const onmessage = event => this.receiveWebRTC(event.data);
     const onclose = normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.

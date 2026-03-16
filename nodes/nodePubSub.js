@@ -26,14 +26,20 @@ export class NodePubSub extends NodeProbe {
     }
     return await this.storeValue(key, [{...rest, type: 'sub', subject, payload, issuedTime, expiration}]);
   }
-  async publish({eventName, key = NodeProbe.key(eventName), payload, subject = payload.toString(), issuedTime = Date.now(), immediate = false, ...rest}) {
+  publish({eventName, key, payload, subject = payload.toString(), issuedTime = Date.now(), immediate = false, ...rest}) {
     // Publish payload to all subscribers of key, which can be specified by name or directly.
     // Cancel by specifying same subject as before, and null payload.
-    key = await key;
+
+    // If key was supplied, we can execute immediate requests synchronously. If not, we need to hash and then execute.
+    if (!key) {
+      return NodeProbe.key(eventName)
+	.then(key => this.publish({eventName, key, payload, subject, issuedTime, immediate, ...rest}));
+    }
+
     if (immediate && this.eventHandlers.get(key)) {
       this.event(key, {subject, issuedTime, payload, ...rest}); // Receive event now, without waiting for network. We will ignore the echo.
     }
-    return await this.storeValue(key, [{...rest, type: 'pub', subject, payload, issuedTime}]);
+    return this.storeValue(key, [{...rest, type: 'pub', subject, payload, issuedTime}]);
   }
   async extend({eventName, key = NodeProbe.key(eventName), subject, issuedTime = Date.now(), ...rest}) {
     // Extend the expiration on key/subject, as if the original publisher had republished the same data.
