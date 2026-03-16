@@ -183,7 +183,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     await this.send([messageTag, method, sender, ...rest]);
     const result = await Promise.race([responsePromise, timeout, closed]);
     if (!result) {
-      this.flog('failed to send', method, 'to', this.isRunning ? 'running' : 'closed', this.sname, 'on behalf of', sender, 'because:', timeoutDone ? 'TIMEOUT' : (closedDone ? 'CLOSED' : 'unknown'));
+      this.host.flog('failed to send', method, 'to', this.isRunning ? 'running' : 'closed', this.sname, 'on behalf of', sender, 'because:', timeoutDone ? 'TIMEOUT' : (closedDone ? 'CLOSED' : 'unknown'));
     }
     return result;
   }
