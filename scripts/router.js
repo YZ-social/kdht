@@ -27,15 +27,20 @@ function initWorker(worker) {
 Object.values(cluster.workers).forEach(initWorker);
 cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and restart them.
   console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
-  delete worker.tag;
+  delete worker.tag; // So that it isn't used by /name/random.
   initWorker(cluster.fork());
 });
 
 router.get('/name/random', (req, res, next) => { // Answer the actual sname corresponding to label.
-  let list = Object.values(portals);
-  const index = Node.randomInteger(list.length);
-  const worker =  list[index];
-  if (!worker) return res.sendStatus(403);
+  let worker;
+  // We might grab a worker from custer.workers that has not yet reporte in (setting worker.tag).
+  // Dead workers are eventually removed from cluster.workers, but one might catch it before then.
+  while (!worker?.tag) {
+    let list = Object.values(portals);
+    const index = Node.randomInteger(list.length);
+    worker =  list[index];
+    if (!worker) return res.sendStatus(403);
+  }
   return res.json(worker.tag);
 });
 
