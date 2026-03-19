@@ -1,0 +1,619 @@
+<html>
+  <head>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script type="importmap">
+      {
+	"imports": {
+	  "uuid": "./uuid/index.js",
+	  "@yz-social/kdht": "./kdht/index.js",
+	  "@yz-social/webrtc": "./webrtc/index.js"
+	}
+      }
+    </script>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 20px;
+      }
+      #controls {
+        margin-bottom: 20px;
+      }
+      #status {
+        margin-left: 10px;
+        color: #666;
+      }
+      #status.connected {
+        color: green;
+      }
+      .tooltip {
+        position: absolute;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        border-radius: 4px;
+        font-size: 12px;
+        pointer-events: none;
+      }
+      #chart {
+        border: 1px solid #ccc;
+        display: inline-block;
+      }
+      .node-label {
+        font-size: 11px;
+        fill: #555;
+        paint-order: stroke;
+        stroke: white;
+        stroke-width: 3px;
+        stroke-linejoin: round;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>KDHT Network</h2>
+    <div id="controls">
+      <span id="status">Connecting...</span>
+      <span id="nodeCount"></span>
+    </div>
+    <div id="chart"></div>
+
+    <script type="module">
+      import { v4 as uuidv4 } from 'uuid';
+      import { WebContact, Node } from '@yz-social/kdht';
+      Object.assign(globalThis, { uuidv4, WebContact });
+
+      const bootstrapBase = new URL('/kdht', origin).href;
+      let contact;
+      let updateInterval;
+
+      // Network state accumulated from pub/sub events.
+      // Each entry records the connections most recently reported by that node.
+      const networkMap = new Map(); // sname → { connections: [sname, ...] }
+      const keyCache = new Map(); // name (without S prefix) → BigInt key
+
+      // Node data keyed by sname
+      const nodeData = new Map(); // sname → { sname, key, x, subKeys, dataKeys }
+      let currentLinks = []; // links from last update, accessible to hover handlers
+
+      // Colour assignment for stored keys
+      const subPalette = ['#999', '#bbb', '#777', '#aaa', '#888'];
+      const dataPalette = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#a65628', '#f781bf', '#66c2a5'];
+      const keyColorMap = new Map(); // key string → colour
+      let subColorIdx = 0, dataColorIdx = 0;
+      function keyColor(key, isSub) {
+        const cacheKey = (isSub ? 's:' : 'd:') + key;
+        let color = keyColorMap.get(cacheKey);
+        if (color) return color;
+        if (isSub) {
+          color = subPalette[subColorIdx++ % subPalette.length];
+        } else {
+          color = dataPalette[dataColorIdx++ % dataPalette.length];
+        }
+        keyColorMap.set(cacheKey, color);
+        return color;
+      }
+
+      // Compute a DHT key from a name string, matching Node.key():
+      // SHA-256, truncated to 128 bits.
+      async function nameToKey(name) {
+        const msgBuffer = new TextEncoder().encode(name);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const uint8Array = new Uint8Array(hashBuffer).slice(0, 16);
+        const hex = Array.from(uint8Array).map(b => b.toString(16).padStart(2, '0')).join('');
+        return BigInt('0x' + hex);
+      }
+
+      function getName(sname) {
+        return sname.startsWith('S') ? sname.slice(1) : sname;
+      }
+
+      async function snameToKey(sname) {
+        const name = getName(sname);
+        let key = keyCache.get(name);
+        if (key !== undefined) return key;
+        key = await nameToKey(name);
+        keyCache.set(name, key);
+        return key;
+      }
+
+      // Staleness: NodeRefresh.refreshTimeIntervalMS is 15s, fuzzyInterval
+      // defaults to ~2x that = ~30s.  Start fading after one expected refresh
+      // period with no update; remove completely at twice that.
+      const expectedRefreshMS = 30000;
+      const fadeStartMS = expectedRefreshMS;
+      const fadeOutMS = expectedRefreshMS * 2;
+      let nodeFreshness = new Map(); // sname → lastSeen timestamp
+
+      function freshnessOpacity(sname) {
+        const ls = nodeFreshness.get(sname);
+        if (ls === undefined) return 0;
+        const age = Date.now() - ls;
+        if (age <= fadeStartMS) return 1;
+        if (age >= fadeOutMS) return 0;
+        return 1 - (age - fadeStartMS) / (fadeOutMS - fadeStartMS);
+      }
+      function nodeFillOpacity(sname) { // Separate from freshnessOpacity: controls filled→hollow transition.
+        const ls = nodeFreshness.get(sname);
+        if (ls === undefined) return 0;
+        const age = Date.now() - ls;
+        if (age <= fadeStartMS) return 1;
+        return 0; // Hollow ring once stale, even while still visible.
+      }
+
+      // Handle incoming network statistics events
+      function handleNetworkEvent(storageItem) {
+        const { subject, payload } = storageItem;
+        if (!payload?.connections) return;
+        networkMap.set(subject, { connections: payload.connections, subKeys: payload.subKeys || [], dataKeys: payload.dataKeys || [], lastSeen: Date.now() });
+
+        // Visual pulse on the node whose status we just received
+        nodesGroup.selectAll("circle")
+          .filter(d => d.sname === subject)
+          .transition().duration(150)
+          .attr("r", d => (d.isLocal ? 8 : 6) + 4)
+          .transition().duration(300)
+          .attr("r", d => d.isLocal ? 8 : 6);
+      }
+
+      // D3 setup — wide rectangle for linear address layout
+      const width = 1100;
+      const height = 600;
+      const margin = { top: 30, right: 50, bottom: 150, left: 50 };
+      const lineY = height - margin.bottom - 20; // y of the address-space axis
+      const arcMaxHeight = lineY - margin.top;   // tallest arc reaches top margin
+
+      const maxKey = 1n << 128n;
+
+      // Map a 128-bit key to an x pixel position along the address axis.
+      // Uses the top 52 bits (JS float precision limit) for smooth positioning.
+      function keyToX(key) {
+        const shifted = Number(key >> 76n);
+        const maxShifted = Number(maxKey >> 76n);
+        return margin.left + (shifted / maxShifted) * (width - margin.left - margin.right);
+      }
+
+      // Arc height is proportional to horizontal span between endpoints.
+      // This naturally separates arcs: local connections stay low,
+      // long-range connections arc high.  XOR distance is shown by the label.
+      const axisWidth = width - margin.left - margin.right;
+
+      const svg = d3.select("#chart")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      // Address-space axis line
+      svg.append("line")
+        .attr("x1", margin.left).attr("y1", lineY)
+        .attr("x2", width - margin.right).attr("y2", lineY)
+        .attr("stroke", "#bbb").attr("stroke-width", 1);
+
+      // Axis labels
+      svg.append("text")
+        .attr("x", margin.left).attr("y", lineY + 18)
+        .attr("text-anchor", "start").attr("font-size", "10px").attr("fill", "#999")
+        .text("0x0000...");
+      svg.append("text")
+        .attr("x", width - margin.right).attr("y", lineY + 18)
+        .attr("text-anchor", "end").attr("font-size", "10px").attr("fill", "#999")
+        .text("0xFFFF...");
+      // Midpoint marker (XOR boundary — max distance across this line)
+      const midX = (margin.left + width - margin.right) / 2;
+      svg.append("line")
+        .attr("x1", midX).attr("y1", lineY - 4)
+        .attr("x2", midX).attr("y2", lineY + 4)
+        .attr("stroke", "#ccc").attr("stroke-width", 1);
+      svg.append("text")
+        .attr("x", midX).attr("y", lineY + 18)
+        .attr("text-anchor", "middle").attr("font-size", "10px").attr("fill", "#bbb")
+        .text("0x8000...");
+
+      // Groups layered so nodes render on top of arcs, labels below
+      const arcsGroup = svg.append("g");
+      const arcLabelsGroup = svg.append("g");
+      const nodesGroup = svg.append("g");
+      const storageMarkerGroup = svg.append("g");
+      const labelsGroup = svg.append("g");
+
+      // Tooltip
+      const tooltip = d3.select("body")
+        .append("div")
+        .attr("class", "tooltip")
+        .style("opacity", 0);
+      const chartEl = document.getElementById("chart");
+      function positionTooltip(event) {
+        const chartRight = chartEl.getBoundingClientRect().right + window.scrollX;
+        const tooltipWidth = tooltip.node().offsetWidth;
+        const left = Math.min(event.pageX + 10, chartRight - tooltipWidth);
+        tooltip.style("left", left + "px").style("top", (event.pageY + 25) + "px");
+      }
+
+      // Color based on node type
+      const nodeColor = sname => sname.startsWith('S') ? 'black' : '#cc5500';
+
+      // --- Hover highlight logic (extracted so it can be re-applied after redraw) ---
+      let hoveredSname = null;
+      let hoveredStorageKey = null;
+
+      function applyHighlight() {
+        if (!hoveredSname) return;
+        const reportedConns = new Set(networkMap.get(hoveredSname)?.connections || []);
+        const isNodeLink = l =>
+          (l.source.sname === hoveredSname && reportedConns.has(l.target.sname)) ||
+          (l.target.sname === hoveredSname && reportedConns.has(l.source.sname));
+
+        const nodeLinks = currentLinks.filter(isNodeLink);
+        if (!nodeLinks.length) return;
+
+        // Dim all arcs, then highlight this node's links
+        arcsGroup.selectAll("path")
+          .attr("stroke", "#ddd").attr("opacity", 0.1).attr("stroke-width", 1);
+        arcsGroup.selectAll("path")
+          .filter(isNodeLink)
+          .attr("stroke", l => {
+            // Color by XOR distance using fractional log2: red = close, blue = far.
+            // sqrt spreads out the blue end so e.g. 0x4... and 0x7... are distinguishable.
+            const t = Math.pow(Math.max(0, Math.min(1, (l.commonPrefix + 1) / 8)), 0.5);
+            return d3.interpolateRgb('blue', 'red')(t);
+          })
+          .attr("opacity", 0.85)
+          .attr("stroke-width", 2.5);
+
+        // Add common-bits labels (128 - differingBits) at each arc apex
+        arcLabelsGroup.selectAll("*").remove();
+        for (const l of nodeLinks) {
+          const commonBits = l.commonPrefix;
+          if (!commonBits) continue;
+          arcLabelsGroup.append("text")
+            .attr("x", l.labelX)
+            .attr("y", l.labelY)
+            .attr("text-anchor", "middle")
+            .attr("font-size", "10px")
+            .attr("font-weight", "bold")
+            .attr("fill", "#333")
+            .attr("paint-order", "stroke")
+            .attr("stroke", "white")
+            .attr("stroke-width", "3px")
+            .attr("stroke-linejoin", "round")
+            .text(commonBits);
+        }
+
+        // Raise hovered node's label to top
+        labelsGroup.selectAll(".node-label")
+          .filter(d => d.sname === hoveredSname)
+          .raise();
+      }
+
+      function clearHighlight() {
+        hoveredSname = null;
+        arcsGroup.selectAll("path")
+          .attr("stroke", "#999")
+          .attr("stroke-width", 1.2)
+          .attr("opacity", d => {
+            const f = Math.min(freshnessOpacity(d.source.sname), freshnessOpacity(d.target.sname));
+            return 0.3 * f;
+          });
+        arcLabelsGroup.selectAll("*").remove();
+      }
+
+      async function updateVisualization() {
+        if (!contact || !contact.node) return;
+
+        const now = Date.now();
+
+        // Include local node's own connections (always fresh, no pub/sub delay)
+        const localSname = contact.node.sname;
+        const localConnections = contact.node.contacts
+          .filter(c => c.connection)
+          .map(c => c.sname);
+        const localSubKeys = [];
+        const localDataKeys = [];
+        for (const [k, bag] of contact.host.storage) {
+          const ks = k.toString();
+          const types = Object.keys(bag.types);
+          if (types.some(t => t === 'sub' || t === 'event' || t === 'ext')) localSubKeys.push(ks);
+          const dataTypes = types.filter(t => t === 'raw' || t === 'pub');
+          if (dataTypes.length) localDataKeys.push({ key: ks, types: dataTypes });
+        }
+        networkMap.set(localSname, { connections: localConnections, subKeys: localSubKeys, dataKeys: localDataKeys, lastSeen: now });
+
+        // Prune entries that haven't been refreshed within the fade-out window
+        for (const [sname, data] of networkMap) {
+          if (now - data.lastSeen > fadeOutMS) networkMap.delete(sname);
+        }
+
+        // Compute per-node freshness: most recent lastSeen from any
+        // networkMap entry that references this node (as publisher or target)
+        nodeFreshness = new Map();
+        for (const [sname, data] of networkMap) {
+          const ls = data.lastSeen;
+          if (!nodeFreshness.has(sname) || ls > nodeFreshness.get(sname))
+            nodeFreshness.set(sname, ls);
+          for (const conn of data.connections) {
+            if (!nodeFreshness.has(conn) || ls > nodeFreshness.get(conn))
+              nodeFreshness.set(conn, ls);
+          }
+        }
+
+        // Collect all unique snames (both publishers and their connection targets)
+        const allSnames = new Set();
+        for (const [sname, data] of networkMap) {
+          allSnames.add(sname);
+          data.connections.forEach(c => allSnames.add(c));
+        }
+
+        // Add new nodes
+        for (const sname of allSnames) {
+          if (!nodeData.has(sname)) {
+            const key = await snameToKey(sname);
+            nodeData.set(sname, { sname, key, x: keyToX(key) });
+          }
+          const nd = nodeData.get(sname);
+          nd.isLocal = (sname === localSname);
+          const entry = networkMap.get(sname);
+          nd.subKeys = entry?.subKeys || [];
+          nd.dataKeys = entry?.dataKeys || [];
+        }
+
+        // Remove departed nodes
+        for (const sname of nodeData.keys()) {
+          if (!allSnames.has(sname)) nodeData.delete(sname);
+        }
+
+        const nodes = Array.from(nodeData.values());
+
+        // Collect unique links from all reported connections
+        const linkSet = new Set();
+        const links = [];
+        for (const [sname, data] of networkMap) {
+          for (const target of data.connections) {
+            const pair = [sname, target].sort().join('|');
+            if (linkSet.has(pair)) continue;
+            linkSet.add(pair);
+            const s = nodeData.get(sname);
+            const t = nodeData.get(target);
+            if (s && t) {
+              const distance = s.key ^ t.key;
+              const commonPrefix = Node.commonPrefixLength(distance);
+              const span = Math.abs(s.x - t.x);
+              const h = Math.max(15, (span / axisWidth) * arcMaxHeight);
+              const mx = (s.x + t.x) / 2;
+              // Control point at 2*h so the bezier apex (at t=0.5) is at height h
+              const controlY = lineY - 2 * h;
+              links.push({
+                id: pair, source: s, target: t,
+                commonPrefix, arcHeight: h,
+                path: `M ${s.x},${lineY} Q ${mx},${controlY} ${t.x},${lineY}`,
+                labelX: mx,
+                labelY: lineY - h - 4
+              });
+            }
+          }
+        }
+
+        currentLinks = links;
+
+        document.getElementById("nodeCount").textContent =
+          `(${nodes.length} nodes, ${links.length} links)`;
+
+        // --- Update arcs (gray, faded by staleness; colored on node hover) ---
+        const arcJoin = arcsGroup.selectAll("path").data(links, d => d.id);
+        arcJoin.exit().remove();
+        arcJoin.enter()
+          .append("path")
+          .attr("fill", "none")
+          .merge(arcJoin)
+          .attr("d", d => d.path)
+          .attr("stroke", "#999")
+          .attr("stroke-width", 1.2)
+          .attr("opacity", d => {
+            const f = Math.min(freshnessOpacity(d.source.sname), freshnessOpacity(d.target.sname));
+            return 0.3 * f;
+          });
+
+        // --- Update nodes ---
+        const nodeJoin = nodesGroup.selectAll("circle").data(nodes, d => d.sname);
+        nodeJoin.exit().remove();
+        nodeJoin.enter()
+          .append("circle")
+          .attr("cy", lineY)
+          .on("mouseover", (event, d) => {
+            tooltip.transition().duration(200).style("opacity", 0.9);
+            const conns = networkMap.get(d.sname);
+            const connCount = conns ? conns.connections.length : '?';
+            const keyHex = d.key.toString(16).padStart(32, '0');
+            tooltip.html(
+              `<strong>${d.sname}${d.isLocal ? ' (self)' : ''}</strong><br/>` +
+              `Key: ${keyHex}<br/>` +
+              `Connections: ${connCount}`);
+            positionTooltip(event);
+
+            hoveredSname = d.sname;
+            applyHighlight(); // also raises hovered label
+          })
+          .on("mouseout", () => {
+            tooltip.transition().duration(500).style("opacity", 0);
+            clearHighlight();
+          })
+          .merge(nodeJoin)
+          .attr("cx", d => d.x)
+          .attr("r", d => d.isLocal ? 8 : 6)
+          .attr("fill", d => d.isLocal ? 'red' : nodeColor(d.sname))
+          .attr("fill-opacity", d => d.isLocal ? 1 : nodeFillOpacity(d.sname))
+          .attr("stroke", d => d.isLocal ? 'darkred' : nodeColor(d.sname))
+          .attr("stroke-width", 2)
+          .attr("opacity", d => freshnessOpacity(d.sname));
+
+        // --- Update node labels (vertical text below the axis) ---
+        const labelJoin = labelsGroup.selectAll("text").data(nodes, d => d.sname);
+        labelJoin.exit().remove();
+        labelJoin.enter()
+          .append("text")
+          .attr("class", "node-label")
+          .attr("text-anchor", "start")
+          .attr("dominant-baseline", "central")
+          .on("mouseover", (event, d) => {
+            tooltip.transition().duration(200).style("opacity", 0.9);
+            const conns = networkMap.get(d.sname);
+            const connCount = conns ? conns.connections.length : '?';
+            const keyHex = d.key.toString(16).padStart(32, '0');
+            tooltip.html(
+              `<strong>${d.sname}${d.isLocal ? ' (self)' : ''}</strong><br/>` +
+              `Key: ${keyHex}<br/>` +
+              `Connections: ${connCount}`);
+            positionTooltip(event);
+            hoveredSname = d.sname;
+            applyHighlight();
+          })
+          .on("mouseout", () => {
+            tooltip.transition().duration(500).style("opacity", 0);
+            clearHighlight();
+          })
+          .merge(labelJoin)
+          .attr("transform", d => `translate(${d.x}, ${lineY + 20}) rotate(90)`)
+          .attr("opacity", d => freshnessOpacity(d.sname))
+          .text(d => d.sname.slice(0, 12));
+
+        // --- Update storage markers (coloured dots above nodes) ---
+        // Build flat array of {sname, key, isSub, index, x} for all stored keys on all nodes.
+        // index is position in the stack above the node (data keys first, then sub keys).
+        const dataMarkers = [];
+        const subMarkers = [];
+        for (const nd of nodes) {
+          let idx = 0;
+          for (const key of nd.subKeys) {
+            subMarkers.push({ id: nd.sname + '|s|' + key, sname: nd.sname, key, isSub: true, index: idx++, x: nd.x });
+          }
+          for (const entry of nd.dataKeys) {
+            const { key, types } = typeof entry === 'string' ? { key: entry, types: [] } : entry;
+            dataMarkers.push({ id: nd.sname + '|d|' + key, sname: nd.sname, key, types, isSub: false, index: idx++, x: nd.x });
+          }
+        }
+        const markerRadius = 4;
+        const markerSpacing = markerRadius * 2 + 2;
+        const markerBaseY = lineY - 16;
+
+        function storageMarkerHover(event, d) {
+          hoveredStorageKey = d.key;
+          storageMarkerGroup.selectAll("circle, rect")
+            .attr("opacity", m => m.key === d.key ? 1 : 0.15);
+          tooltip.transition().duration(200).style("opacity", 0.9);
+          let typeLabel;
+          if (d.isSub) {
+            typeLabel = 'Subscription';
+          } else {
+            const types = d.types || [];
+            const hasPub = types.includes('pub'), hasRaw = types.includes('raw');
+            typeLabel = hasPub && hasRaw ? 'Stored + published value'
+              : hasPub ? 'Published value'
+              : hasRaw ? 'Stored value'
+              : 'Data';
+          }
+          tooltip.html(
+            `<strong>${typeLabel}</strong><br/>` +
+            `${d.key.slice(0, 20)}...`);
+          positionTooltip(event);
+        }
+        function storageMarkerOut() {
+          hoveredStorageKey = null;
+          storageMarkerGroup.selectAll("circle, rect")
+            .attr("opacity", m => freshnessOpacity(m.sname));
+          tooltip.transition().duration(500).style("opacity", 0);
+        }
+
+        // Data markers (circles)
+        const dataJoin = storageMarkerGroup.selectAll("circle").data(dataMarkers, d => d.id);
+        dataJoin.exit().remove();
+        dataJoin.enter()
+          .append("circle")
+          .on("mouseover", storageMarkerHover)
+          .on("mouseout", storageMarkerOut)
+          .merge(dataJoin)
+          .attr("cx", d => d.x)
+          .attr("cy", d => markerBaseY - d.index * markerSpacing)
+          .attr("r", markerRadius)
+          .attr("fill", d => keyColor(d.key, false))
+          .attr("stroke", d => keyColor(d.key, false))
+          .attr("stroke-width", 0.5)
+          .attr("opacity", d => hoveredStorageKey ? (d.key === hoveredStorageKey ? 1 : 0.15) : freshnessOpacity(d.sname));
+
+        // Sub markers (squares)
+        const subSide = markerRadius * 2;
+        const subJoin = storageMarkerGroup.selectAll("rect").data(subMarkers, d => d.id);
+        subJoin.exit().remove();
+        subJoin.enter()
+          .append("rect")
+          .on("mouseover", storageMarkerHover)
+          .on("mouseout", storageMarkerOut)
+          .merge(subJoin)
+          .attr("x", d => d.x - markerRadius)
+          .attr("y", d => markerBaseY - d.index * markerSpacing - markerRadius)
+          .attr("width", subSide)
+          .attr("height", subSide)
+          .attr("fill", "transparent")
+          .attr("stroke", d => keyColor(d.key, true))
+          .attr("stroke-width", 1.5)
+          .attr("opacity", d => hoveredStorageKey ? (d.key === hoveredStorageKey ? 1 : 0.15) : freshnessOpacity(d.sname));
+
+        // Re-apply hover highlight if a node is being hovered
+        // (so data updates don't flash away the highlight)
+        applyHighlight();
+      }
+
+      async function connect() {
+        document.getElementById("status").textContent = "Connecting...";
+        document.getElementById("status").className = "";
+
+        try {
+          const name = uuidv4();
+          contact = globalThis.contact = await WebContact.create({ name });
+          const bootstrapName = await contact.fetchBootstrap(bootstrapBase);
+          console.log('connecting to', bootstrapName);
+          const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
+          await contact.join(bootstrapContact);
+
+          // Subscribe to network statistics events from all nodes
+          contact.host.subscribe({
+            eventName: 'network statistics',
+            handler: handleNetworkEvent
+          });
+
+          document.getElementById("status").textContent = "Connected";
+          document.getElementById("status").className = "connected";
+
+          updateVisualization();
+          updateInterval = setInterval(updateVisualization, 2000);
+        } catch (err) {
+          document.getElementById("status").textContent = "Connection failed: " + err.message;
+          console.error(err);
+        }
+      }
+
+      function disconnect() {
+        if (updateInterval) {
+          clearInterval(updateInterval);
+          updateInterval = null;
+        }
+        if (contact) {
+          contact.disconnect();
+        }
+        networkMap.clear();
+        nodeData.clear();
+        document.getElementById("status").textContent = "Disconnected";
+        document.getElementById("status").className = "";
+      }
+
+      // Handle visibility changes
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          disconnect();
+        } else {
+          connect();
+        }
+      });
+
+      // Initial connection
+      await connect();
+    </script>
+  </body>
+</html>

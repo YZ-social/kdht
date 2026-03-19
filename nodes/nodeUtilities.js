@@ -54,12 +54,23 @@ export class NodeUtilities {
   async publishStatistics(triggerName) { // Publish totals.
     const key = this.constructor.statisticsPubKey ||= await this.constructor.key('network statistics');
     return this.contact.publish({key, // contact.publish doesn't fire until we are attached.
-				 subject: this.name,
+				 subject: this.sname,
 				 payload: this.getStatisticsJSON()});
   }
   getStatisticsJSON() { // Answer the stastics we publish, including a list of live connections snames.
     const {statistics} = this;
     statistics.connections = this.contacts.map(c => c.connection && c.sname).filter(n => n);
+    const subKeys = [];
+    const dataKeys = [];
+    for (const [k, bag] of this.storage) {
+      const ks = k.toString();
+      const types = Object.keys(bag.types);
+      if (types.some(t => t === 'sub' || t === 'event' || t === 'ext')) subKeys.push(ks);
+      const dataTypes = types.filter(t => t === 'raw' || t === 'pub');
+      if (dataTypes.length) dataKeys.push({ key: ks, types: dataTypes });
+    }
+    statistics.subKeys = subKeys;
+    statistics.dataKeys = dataKeys;
     return statistics;
   }
 
