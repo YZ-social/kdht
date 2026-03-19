@@ -107,7 +107,7 @@ export class Contact {
     const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.flog(url, e));
     if (!this.checkResponse(response)) { // The portal webserver is not available. Stop trying to reach this node.
       // TODO: maintain a well-known list of portal servers to try, but even then, do not try to reach nodes that are on an unreachable server.
-      this.host.removeContact(this);
+      this.host.removeContact(this, false);
       return '';
     }
     return await response.json();

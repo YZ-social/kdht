@@ -108,7 +108,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       timeout = setTimeout(async () => {
 	if (this.host.isStopped()) return expired(null);
 	onclose();
-	this.host.removeContact(this); // fixme?
+	this.host.removeContact(this, false);
 	return expired(null);
       }, timeoutMS);
     });
