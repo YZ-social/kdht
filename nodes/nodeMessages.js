@@ -5,6 +5,7 @@ import { Contact } from '../contacts/contact.js';
 // These are not directly invoked by a Node on itself, but rather on other nodes
 // through Contact sendRPC.
 export class NodeMessages extends NodeContacts {
+  pendingForwards = 0; // H3: tracks concurrent recursive signal forwarding operations through this node.
   ping(key) { // Respond with 'pong'. (RPC mechanism doesn't call unless connected.)
     return 'pong'; // Answer something truthy. See isValueResult.
   }
@@ -49,8 +50,19 @@ export class NodeMessages extends NodeContacts {
       return {forwardingExclusions}; // Subtle: If it fails, return a definitive failure instead of just null.
     }
 
-    // Forward recursively.
-    if (forwardingExclusions) return await this.recursiveSignals(key, signals, forwardingExclusions, forwardingExpiration, targetNameForDebugging);
+    // Forward recursively, if we have capacity (H3: limit aggregate forwarding load).
+    if (forwardingExclusions) {
+      if (this.pendingForwards >= this.constructor.alpha) {
+        this.log('at forwarding capacity, declining recursive forward towards', targetNameForDebugging);
+        return {forwardingExclusions};
+      }
+      this.pendingForwards++;
+      try {
+        return await this.recursiveSignals(key, signals, forwardingExclusions, forwardingExpiration, targetNameForDebugging);
+      } finally {
+        this.pendingForwards--;
+      }
+    }
 
     // We were a sponsor but for a contact has since disconnected. We do not know if they are still connected to others.
     //this.flog('\n*** sponsored disconnected ***');
