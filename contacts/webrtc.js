@@ -15,13 +15,21 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   static generateName() { return uuidv4(); }
 
-  async fetchSignals(url, signalsToSend) {
+  static maxFetchRetries = 8;
+  async fetchSignals(url, signalsToSend, retryCount = 0) {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
       body: JSON.stringify(signalsToSend)
     }).catch(e => this.host.flog(e));
-    if (!this.checkResponse(response)) return this.fetchSignals(url, signalsToSend);
+    if (!this.checkResponse(response)) {
+      if (retryCount >= this.constructor.maxFetchRetries) {
+        this.host.flog('giving up on fetchSignals to', url, 'after', retryCount, 'retries');
+        return this.checkSignals(null);
+      }
+      await Node.delay(Math.min(1000 * (1 << retryCount), 30000));
+      return this.fetchSignals(url, signalsToSend, retryCount + 1);
+    }
     return this.checkSignals(await response?.json());
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
