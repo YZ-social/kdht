@@ -141,11 +141,9 @@ export class Contact {
     if (connection) return this;
     const start = Date.now();
     this.connection =
-      //this.host.contact.connectionQueue = this.host.contact.connectionQueue.then(() =>
-         this.createConnection();
-      //);
-    // Let the home contact know about whether there are any connections among all its contacts. I.e., is it online?
-    this.host.contact.connection ||= this.connection;
+      this.host.contact.connectionQueue = this.host.contact.connectionQueue.then(() =>
+         this.createConnection()
+      );
     await this.connection;
     this.noteConnection(start);
     return this.connection;

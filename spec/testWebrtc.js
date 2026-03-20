@@ -18,7 +18,7 @@ describe("DHT webrtc write/read", function () {
   const nPortals = Math.max(2, logicalCores - 1);
   const thrash = true;
   const rude = thrash && false;
-  const nBots = Math.max(2, ((thrash || rude) ? 0.5 : 1) * logicalCores);
+  const nBots = Math.max(2, ((thrash || rude) ? 1 : 2) * logicalCores);
   const fixedSpacing  = 2; // Between portals.
   const variableSpacing = 5; // Additional random between portals.
   const nWrites = 40;
