@@ -12,7 +12,6 @@ import { Node } from '../index.js';
 
 const logicalCores = availableParallelism();
 
-// TODO: Allow a remote portal to be specified that this portal will hook with, forming one big network.
 const argv = yargs(hideBin(process.argv))
       .usage(`Start an http post server through which nodes can connect to set of nPortals stable nodes. Model description "${cpus()[0].model}", ${logicalCores} logical cores.`)
       .option('nPortals', {

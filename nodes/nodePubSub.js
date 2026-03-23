@@ -17,7 +17,7 @@ export class NodePubSub extends NodeProbe {
     if (handler) this.eventHandlers.set(key, handler);
     else {
       this.ourEventData.delete(key);
-      this.eventHandlers.delete(eventName);
+      this.eventHandlers.delete(key);
     }
 
     if (renewal) {

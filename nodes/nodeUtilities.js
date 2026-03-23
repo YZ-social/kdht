@@ -16,7 +16,7 @@ export class NodeUtilities {
   get sname() { // The home contact sname, or just name if no contact
     return this.contact?.sname || this.name;
   }
-  log(...rest) { if (this.debug) this.flog(new Date(), this.sname, ...rest); }
+  log(...rest) { if (this.debug) this.flog(...rest); }
   ilog(...rest) { if (this.info || this.debug) this.flog(...rest); }
   flog(...rest) { console.log(new Date().toISOString(), this.sname, ...rest); }
   static assert(ok, ...rest) { // If !ok, log rests and exit.
