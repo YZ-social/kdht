@@ -198,13 +198,13 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       const numChunks = Math.ceil(payload.length / size);
       const id = this.constructor.fragmentId++;
       const meta = ['fragments', id, numChunks];
-      console.log(`Fragmenting message ${id} into ${numChunks} chunks.`, meta);
+      this.host.ilog(`Fragmenting large message ${id} into ${numChunks} chunks.`, meta);
       channel.send(JSON.stringify(meta));
       // Optimization opportunity: rely on messages being ordered and skip redundant info. Is it worth it?
       for (let i = 0, o = 0; i < numChunks; ++i, o += size) {
 	const frag = ['frag', id, i, payload.substr(o, size)];
 	const sub = JSON.stringify(frag);
-	this.host.ilog('send', sub.slice(0, 200), 'to', this.name);
+	//this.host.ilog('send', sub.slice(0, 200), 'to', this.name);
 	channel.send(sub);
       }
       return numChunks;
@@ -222,16 +222,16 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     case 'fragments':
       const [id, numChunks] = data;
       this.pendingFragments[id] = {remaining: numChunks, message: Array(numChunks)};
-      console.log('receiving', this.pendingFragments[id]);
+      //console.log('receiving', this.pendingFragments[id]);
       break;
     case 'frag':
       const [fid, i, fragment] = data;
       let frag = this.pendingFragments[fid]; // We are relying on fragment message coming first.
       frag.message[i] = fragment;
-      console.log('got fragment', i, 'of', fid, 'size', fragment.length, fragment.slice(0, 200));
+      //console.log('got fragment', i, 'of', fid, 'size', fragment.length, fragment.slice(0, 200));
       if (0 !== --frag.remaining) return;
       const combined = frag.message.join('');
-      console.log('dispatching', combined.slice(0, 200), '...', combined.slice(-200));
+      this.host.ilog('dispatching large message', combined.slice(0, 200), '...', combined.slice(-200));
       delete this.pendingFragments[fid];
       await this.receiveWebRTC(combined);
       break;
