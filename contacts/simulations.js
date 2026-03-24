@@ -90,7 +90,7 @@ export class SimulatedConnectionContact extends SimulatedContact {
     if (!farContactForUs) return await Node.delay(this.constructor.maxPingMs, null);
     // Use delay from the destination node if set, representing a laggy VM/connection
     const delayMs = this.node.delayMs;
-    const responsePromise = Promise.race([this.getResponsePromise(messageTag), this.rpcTimeout(method, ...rest)]);
+    const responsePromise = Promise.race([this.getResponsePromise(messageTag), this.rpcTimeout(method, 1, ...rest)]);
     this.constructor.ensureTime(async () => (await farContactForUs).receiveRPC(messageTag, method, farContactForUs, ...rest), delayMs);
     return await responsePromise;
   }

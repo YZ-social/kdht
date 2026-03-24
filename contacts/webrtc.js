@@ -71,8 +71,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const onmessage = event => this.receiveWebRTC(event.data);
     const ondatachannelclose = async normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed to', this.sname, 'normal:', !!normalClosure);
-      this.node.isRunning = false; // Just in case something is still depending on it.
-      this.node.stopRefresh();     // Ditto.
       if (this.webrtc && !this.host.isStopped()) {
 	// If called by timeout, normalClosure is falsy.
 	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Removing contact.');
@@ -80,7 +78,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       }
       this.unsafeData?.removeEventListener('close', ondatachannelclose);
       this.unsafeData?.removeEventListener('message', onmessage);
-      await this.webrtc.close();
+      await this.webrtc?.close();
       webrtc.closed = this.webrtc = this.connection = this.unsafeData = null;
       resolve(null); // closed promise
       if (!this.anyOpen) this.host.contact.detached(!this.host.isStopped() ? this.host.contact : false);
@@ -118,24 +116,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     return Promise.race([channelPromise, timerPromise]);
   }
 
-  async send(message) { // Promise to send through previously opened connection promise.
-    let channel = await this.connection;
-    // null channel implies no connection
-    if (!channel) this.host.ilog('Tried to send without connection on', this.sname);
-    if (!channel) return;
-    if (channel.readyState !== 'open') {
-      this.host.ilog('Tried to send on', channel.readyState, 'channel on', this.sname, this.host.isRunning, this.host.isStopped());
-      this.bye(); // Likely an impolite disconnect.  Count this contact as dead.
-      return;
-    }
-    try {
-      const json = JSON.stringify(message);
-      this.host.ilog('send', json.length, 'to', this.name);
-      channel.send(json);
-    } catch (e) { // Some webrtc can change readyState in background.
-      this.host.log(e);
-    }
-  }
   synchronousSend(message) { // this.send awaits channel open promise. This is if we know it has been opened.
     if (this.unsafeData?.readyState !== 'open') return; // But it may have since been closed.
     this.host.log('sending', message, 'to', this.sname, this.unsafeData?.readyState);
@@ -178,14 +158,14 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async transmitRPC(messageTag, method, sender, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
     const responsePromise = this.getResponsePromise(messageTag);
-    const timeout = this.rpcTimeout(method, ...rest);
     const closed = this.closed;
 
+    const nChunks = await this.send([messageTag, method, sender, ...rest]);
+    const timeout = this.rpcTimeout(method, nChunks, ...rest);
     let timeoutDone = false, closedDone = false;
     timeout.then(() => timeoutDone = true);
     closed.then(() => closedDone = true);
 
-    await this.send([messageTag, method, sender, ...rest]);
     const result = await Promise.race([responsePromise, timeout, closed]);
     if (!result) {
       this.host.flog('failed to send', method, 'to', this.isRunning ? 'running' : 'closed', this.sname, 'on behalf of', sender, 'because:', timeoutDone ? 'TIMEOUT' : (closedDone ? 'CLOSED' : 'unknown'));
@@ -193,19 +173,78 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     return result;
   }
 
+  static maxMessageSize = 18e3; // A bit less than 16 * 1024.
+  static fragmentId = 0;
+  pendingFragments = {};
+  async send(message) { // Promise to send through previously opened connection promise and resolve to the number of chunks sent.
+    let channel = await this.connection;
+    // null channel implies no connection
+    if (!channel) this.host.ilog('Tried to send without connection on', this.sname);
+    if (!channel) return 0;
+    if (channel.readyState !== 'open') {
+      this.host.ilog('Tried to send on', channel.readyState, 'channel on', this.sname, this.host.isRunning, this.host.isStopped());
+      this.bye(); // Likely an impolite disconnect.  Count this contact as dead.
+      return 0;
+    }
+    try {
+      const payload = JSON.stringify(message);
+      const size = this.constructor.maxMessageSize;
+      if (payload.length < size) {
+	channel.send(payload);
+	return 1;
+      }
+      // break up long messages. (As a practical matter, 16 KiB is the longest that can reliably be sent across different wrtc implementations.)
+      // See https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Using_data_channels#concerns_with_large_messages
+      const numChunks = Math.ceil(payload.length / size);
+      const id = this.constructor.fragmentId++;
+      const meta = ['fragments', id, numChunks];
+      console.log(`Fragmenting message ${id} into ${numChunks} chunks.`, meta);
+      channel.send(JSON.stringify(meta));
+      // Optimization opportunity: rely on messages being ordered and skip redundant info. Is it worth it?
+      for (let i = 0, o = 0; i < numChunks; ++i, o += size) {
+	const frag = ['frag', id, i, payload.substr(o, size)];
+	const sub = JSON.stringify(frag);
+	this.host.ilog('send', sub.slice(0, 200), 'to', this.name);
+	channel.send(sub);
+      }
+      return numChunks;
+    } catch (e) { // Some webrtc can change readyState in background.
+      this.host.log(e);
+      return 0;
+    }
+  }
   async receiveWebRTC(dataString) { // Handle receipt of a WebRTC data channel message that was sent to this contact.
     // The message could the start of an RPC sent from the peer, or it could be a response to an RPC that we made.
     // As we do the latter, we generate and note (in transmitRPC) a message tag included in the message.
     // If we find that in our messageResolvers tags, then the message is a response.
     const [messageTag, ...data] = JSON.parse(dataString);
-    await this.receiveRPC(messageTag, ...data);
+    switch (messageTag) {
+    case 'fragments':
+      const [id, numChunks] = data;
+      this.pendingFragments[id] = {remaining: numChunks, message: Array(numChunks)};
+      console.log('receiving', this.pendingFragments[id]);
+      break;
+    case 'frag':
+      const [fid, i, fragment] = data;
+      let frag = this.pendingFragments[fid]; // We are relying on fragment message coming first.
+      frag.message[i] = fragment;
+      console.log('got fragment', i, 'of', fid, 'size', fragment.length, fragment.slice(0, 200));
+      if (0 !== --frag.remaining) return;
+      const combined = frag.message.join('');
+      console.log('dispatching', combined.slice(0, 200), '...', combined.slice(-200));
+      delete this.pendingFragments[fid];
+      await this.receiveWebRTC(combined);
+      break;
+    default:
+      await this.receiveRPC(messageTag, ...data);
+    }
   }
   async disconnectTransport(andNotify = true) {
     if (!this.connection) return;
     const webrtc = this.webrtc;
     const dataChannel = this.unsafeData;
     super.disconnectTransport(andNotify);
-    this.connection = null;
+    this.connection = this.webrtc = null;
     dataChannel?.close();
     await webrtc?.close();
   }

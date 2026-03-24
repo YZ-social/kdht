@@ -115,7 +115,7 @@ export class Node extends NodePubSub {
       this.flog(`storeValue(${targetKey}, ${value}): stored to ${storedCount}/${k} nodes${storedTo.length ? ': ' + storedTo.join(', ') : ''}${reason}`);
     }
     if (!storedTo.includes(this.name) && this.storage.has(targetKey)) {
-      this.ilog('is now too distant from', targetKey, 'to store', value);
+      this.ilog('is now too distant from', targetKey, 'to store', value.map(item => item.type));
       this.storage.delete(targetKey);
     }
     return k - remaining;
