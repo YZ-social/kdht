@@ -96,7 +96,7 @@ SubStorageItem.register();
 
 export class PubStorageItem extends StorageItem { // A published datum.
   static type = 'pub';
-  static expiration = 10 * 60e3; // 10 minutes
+  static expiration = 24 * 60 * 60e3; // 24 hours
   matchingExtension(storageBag) { // Extention matching this publication, if any.
     return storageBag.types.ext?.[this.subject];
   }
@@ -128,7 +128,7 @@ PubStorageItem.register();
 export class ExtStorageItem extends StorageItem { // Extended expiration on a published item.
   // Signed data just like 'pub' and 'sub', but typically by a different owner than the 'pub'.
   static type = 'ext';
-  static expiration = PubStorageItem.expiration;
+  static expiration = 10 * 60e3; // 10 minutes
   matchingPublication(storageBag) { // Publication matching this extension, if any.
     return storageBag.types.pub?.[this.subject];
   }
