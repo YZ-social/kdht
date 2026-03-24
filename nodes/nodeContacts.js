@@ -90,7 +90,7 @@ export class NodeContacts extends NodeConnections {
       delete this.contactDictionary[contact.name];
     } else {
       contact.node.isRunning = false;
-      setTimeout(() => delete this.contactDictionary[contact.name], this.refreshTimeIntervalMS/2);
+      contact.expiration = setTimeout(() => delete this.contactDictionary[contact.name], this.refreshTimeIntervalMS/2);
     }
     const key = contact.key;
     if (this.removeLooseContact(key)) return null;
@@ -99,6 +99,9 @@ export class NodeContacts extends NodeConnections {
     // Host might not yet have added node or anyone else as contact for that bucket yet, so maybe no bucket.
     // [st]: TODO: since removeKey defaults to deleteIfEmpty, the returned bucket may have been removed from the routing table.  do all callers handle that appropriately?
     return bucket?.removeKey(key) ? bucket : null;
+  }
+  clearContactDictionaryExpirations() {
+    Object.values(this.contactDictionary).forEach(contact => clearTimeout(contact.expiration));
   }
   addToRoutingTable(contact) { // Promise contact, and add it to the routing table if room.
     if (contact.key === this.key) return null; // Do not add self.

@@ -2,7 +2,11 @@ import { NodeProbe } from './nodeProbe.js';
 import { StorageItem, StorageBag } from './storageBag.js';
 
 export class NodePubSub extends NodeProbe {
-  eventHandlers = new Map(); // key => function(key, StorageItem)
+  eventHandlers = new Map(); // key => function(key, StorageItem));
+  renewals = new Map(); // key => timer
+  clearRenewals() {
+    this.storage.values().forEach(bag => clearTimeout(bag.timer));
+  }
   async subscribe({eventName, key = NodeProbe.key(eventName), handler, expiration = SubStorageItem.expiration, autoRenewal = false, ...rest}) {
     // Subscribe to events at key, which can be specified by name or directly.
     // Cancel by specifying same subject as before, and null payload.
@@ -18,11 +22,13 @@ export class NodePubSub extends NodeProbe {
     else {
       this.ourEventData.delete(key);
       this.eventHandlers.delete(key);
+      this.renewals.delete(key);
     }
 
     if (renewal) {
-	setTimeout(() => this.eventHandlers.has(key) && // i.e., not since cancelled
-		   this.subscribe({...rest, eventName, key, handler, expiration, autoRenewal}), renewal);
+      this.renewals.set(key,
+			setTimeout(() => this.eventHandlers.has(key) && // i.e., not since cancelled
+				   this.subscribe({...rest, eventName, key, handler, expiration, autoRenewal}), renewal));
     }
     return await this.storeValue(key, [{...rest, type: 'sub', subject, payload, issuedTime, expiration}]);
   }

@@ -79,6 +79,9 @@ export class StorageBag {
     if (!node || Object.keys(this.types).length) return;
     node.storage.delete(key);
   }
+  clearStorageExpirations() {
+    Object.values(this.types).forEach(type => Object.values(type).forEach(item => item.clearStorageExpiration()));
+  }
 }
 
 // Example merge rules:
@@ -117,15 +120,15 @@ export class StorageItem {
   }
   merge1(now, bag, node, key) { // Add this into subjects if allowed and return this, else null.
     const {type, subject, payload, issuedTime, expiration, debug} = this;
-    let {issuedTime:existingTime = 0, timer} = bag.types[type]?.[subject] || {};
+    let {issuedTime:existingTime = 0} = bag.types[type]?.[subject] || {};
 
     const allowed = this.allowedTime(existingTime, now, issuedTime);
-    if (debug) node?.flog('merging', {type, key, subject, existingTime, timer, issuedTime, now, expiration,
+    if (debug) node?.flog('merging', {type, key, subject, existingTime, issuedTime, now, expiration,
 				      staticExpiration: this.constructor.expiration,
 				      isFuture: issuedTime > now, isEarlier: issuedTime <= existingTime, allowed, self:this});
     if (!allowed) return null;
 
-    this.resetTimer({now, bag, node, key, timer});
+    this.resetTimer({now, bag, node, key});
 
     const subjects = bag.types[type] ||= {};
     subjects[subject] = this;
@@ -144,7 +147,11 @@ export class StorageItem {
     clearTimeout(timer);
     this.timer = timeout < Infinity && setTimeout(() => this.delete(bag, node, key), timeout);
   }
+  clearStorageExpiration() {
+    clearTimeout(this.timer);
+  }
   delete(bag, node, key, type = this.type, subject = this.subject) {
+    this.clearStorageExpiration();
     bag.delete(node, key, type, subject);
   }
 }

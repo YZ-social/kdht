@@ -12,10 +12,10 @@ export class NodeRefresh extends NodeKeys {
   stopRefresh() { // Stop repeat timeers in this instance.
     this.refreshTimeIntervalMS = 0;
   }
-  isStopped(interval) {
+  isStopped() {
     // [st]: TODO: it appears that no caller specifies an interval, so it could be removed
     // setting either the instance or static rTIMS to zero is used to bring this node or all nodes, respectively, to a graceful halt (either on a user-controlled local node or as part of a test script)
-    return !this.isRunning || 0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS || 0 === interval;
+    return !this.isRunning || 0 === this.refreshTimeIntervalMS || 0 === this.constructor.refreshTimeIntervalMS;
   }
   // The refreshTimeIntervalMS is the number of nominal number milliseconds we expect to be able to handle for short session timems.
   // The actual period between bucket and data refreshes may be more or less than this, depending on how well we deal with churn.
@@ -33,6 +33,9 @@ export class NodeRefresh extends NodeKeys {
     return Math.floor(target + margin/2 - adjustment);
   }
   timers = new Map();
+  clearRefreshTimers() {
+    this.timers.values().forEach(timer => clearTimeout(timer));
+  }
   schedule(timerKey, statisticsKey, thunk, timeout = this.fuzzyInterval()) {
     // Schedule thunk() to occur at a fuzzyInterval from now, cancelling any
     // existing timer at the same key. This is used in such a way that:

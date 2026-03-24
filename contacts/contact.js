@@ -167,12 +167,16 @@ export class Contact {
       await this.host.publishStatistics(); // Stored in nodes as understood from the replication above.
     }
     this.host.stopRefresh();
+    this.host.clearRefreshTimers();
+    this.host.clearStorageExpirations();
+    this.host.clearRenewals();
     for (const contact of this.host.connections) {
       const far = await contact.connection;
       if (!far) return;
       contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
-      contact.disconnectTransport(false); // no need to send 'close' after 'bye'
+      await contact.disconnectTransport(false); // no need to send 'close' after 'bye'
     }
+    this.host.clearContactDictionaryExpirations();
     this.host.isRunning = false;
   }
   disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
