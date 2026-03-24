@@ -58,7 +58,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // If timeoutMS is non-zero and a connection is not established within that time, connection and closed resolve to null.
     //
     // This is synchronous: all side-effects (assignments to this) happen immediately.
-    this.host.log('starting connection', this.sname, this.counter);
+    this.host.log('starting connection', this.sname, this.counter, 'initiate', initiate);
     this.host.noteContactForTransport(this);
     const { host, node, bootstrapHost } = this;
     let {promise, resolve} = Promise.withResolvers(); // That this specific contact has closed. Commpare host.contact.detachment.
@@ -69,18 +69,21 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 					     configuration: {iceServers: this.constructor.iceServers},
 					     polite: this.host.key < this.node.key});
     const onmessage = event => this.receiveWebRTC(event.data);
-    const onclose = normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
+    const ondatachannelclose = async normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed to', this.sname, 'normal:', !!normalClosure);
+      this.node.isRunning = false; // Just in case something is still depending on it.
+      this.node.stopRefresh();     // Ditto.
       if (this.webrtc && !this.host.isStopped()) {
 	// If called by timeout, normalClosure is falsy.
 	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Removing contact.');
 	this.host.removeContact(this, false);
       }
-      this.unsafeData?.removeEventListener('close', onclose);
+      this.unsafeData?.removeEventListener('close', ondatachannelclose);
       this.unsafeData?.removeEventListener('message', onmessage);
-      if (!this.anyOpen) this.host.contact.detached(this.host.stopRefresh() ? this.host.contact : false);
-      this.webrtc = this.connection = this.unsafeData = null;
+      await this.webrtc.close();
+      webrtc.closed = this.webrtc = this.connection = this.unsafeData = null;
       resolve(null); // closed promise
+      if (!this.anyOpen) this.host.contact.detached(!this.host.isStopped() ? this.host.contact : false);
     };
     if (initiate) {
       if (bootstrapHost && !this.anyOpen) {
@@ -98,7 +101,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     channelPromise.then(async dataChannel => {
       clearTimeout(timeout);
       this.unsafeData = dataChannel;
-      dataChannel.addEventListener('close', onclose);
+      dataChannel.addEventListener('close', ondatachannelclose);
       dataChannel.addEventListener('message', onmessage);
       if (host.info || host.debug) await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
@@ -107,7 +110,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
 	if (this.host.isStopped()) return expired(null);
-	onclose();
+	ondatachannelclose();
 	this.host.removeContact(this); // fixme?
 	return expired(null);
       }, timeoutMS);
@@ -126,7 +129,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       return;
     }
     try {
-      channel.send(JSON.stringify(message));
+      const json = JSON.stringify(message);
+      this.host.ilog('send', json.length, 'to', this.name);
+      channel.send(json);
     } catch (e) { // Some webrtc can change readyState in background.
       this.host.log(e);
     }
@@ -195,11 +200,13 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const [messageTag, ...data] = JSON.parse(dataString);
     await this.receiveRPC(messageTag, ...data);
   }
-  disconnectTransport(andNotify = true) {
+  async disconnectTransport(andNotify = true) {
     if (!this.connection) return;
-    super.disconnectTransport(andNotify);
     const webrtc = this.webrtc;
-    this.connection = this.webrtc = null;
-    webrtc?.close();
+    const dataChannel = this.unsafeData;
+    super.disconnectTransport(andNotify);
+    this.connection = null;
+    dataChannel?.close();
+    await webrtc?.close();
   }
 }
