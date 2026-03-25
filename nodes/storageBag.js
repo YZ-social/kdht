@@ -72,6 +72,7 @@ export class StorageBag {
   }
   delete(node, key, type, subject) { // Delete this.types[type][subject], and any empty parents through node.storage.
     const subjects = this.types[type];
+    if (!subject) return;
     delete subjects[subject];
     this.items = null; // Clear items cache.
     if (Object.keys(subjects).length) return;
@@ -120,7 +121,7 @@ export class StorageItem {
   }
   merge1(now, bag, node, key) { // Add this into subjects if allowed and return this, else null.
     const {type, subject, payload, issuedTime, expiration, debug} = this;
-    let {issuedTime:existingTime = 0} = bag.types[type]?.[subject] || {};
+    let {issuedTime:existingTime = 0, timer} = bag.types[type]?.[subject] || {};
 
     const allowed = this.allowedTime(existingTime, now, issuedTime);
     if (debug) node?.flog('merging', {type, key, subject, existingTime, issuedTime, now, expiration,
@@ -128,7 +129,7 @@ export class StorageItem {
 				      isFuture: issuedTime > now, isEarlier: issuedTime <= existingTime, allowed, self:this});
     if (!allowed) return null;
 
-    this.resetTimer({now, bag, node, key});
+    this.resetTimer({now, bag, node, key, timer});
 
     const subjects = bag.types[type] ||= {};
     subjects[subject] = this;

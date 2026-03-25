@@ -11,7 +11,6 @@ export class NodeStorage extends NodeRefresh {
 
   // These two accept and produce a list of StorageItems.
   storeLocally(key, value) { // Store in memory by a BigInt key (must be already hashed). Not persistent.
-    if (this.isStopped()) return;
     let existingValue = this.storage.get(key);
     value = StorageBag.ensureItems(value);
     value = (existingValue ||= new StorageBag()).merge(value, this, key);
