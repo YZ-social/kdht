@@ -157,6 +157,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   }
   async transmitRPC(messageTag, method, sender, ...rest) { // Must return a promise.
     // this.host.log('transmit to', this.sname, this.connection ? 'with connection' : 'WITHOUT connection');
+    if (!this.webrtc) return 0;
     const responsePromise = this.getResponsePromise(messageTag);
     const closed = this.closed;
 

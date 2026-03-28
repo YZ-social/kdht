@@ -67,7 +67,7 @@ export class EventStorageItem extends StorageItem { // An event received at a su
   merge1(now, storageBag, node, key) {
     const storageItem = super.merge1(now, storageBag, node, key);
     if (!storageItem || !node) return storageItem; // A new cancelled event DOES fire, so that apps can know.
-    node.ilog('event @', key, storageItem);
+    node.log('event @', key, storageItem);
     node.eventHandlers.get(key)?.(storageItem, key);
     return storageItem;
   }
