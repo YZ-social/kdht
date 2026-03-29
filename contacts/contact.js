@@ -1,3 +1,4 @@
+const { URL } = globalThis; // For linters.
 import { v4 as uuidv4 } from 'uuid';
 import { Node } from '../nodes/node.js';
 
@@ -104,10 +105,8 @@ export class Contact {
     const url = `${baseURL}/name/${label}`;
     // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
     // https://github.com/nodejs/undici/issues/3492
-    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(e => this.host.flog(url, e));
-    if (!this.checkResponse(response)) { // The portal webserver is not available. Stop trying to reach this node.
-      // TODO: maintain a well-known list of portal servers to try, but even then, do not try to reach nodes that are on an unreachable server.
-      this.host.removeContact(this);
+    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(() => {});
+    if (!this.checkResponse(response)) { // The portal webserver is not available.
       return '';
     }
     return await response.json();
@@ -119,21 +118,27 @@ export class Contact {
   storeValue(key, value) { return this.attachment.then(home => home.host.storeValue(key, value)); }
   join(other) { return this.host.join(other).then(home => home.attached(home)); }
   replicateStorage() { return this.host.replicateStorage(); }
-  async bootstrapJoin(baseURL = new URL('/kdht', globalThis.location).href) { // Find a contact to bootstrap, and join it.
-    const bootstrapName = await this.fetchBootstrap(baseURL);
+  async bootstrapJoin(...baseURLs) { // Find a contact to bootstrap, and join it.
+    let bootstrapName = '', baseURL = '';
+    if (!baseURLs.length) baseURLs = [new URL('/kdht', globalThis.location).href];
+    while (!bootstrapName && baseURLs.length) {
+      baseURL = baseURLs.pop();
+      bootstrapName = await this.fetchBootstrap(baseURL);
+    }
+    if (!bootstrapName) throw new Error(`Unable to find an open portal.`);
     const bootstrapContact = await this.ensureRemoteContact(bootstrapName, baseURL);
     await this.join(bootstrapContact);
     return this;
   }
 
   connectionQueue = Promise.resolve();
-  async connect(baseURL) { // Connect and promise self when connected
+  async connect(...baseURL) { // Connect and promise self when connected
     // If this is the home contact of node, bootstrapJoin();
     // Otherwise (a contact for a remote node), connect from host to node.
     let { host, node, connection } = this;
     if (host.key === node.key) { // Home contact
       if (this.connection) return this.connection;
-      await this.bootstrapJoin(baseURL);
+      await this.bootstrapJoin(...baseURL);
       this.host.contact.detachment.then(() => this.host.contact.connection = this.host.isRunning = null);
       return this.connection;
     }

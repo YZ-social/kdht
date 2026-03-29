@@ -1,8 +1,14 @@
 import cluster from 'node:cluster';
 import express from 'express';
+import cors from 'cors';
 import { WebRTC } from '@yz-social/webrtc';
 import Turn from 'node-turn';
 import { Node } from '../index.js';
+
+// The /name and /join routes are configured here to provide preflight approval from any site, allowing web apps
+// at mirrors to reach the dht through this portal if those sites go down, and vice versa. Note that non-browser
+// apps can always do so, as CORS does not block requests, but rather it blocks browser code from using the responses
+// unless allowed here.
 
 export const router = express.Router();
 
@@ -31,7 +37,7 @@ cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and
   initWorker(cluster.fork());
 });
 
-router.get('/name/random', (req, res, next) => { // Answer the actual sname corresponding to label.
+router.get('/name/random', cors(), (req, res, next) => { // Answer the actual sname corresponding to label.
   let worker;
   // We might grab a worker from custer.workers that has not yet reporte in (setting worker.tag).
   // Dead workers are eventually removed from cluster.workers, but one might catch it before then.
@@ -44,7 +50,7 @@ router.get('/name/random', (req, res, next) => { // Answer the actual sname corr
   return res.json(worker.tag);
 });
 
-router.post('/join/:from/:to', async (req, res, next) => { // Handler for JSON POST requests that provide an array of signals and get signals back.
+router.post('/join/:from/:to', cors(), async (req, res, next) => { // Handler for JSON POST requests that provide an array of signals and get signals back.
   // Our WebRTC send [['offer', ...], ['icecandidate', ...], ...]
   // and accept responses of [['answer', ...], ['icecandidate', ...], ...]
   // through multiple POSTS.

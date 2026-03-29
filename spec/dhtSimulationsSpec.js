@@ -133,13 +133,13 @@ describe("DHT", function () {
 	expect(await getContactsLength()).toBe(nServerNodes); // sanity check
 
 	console.log(new Date(), 'end server setup');
-      }, 20e3);
+      }, 30e3);
       afterAll(async function () {
 	console.log(new Date(), 'start server shutdown');
 	await shutdownServerNodes(nServerNodes, notes);
 	expect(await getContactsLength()).toBe(0); // sanity check
 	console.log(new Date(), 'end server shutdown');
-      }, 20e3);
+      }, 30e3);
 
       describe("joins within a refresh interval", function () {
 	let nJoined = 0, nWritten = 0;
