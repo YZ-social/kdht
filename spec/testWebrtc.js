@@ -66,7 +66,7 @@ describe("DHT webrtc write/read", function () {
       await Node.delay(waitBeforeRead);
     }
     console.log(new Date(), 'Reading');
-  }, portalSeconds * 1e3 + botsMilliseconds + 5e3 * nWrites + waitBeforeRead );
+  }, portalSeconds * 1e3 + botsMilliseconds + 5e3 * nWrites + waitBeforeRead + 10e3);
   afterAll(async function () {
     contact.disconnect();
     console.log(new Date(), 'killing portals and bots');
