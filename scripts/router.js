@@ -37,7 +37,9 @@ cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and
   initWorker(cluster.fork());
 });
 
-router.get('/name/random', cors(), (req, res, next) => { // Answer the actual sname corresponding to label.
+router.options('/name/random', cors()); // Handle preflight.
+router.post('/name/random', cors(), (req, res, next) => { // Answer the actual sname corresponding to label.
+  // Even though there's no body, we use post here to help bust service worker caching
   let worker;
   // We might grab a worker from custer.workers that has not yet reporte in (setting worker.tag).
   // Dead workers are eventually removed from cluster.workers, but one might catch it before then.

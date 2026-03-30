@@ -105,7 +105,12 @@ export class Contact {
     const url = `${baseURL}/name/${label}`;
     // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
     // https://github.com/nodejs/undici/issues/3492
-    const response = await fetch(new Request(url, {cache: 'no-store', headers: { 'Connection': 'close' } })).catch(() => {});
+    const response = await fetch(new Request(url, {
+      method: 'POST',
+      cache: 'no-store',
+      body: null,
+      headers: { 'Connection': 'close' }
+    })).catch(() => {});
     if (!this.checkResponse(response)) { // The portal webserver is not available.
       return '';
     }
