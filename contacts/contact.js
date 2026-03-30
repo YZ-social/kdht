@@ -121,24 +121,28 @@ export class Contact {
   async bootstrapJoin(...baseURLs) { // Find a contact to bootstrap, and join it.
     let bootstrapName = '', baseURL = '';
     if (!baseURLs.length) baseURLs = [new URL('/kdht', globalThis.location).href];
-    while (!bootstrapName && baseURLs.length) {
-      baseURL = baseURLs.pop();
-      bootstrapName = await this.fetchBootstrap(baseURL);
+    for (const candidate of baseURLs) {
+      bootstrapName = await this.fetchBootstrap(candidate);
+      if (bootstrapName) {
+	baseURL = candidate;
+	break;
+      }
     }
     if (!bootstrapName) throw new Error(`Unable to find an open portal.`);
+    this.host.ilog('entering network through', baseURL, bootstrapName);
     const bootstrapContact = await this.ensureRemoteContact(bootstrapName, baseURL);
     await this.join(bootstrapContact);
     return this;
   }
 
   connectionQueue = Promise.resolve();
-  async connect(...baseURL) { // Connect and promise self when connected
+  async connect(...baseURLs) { // Connect and promise self when connected
     // If this is the home contact of node, bootstrapJoin();
     // Otherwise (a contact for a remote node), connect from host to node.
     let { host, node, connection } = this;
     if (host.key === node.key) { // Home contact
       if (this.connection) return this.connection;
-      await this.bootstrapJoin(...baseURL);
+      await this.bootstrapJoin(...baseURLs);
       this.host.contact.detachment.then(() => this.host.contact.connection = this.host.isRunning = null);
       return this.connection;
     }

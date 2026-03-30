@@ -50,6 +50,7 @@ router.get('/name/random', cors(), (req, res, next) => { // Answer the actual sn
   return res.json(worker.tag);
 });
 
+router.options('/join/:from/:to', cors()); // Handle preflight.
 router.post('/join/:from/:to', cors(), async (req, res, next) => { // Handler for JSON POST requests that provide an array of signals and get signals back.
   // Our WebRTC send [['offer', ...], ['icecandidate', ...], ...]
   // and accept responses of [['answer', ...], ['icecandidate', ...], ...]

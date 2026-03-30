@@ -228,6 +228,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     case 'frag':
       const [fid, i, fragment] = data;
       let frag = this.pendingFragments[fid]; // We are relying on fragment message coming first.
+      Node.assert(frag, 'No initial fragment for', data, 'in', this.sname);
       frag.message[i] = fragment;
       //console.log('got fragment', i, 'of', fid, 'size', fragment.length, fragment.slice(0, 200));
       if (0 !== --frag.remaining) return;
