@@ -1,4 +1,4 @@
-const { URL } = globalThis; // For linters.
+const { URL, Request } = globalThis; // For linters.
 import { v4 as uuidv4 } from 'uuid';
 import { Node } from '../nodes/node.js';
 
@@ -105,7 +105,7 @@ export class Contact {
     const url = `${baseURL}/name/${label}`;
     // connection:close is far more robust against pooling issues common to some implementations (e.g., NodeJS).
     // https://github.com/nodejs/undici/issues/3492
-    const response = await fetch(url, {headers: { 'Connection': 'close' } }).catch(() => {});
+    const response = await fetch(new Request(url, {cache: 'no-store', headers: { 'Connection': 'close' } })).catch(() => {});
     if (!this.checkResponse(response)) { // The portal webserver is not available.
       return '';
     }
@@ -144,7 +144,7 @@ export class Contact {
       if (this.connection) return this.connection;
       await this.bootstrapJoin(...baseURLs);
       this.host.contact.detachment.then(() => this.host.contact.connection = this.host.isRunning = null);
-      return this.connection;
+      return await this.connection;
     }
     Node.assert(host.key !== node.key, 'connecting to self', host, node);
     if (connection) return this;
