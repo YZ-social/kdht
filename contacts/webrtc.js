@@ -21,7 +21,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
       body: JSON.stringify(signalsToSend)
     }).catch(e => this.host.flog(e));
-    if (!this.checkResponse(response)) return this.fetchSignals(url, signalsToSend);
+    if (!this.checkResponse(response)) return [];
     return this.checkSignals(await response?.json());
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
