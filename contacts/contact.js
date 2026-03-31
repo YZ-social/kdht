@@ -89,8 +89,10 @@ export class Contact {
     if (sname.startsWith(this.constructor.serverSignifier)) return sname.slice(1);
     return sname;
   }
+  isDeadToMe = false; // Do WE think the far node is dead?
   get isRunning() { // Is the far node running. Non-simulations are never falsy unless we have other info such as from 'bye'.
-    return this.node.isRunning;
+    // Can't set this.node.isRunning = false because that collapses simulations where this.node is not a copy.
+    return !this.isDeadToMe && this.node.isRunning;
   }
   get anyOpen() {
     return this.host.connections.find(c => c.isOpen);
