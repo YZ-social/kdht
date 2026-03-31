@@ -205,7 +205,7 @@ export class Contact {
   }
   bye() { // The sender is disconnecting from the network
     this.host.ilog('removing disconnected contact', this.sname);
-    const bucket = this.host.removeContact(this, false);
+    const bucket = this.host.removeContact(this);
     this.disconnectTransport(false);
     bucket?.refresh(); // Accelerate the bucket refresh
   }
@@ -344,7 +344,7 @@ export class Contact {
   }
   async checkSignals(signals) {
     if (!signals) {
-      this.host.removeContact(this, false);
+      this.host.removeContact(this);
       return [];
     }
     return signals;

@@ -74,7 +74,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       if (this.webrtc && !this.host.isStopped()) {
 	// If called by timeout, normalClosure is falsy.
 	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Removing contact.');
-	this.host.removeContact(this, false);
+	this.host.removeContact(this);
       }
       this.unsafeData?.removeEventListener('close', ondatachannelclose);
       this.unsafeData?.removeEventListener('message', onmessage);

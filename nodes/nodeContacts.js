@@ -84,14 +84,11 @@ export class NodeContacts extends NodeConnections {
     if (sponsor) contact.noteSponsor(sponsor);
     return contact;
   }
-  removeContact(contact, immediate = true) { // Removes from node entirely if present, from looseContacts or bucket as necessary, returning bucket if that's where it was, else null.
-    // If not immediate, we keep it in contactDictionary (as not running) for a while so that we don't immediately re-add it.
-    if (immediate) {
-      delete this.contactDictionary[contact.name];
-    } else {
-      contact.isDeadToMe = false;
-      contact.expiration = setTimeout(() => delete this.contactDictionary[contact.name], this.refreshTimeIntervalMS/2);
-    }
+  removeContact(contact) { // Removes from node entirely if present, from looseContacts or bucket as necessary, returning bucket if that's where it was, else null.
+    // Keep it in contactDictionary (as dead) for a while so that we don't immediately re-add it.
+    contact.isDeadToMe = false;
+    contact.expiration ||= setTimeout(() => delete this.contactDictionary[contact.name], this.refreshTimeIntervalMS/2);
+
     const key = contact.key;
     if (this.removeLooseContact(key)) return null;
     const bucketIndex = this.getBucketIndex(key);

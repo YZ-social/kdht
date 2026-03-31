@@ -65,7 +65,7 @@ export async function write1(contact, key, value) {
     //promised.node.diagnosticTrace = true;
     stored = await promised.node.storeValue(key, value);
     promised.node.diagnosticTrace = false;    
-    promised.host.ilog('stored', stored, 'copies');
+    promised.host.ilog('stored', stored, 'copies of', value);
     logLevel(promised, false);
     return promised;
   });
