@@ -86,7 +86,7 @@ export class NodeContacts extends NodeConnections {
   }
   removeContact(contact) { // Removes from node entirely if present, from looseContacts or bucket as necessary, returning bucket if that's where it was, else null.
     // Keep it in contactDictionary (as dead) for a while so that we don't immediately re-add it.
-    contact.isDeadToMe = false;
+    contact.isDeadToMe = true;
     contact.expiration ||= setTimeout(() => delete this.contactDictionary[contact.name], this.refreshTimeIntervalMS/2);
 
     const key = contact.key;
@@ -120,10 +120,7 @@ export class NodeContacts extends NodeConnections {
   }
   findClosestHelpers(targetKey, count = this.constructor.k) { // Answer count closest Helpers to targetKey, including ourself.
     if (!this.contact) return []; // Can happen while we are shutting down during a probe.
-    const contacts = this.contacts; // Always a fresh copy.
-    const dead = contacts.find(c => !c.isRunning);
-    // In simulation we may know of a dead node that we would not know of on the network -- but on network we would not know it's node was stopped.
-    this.constructor.assert(!dead || dead.node.isStopped(), 'HAS DEAD HELPER', dead, this);
+    const contacts = this.contacts.filter(c => c.isRunning); // Always a fresh copy. Do not include dead-to-me contacts.
     contacts.push(this.contact); // We are a candidate, too! TODO: Handle this separately in iterate so that we don't have to marshal our contacts.
     return Helper.findClosest(targetKey, contacts, count);
   }
