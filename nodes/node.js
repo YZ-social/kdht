@@ -12,11 +12,11 @@ export class Node extends NodePubSub {
 
   static diagnosticTrace = false; // Set to true for detailed store/read logging
 
-  async locateNodes(targetKey, number = this.constructor.k, includeSelf = false) { // Promise up to k best Contacts for targetKey (sorted closest first).
+  async locateNodes(targetKey, number = this.constructor.k, includeSelf = false, trace = false) { // Promise up to k best Contacts for targetKey (sorted closest first).
     // Side effect is to discover other nodes (and they us).
     // includeSelf: If true, the local node is included as a candidate (useful for finding storage locations).
     targetKey = await this.ensureKey(targetKey);
-    return await this.iterate(targetKey, 'findNodes', number, false, false, includeSelf);
+    return await this.iterate(targetKey, 'findNodes', number, trace, false, includeSelf);
   }
   async locateValue(targetKey, additionalTries = 1) { // Same as locateStorageValue, but in the case of a single raw value payload, return that.
     const storageItems = await this.locateStorageValue(targetKey, additionalTries);
@@ -68,7 +68,7 @@ export class Node extends NodePubSub {
     let remaining = k;
     // Ask for more, than needed, and then store to each, one at a time, until we
     // have replicated k times.
-    let contacts = (await this.locateNodes(targetKey, remaining * 2, true)) // includeSelf: we're a valid storage location
+    let contacts = (await this.locateNodes(targetKey, remaining * 2, true, trace)) // includeSelf: we're a valid storage location
 	.map(helper => helper.contact);
 
     // Check again after the async locateNodes call

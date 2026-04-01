@@ -32,9 +32,9 @@ export class NodeProbe extends NodeMessages {
       results = results.map(h => new Helper(this.ensureContact(h.contact, contact), h.distance));
       if (trace) {
         const filterMsg = results.length === rawResults.length ? "" : ` after removing ${rawResults.map(h => h.name).filter(name => !results.some(r => r.name === name)).join(', ')}`;
-        this.log(`${helper.name} => ${results.length ? results.map(h => h.name) : '<empty>'}${filterMsg}`);
+        this.flog(`${helper.name} => ${results.length ? results.map(h => h.name) : '<empty>'}${filterMsg}`);
       }
-    } else if (trace && false) this.log(`${helper.name} => ${results}`);
+    } else if (trace && false) this.flog(`${helper.name} => ${results}`);
 
     return results;
   }
@@ -54,7 +54,7 @@ export class NodeProbe extends NodeMessages {
     //
     // includeSelf: If true, the local node is eligible to be included in the results (currently used only for storeValue).
 
-    if (trace) this.log(`iterate: key=${targetKey}, finder=${finder}, k=${k}`);
+    if (trace) this.flog(`iterate: key=${targetKey}, finder=${finder}, k=${k}`);
 
     if (targetKey !== this.key) {
       // Schedule a refresh for the targetKey's bucket.
@@ -181,21 +181,21 @@ export class NodeProbe extends NodeMessages {
             // A "round" of alpha queries all failed to find new nodes.
             // Per Kademlia paper: escalate to k parallel queries to cast a wider net.
             maxInFlight = k;
-            if (trace) this.log('escalating to', k, 'parallel queries after', alpha, 'empty responses');
+            if (trace) this.flog('escalating to', k, 'parallel queries after', alpha, 'empty responses');
           }
         }
       }
 
       // Check termination
       if (isComplete()) {
-        if (trace) this.log('terminated: k closest nodes all resolved');
+        if (trace) this.flog('terminated: k closest nodes all resolved');
         resolveIteration();
         return;
       }
 
       // Or terminate when network is exhausted (fewer than k nodes available)
       if (pendingTimeouts.size === 0 && !getNextToQuery()) {
-        if (trace) this.log('terminated: network exhausted');
+        if (trace) this.flog('terminated: network exhausted');
         resolveIteration();
         return;
       }
@@ -216,7 +216,7 @@ export class NodeProbe extends NodeMessages {
         if (iterationFinished) return;
         if (!pendingTimeouts.has(helper.key)) return; // Already resolved
 
-        if (trace) this.log('query timed out:', helper.name);
+        if (trace) this.flog('query timed out:', helper.name);
 
         handleCompletion(helper, 'timedOut');
       }, queryTimeoutMs);
@@ -242,8 +242,8 @@ export class NodeProbe extends NodeMessages {
     // Handle edge case: no nodes to query (isolated node)
     if (allNodesSeen.length === 0) {
       const contactCount = this.contacts.length;
-      this.log(`iterate(${finder}): no nodes to query - isolated node with ${contactCount} contacts in routing table`);
-      return [];
+      if (trace) this.flog(`iterate(${finder}): no nodes to query - isolated node with ${contactCount} contacts in routing table`);
+      return includeSelf ? [new Helper(this.contact, this.constructor.distance(this.key, targetKey))] : [];
     }
 
     // Launch initial alpha requests
@@ -260,7 +260,7 @@ export class NodeProbe extends NodeMessages {
     }
 
     if (valueResult) {
-      if (trace) this.log(`value result: ${valueResult} after responses from ${queryResponders.length} nodes`);
+      if (trace) this.flog(`value result: ${valueResult} after responses from ${queryResponders.length} nodes`);
       return valueResult;
     }
 
@@ -277,7 +277,7 @@ export class NodeProbe extends NodeMessages {
       .sort(Helper.compare)
       .slice(0, k);
 
-    if (trace) this.log('probe result', closestResponsive.map(helper => `${helper.name}@${String(helper.distance).slice(0,2)}[${String(helper.distance).length}]`).join(', '));
+    if (trace) this.flog('probe result', closestResponsive.map(helper => `${helper.name}@${String(helper.distance).slice(0,2)}[${String(helper.distance).length}]`).join(', '));
 
     return closestResponsive;
   }

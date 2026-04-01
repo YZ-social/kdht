@@ -233,7 +233,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       //console.log('got fragment', i, 'of', fid, 'size', fragment.length, fragment.slice(0, 200));
       if (0 !== --frag.remaining) return;
       const combined = frag.message.join('');
-      this.host.ilog('dispatching large message', combined.slice(0, 200), '...', combined.slice(-200));
+      this.host.ilog('dispatching large message', combined.slice(0, 200), '...', combined.slice(-50));
       delete this.pendingFragments[fid];
       await this.receiveWebRTC(combined);
       break;
