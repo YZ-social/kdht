@@ -222,16 +222,19 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     switch (messageTag) {
     case 'fragments':
       const [id, numChunks] = data;
-      this.pendingFragments[id] = {remaining: numChunks, message: Array(numChunks)};
+      let fragments = this.pendingFragments[id] ||= {message: []}; // Might have been set by an early frag.
+      fragments.message.length = fragments.remaining = numChunks;
       //console.log('receiving', this.pendingFragments[id]);
       break;
     case 'frag':
       const [fid, i, fragment] = data;
-      let frag = this.pendingFragments[fid]; // We are relying on fragment message coming first.
-      Node.assert(frag, 'No initial fragment for', data, 'in', this.sname);
+      let frag = this.pendingFragments[fid];
+      // Even though the messages should arrive in order, it is possible that the message handler
+      // won't be called in order.
+      if (!frag) frag = this.pendingFragments[fid] = {message: []};
       frag.message[i] = fragment;
       //console.log('got fragment', i, 'of', fid, 'size', fragment.length, fragment.slice(0, 200));
-      if (0 !== --frag.remaining) return;
+      if ((frag.remaining === undefined) || (0 !== --frag.remaining)) return;
       const combined = frag.message.join('');
       this.host.ilog('dispatching large message', combined.slice(0, 200), '...', combined.slice(-50));
       delete this.pendingFragments[fid];
