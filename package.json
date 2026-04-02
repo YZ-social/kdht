@@ -1,6 +1,6 @@
 {
   "name": "@yz-social/kdht",
-  "version": "0.1.39",
+  "version": "0.1.40",
   "description": "Pure Kademlia base, for testing variations.",
   "exports": {
     ".": "./index.js",

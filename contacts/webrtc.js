@@ -180,11 +180,11 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   async send(message) { // Promise to send through previously opened connection promise and resolve to the number of chunks sent.
     let channel = await this.connection;
     // null channel implies no connection
-    if (!channel) this.host.ilog('Tried to send without connection on', this.sname);
-    if (!channel) return 0;
-    if (channel.readyState !== 'open') {
-      this.host.ilog('Tried to send on', channel.readyState, 'channel on', this.sname, this.host.isRunning, this.host.isStopped());
-      this.bye(); // Likely an impolite disconnect.  Count this contact as dead.
+    if (!channel || channel.readyState !== 'open') {
+      this.host.ilog('Tried to send on', channel?.readyState, 'channel on', this.sname, this.host.isRunning, this.host.isStopped());
+      // Likely an impolite disconnect, or a stale helper/contact that was in-process.  Count this contact as dead.
+      this.host.removeContact(this);
+      await this.disconnectTransport(false);
       return 0;
     }
     try {
