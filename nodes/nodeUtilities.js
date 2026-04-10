@@ -44,22 +44,49 @@ export class NodeUtilities {
     stat.elapsedMS += Date.now() - startTimeMS;
     ++stat.count;
   }
+  static statisticsThrottleMS = 10e3; // Publish stats at most once per this interval.
+  lastStatisticsPublish = 0;
   noteStatistic(name, startTimeMS) { // Add to the specified statistic[name], and maybe publish all totals.
     if (this.isStopped()) return;
     this.accumulate1Statistic(name, startTimeMS);
     if (!this.constructor.publishStatistics) return;
     if (name === 'rpc' || name === 'connection') return; // The act of publishing shouldn't increase the counts each time.
+    const now = Date.now();
+    if (now - this.lastStatisticsPublish < this.constructor.statisticsThrottleMS) return;
+    this.lastStatisticsPublish = now;
     this.publishStatistics(name);
   }
   async publishStatistics(triggerName) { // Publish totals.
     const key = this.constructor.statisticsPubKey ||= await this.constructor.key('network statistics');
     return this.contact.publish({key, // contact.publish doesn't fire until we are attached.
-				 subject: this.name,
+				 subject: this.sname,
 				 payload: this.getStatisticsJSON()});
   }
   getStatisticsJSON() { // Answer the stastics we publish, including a list of live connections snames.
     const {statistics} = this;
     statistics.connections = this.contacts.map(c => c.connection && c.sname).filter(n => n);
+    const keys = {}; // keyStr → { s: hasSub, d: dataTypes, n: eventName, sub: [sname,...] }
+    for (const [k, bag] of this.storage) {
+      const ks = k.toString();
+      const types = Object.keys(bag.types).filter(t =>
+        Object.values(bag.types[t]).some(item => !item.isCancelled));
+      if (!types.length) continue;
+      const entry = {};
+      if (types.some(t => t === 'sub' || t === 'event' || t === 'ext')) {
+        entry.s = true;
+        const subs = bag.types.sub;
+        if (subs) {
+          const names = Object.values(subs).filter(item => !item.isCancelled).map(item => item.subject);
+          if (names.length) entry.sub = names;
+        }
+      }
+      const dataTypes = types.filter(t => t === 'raw' || t === 'pub');
+      if (dataTypes.length) entry.d = dataTypes;
+      const name = this.keyNames?.get(ks);
+      if (name) entry.n = name;
+      keys[ks] = entry;
+    }
+    statistics.keys = keys;
     return statistics;
   }
 
