@@ -1,0 +1,1354 @@
+<html>
+  <head>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script type="importmap">
+      {
+	"imports": {
+	  "uuid": "./uuid/index.js",
+	  "@yz-social/kdht": "./kdht/index.js",
+	  "@yz-social/webrtc": "./webrtc/index.js"
+	}
+      }
+    </script>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 20px;
+      }
+      #controls {
+        margin-bottom: 20px;
+      }
+      #status {
+        margin-left: 10px;
+        color: #666;
+      }
+      #status.connected {
+        color: green;
+      }
+      .tooltip {
+        position: absolute;
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        border-radius: 4px;
+        font-size: 12px;
+        pointer-events: none;
+      }
+      #chart {
+        border: 1px solid #ccc;
+        display: inline-block;
+      }
+      .node-label {
+        font-size: 11px;
+        fill: #555;
+        paint-order: stroke;
+        stroke: white;
+        stroke-width: 3px;
+        stroke-linejoin: round;
+        cursor: default;
+      }
+
+      /* Matrix highlight via CSS classes on the matrix group */
+      .mark { transition: opacity 0.15s; }
+      .matrix-group.highlight-node .mark { opacity: 0.06; }
+      .matrix-group.highlight-node .mark.col-active { opacity: 1; }
+      .matrix-group.highlight-key .mark { opacity: 0.06; }
+      .matrix-group.highlight-key .mark.row-active { opacity: 1; }
+
+      .col-bg, .row-bg { fill: transparent; transition: fill 0.1s; }
+      .col-bg.active { fill: rgba(55,126,184,0.08); }
+      .row-bg.active { fill: rgba(55,126,184,0.08); }
+
+      .arc { transition: opacity 0.15s, stroke-width 0.15s; }
+      .matrix-group.highlight-node .arc { opacity: 0.05; stroke-width: 1; }
+      .matrix-group.highlight-node .arc.arc-active { opacity: 0.7; stroke-width: 2.5; }
+    </style>
+  </head>
+  <body>
+    <h2>KDHT Network</h2>
+    <div id="controls">
+      <span id="status">Connecting...</span>
+      <span id="nodeCount"></span>
+    </div>
+    <div id="chart"></div>
+
+    <script type="module">
+      import { v4 as uuidv4 } from 'uuid';
+      import { WebContact, Node } from '@yz-social/kdht';
+      Object.assign(globalThis, { uuidv4, WebContact });
+
+      const bootstrapBase = new URL('/kdht', origin).href;
+      let contact;
+      let updateInterval;
+
+      // Network state accumulated from pub/sub events.
+      // Each entry records the connections most recently reported by that node.
+      const networkMap = new Map(); // sname → { connections, subKeys, dataKeys, subscribers, lastSeen }
+      const keyCache = new Map(); // name (without S prefix) → BigInt key
+
+      // Node data keyed by sname
+      const nodeData = new Map(); // sname → { sname, key, x, subKeys, dataKeys }
+      let currentLinks = []; // links from last update
+
+      // Storage key tracking for matrix rows
+      const storageKeyInfo = new Map(); // keyStr → { type, firstSeen }
+
+      // Reverse mapping from hashed key (as string) to original eventName, populated from statistics keyNames.
+      const keyDirectory = new Map(); // keyStr → { eventName, level }
+      // Subscribers per key: keyStr → Set of subscriber snames, populated from statistics subscribers.
+      const keySubscribers = new Map();
+      function keyLabel(keyStr) { return keyDirectory.get(keyStr)?.eventName || keyStr.slice(0, 12) + '...'; }
+      // Derive S2 cell level from a cell ID string by counting trailing zero bits.
+      // The lsb is at position 2*(30-level), so level = 30 - trailingZeros/2.
+      function s2Level(cellStr) {
+        const id = BigInt(cellStr);
+        if (id === 0n) return null;
+        let tz = 0, v = id;
+        while ((v & 1n) === 0n) { tz++; v >>= 1n; }
+        return 30 - (tz >> 1);
+      }
+      // Parse an eventName like "s2:<cellID>:<hashtag>" into { cell, hashtag }, or null.
+      function parseEventName(eventName) {
+        if (!eventName?.startsWith('s2:')) return null;
+        const lastColon = eventName.lastIndexOf(':');
+        if (lastColon <= 3) return null;
+        return { cell: eventName.slice(3, lastColon), hashtag: eventName.slice(lastColon + 1) };
+      }
+      // Group keyStrs by hashtag (collapsing cell levels). Ungrouped keys become singleton groups.
+      // Each grouped row includes a levels map: level → { keyStr, type, hasSubscribers }
+      const numLevels = 17; // events are published at levels 0 (coarsest) to 16 (~150m on a side)
+      const spatialRowHeight = 15;
+      const nonSpatialRowHeight = 12;
+      const rowSpacing = 2;
+
+      // S2 region grouping: all spatial keys within the same ~150 km region
+      // (level 6) collapse into one row, regardless of hashtag or cell level.
+      const REGION_LEVEL = 6;
+
+      // For a cell at level >= REGION_LEVEL, compute the S2 parent at REGION_LEVEL
+      // by right-shifting to keep only face(3) + pos(2*REGION_LEVEL) bits.
+      function regionKeyFromCell(cellStr) {
+        const shift = BigInt(61 - 2 * REGION_LEVEL);
+        return BigInt(cellStr) >> shift;
+      }
+
+      // Hex prefix for display (6 hex chars for region-level identification).
+      function cellHexPrefix(cellStr) {
+        try { return BigInt(cellStr).toString(16).padStart(16, '0').slice(0, 6); }
+        catch { return cellStr.slice(0, 6); }
+      }
+
+      function buildGroupedRows(keyList) {
+        // Separate spatial keys (with s2: eventNames) from non-spatial
+        const spatialKeys = [];
+        const coarseKeys = []; // level < REGION_LEVEL — too coarse for grouping, used for annotation only
+        const nonSpatialKeys = [];
+        for (const k of keyList) {
+          const entry = keyDirectory.get(k.keyStr);
+          const parsed = entry && parseEventName(entry.eventName);
+          if (parsed) {
+            const level = s2Level(parsed.cell);
+            if (level != null && level < REGION_LEVEL) {
+              coarseKeys.push({ ...k, hashtag: parsed.hashtag, cellStr: parsed.cell, level });
+            } else {
+              spatialKeys.push({ ...k, hashtag: parsed.hashtag, cellStr: parsed.cell, level });
+            }
+          } else {
+            nonSpatialKeys.push(k);
+          }
+        }
+
+        // Phase 1: group cells at level >= REGION_LEVEL by region (ignoring hashtag).
+        const groups = new Map();     // regionKey (string) → group
+        const groupList = [];
+
+        for (const sk of spatialKeys) {
+          if (sk.level == null || sk.level < REGION_LEVEL) continue;
+          const rk = regionKeyFromCell(sk.cellStr).toString();
+          if (!groups.has(rk)) {
+            const group = {
+              regionKey: rk, anchorCell: sk.cellStr, anchorLevel: sk.level,
+              keyStrs: [], levels: new Map(), types: new Set(), firstSeen: sk.firstSeen,
+              hashtags: new Map(), // hashtag → { types: Set, keyCount }
+            };
+            groups.set(rk, group);
+            groupList.push(group);
+          }
+          const group = groups.get(rk);
+          addToGroup(group, sk);
+        }
+
+        // Annotate groups with coarse-level subscriber info without contaminating group identity.
+        // Only sub-type coarse cells are annotated; pub-type coarse cells are handled by inference below.
+        for (const ck of coarseKeys) {
+          if (ck.level == null || ck.type !== 'sub') continue;
+          const hasSubs = keySubscribers.has(ck.keyStr) && keySubscribers.get(ck.keyStr).size > 0;
+          if (!hasSubs) continue; // No point annotating a sub level with no actual subscribers
+          for (const group of groupList) {
+            const shift = BigInt(61 - 2 * ck.level);
+            if ((BigInt(ck.cellStr) >> shift) !== (BigInt(group.anchorCell) >> shift)) continue;
+            const existing = group.levels.get(ck.level);
+            if (!existing) {
+              group.levels.set(ck.level, { keyStr: null, type: 'sub', hasSubscribers: true });
+            } else if (!existing.hasSubscribers) {
+              existing.hasSubscribers = true;
+            }
+          }
+        }
+        // Infer sub-REGION_LEVEL pub levels for groups that have pubs: getContainingCells publishes to every level.
+        for (const group of groupList) {
+          if (!group.types.has('pub')) continue;
+          for (let lv = 0; lv < REGION_LEVEL; lv++) {
+            if (!group.levels.has(lv)) {
+              group.levels.set(lv, { keyStr: null, type: 'pub', hasSubscribers: false });
+            }
+          }
+        }
+
+        function addToGroup(group, sk) {
+          group.keyStrs.push(sk.keyStr);
+          group.types.add(sk.type);
+          group.firstSeen = Math.min(group.firstSeen, sk.firstSeen);
+          group.lastChanged = Math.max(group.lastChanged || 0, sk.firstSeen);
+          if (sk.level != null && sk.level > group.anchorLevel) {
+            group.anchorCell = sk.cellStr;
+            group.anchorLevel = sk.level;
+          }
+          if (sk.level != null) {
+            const hasSubs = keySubscribers.has(sk.keyStr) && keySubscribers.get(sk.keyStr).size > 0;
+            const existing = group.levels.get(sk.level);
+            if (!existing || (hasSubs && !existing.hasSubscribers)) {
+              group.levels.set(sk.level, { keyStr: sk.keyStr, type: sk.type, hasSubscribers: hasSubs });
+            }
+          }
+          // Track per-hashtag info for hover
+          if (!group.hashtags.has(sk.hashtag)) {
+            group.hashtags.set(sk.hashtag, { types: new Set(), keyCount: 0 });
+          }
+          const ht = group.hashtags.get(sk.hashtag);
+          ht.types.add(sk.type);
+          ht.keyCount++;
+        }
+
+        // Phase 3: build output rows
+        const rows = [];
+        for (const group of groupList) {
+          const type = group.types.has('pub') ? 'pub' : group.types.has('raw') ? 'raw' : 'sub';
+          const subscribers = new Set();
+          for (const ks of group.keyStrs) {
+            const subs = keySubscribers.get(ks);
+            if (subs) subs.forEach(s => subscribers.add(s));
+          }
+          const geoPrefix = cellHexPrefix(group.anchorCell);
+          const id = 'region|' + geoPrefix;
+          // Summarise hashtag names for the label: pub tags first (bold), then others, up to 3
+          const pubTags = [...group.hashtags.entries()]
+            .filter(([, info]) => info.types.has('pub')).map(([t]) => t).sort();
+          const otherTags = [...group.hashtags.entries()]
+            .filter(([, info]) => !info.types.has('pub')).map(([t]) => t).sort();
+          const labelParts = []; // {text, bold}
+          let remaining = 3;
+          for (const t of pubTags) {
+            if (remaining-- <= 0) break;
+            labelParts.push({text: t, bold: true});
+          }
+          for (const t of otherTags) {
+            if (remaining-- <= 0) break;
+            labelParts.push({text: t, bold: false});
+          }
+          const overflow = pubTags.length + otherTags.length - 3;
+          const label = labelParts.map(p => p.text).join(', ') + (overflow > 0 ? ` +${overflow}` : '');
+          rows.push({
+            id, label, labelParts, geoPrefix, keyStrs: group.keyStrs,
+            levels: group.levels, type, firstSeen: group.firstSeen,
+            lastChanged: group.lastChanged || group.firstSeen,
+            isGroup: true, isSpatial: true, subscribers,
+            hashtags: group.hashtags,
+          });
+        }
+        for (const k of nonSpatialKeys) {
+          const subs = keySubscribers.get(k.keyStr);
+          rows.push({
+            id: k.keyStr, label: keyLabel(k.keyStr), keyStrs: [k.keyStr], levels: new Map(),
+            type: k.type, firstSeen: k.firstSeen, lastChanged: k.firstSeen,
+            isGroup: false, isSpatial: false,
+            subscribers: subs ? new Set(subs) : new Set(), hashtags: new Map(),
+          });
+        }
+        rows.sort((a, b) => a.lastChanged - b.lastChanged);
+
+        // Compute per-row heights and cumulative Y positions
+        let y = 0;
+        for (const row of rows) {
+          row.height = row.isSpatial ? spatialRowHeight : nonSpatialRowHeight;
+          row.y = y;
+          y += row.height + rowSpacing;
+        }
+        return rows;
+      }
+      // Type colours for matrix marks
+      const typeColors = { sub: '#999', pub: '#e41a1c', raw: '#377eb8' };
+
+      // Compute a DHT key from a name string, matching Node.key():
+      // SHA-256, truncated to 128 bits.
+      async function nameToKey(name) {
+        const msgBuffer = new TextEncoder().encode(name);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const uint8Array = new Uint8Array(hashBuffer).slice(0, 16);
+        const hex = Array.from(uint8Array).map(b => b.toString(16).padStart(2, '0')).join('');
+        return BigInt('0x' + hex);
+      }
+
+      function getName(sname) {
+        return sname.startsWith('S') ? sname.slice(1) : sname;
+      }
+
+      async function snameToKey(sname) {
+        const name = getName(sname);
+        let key = keyCache.get(name);
+        if (key !== undefined) return key;
+        key = await nameToKey(name);
+        keyCache.set(name, key);
+        return key;
+      }
+
+      // Staleness: NodeRefresh.refreshTimeIntervalMS is 15s, fuzzyInterval
+      // defaults to ~2x that = ~30s.  Start fading after one expected refresh
+      // period with no update; remove completely at twice that.
+      const expectedRefreshMS = 30000;
+      const fadeStartMS = expectedRefreshMS;
+      const fadeOutMS = expectedRefreshMS * 2;
+      let nodeFreshness = new Map(); // sname → lastSeen timestamp
+
+      function freshnessOpacity(sname) {
+        const ls = nodeFreshness.get(sname);
+        if (ls === undefined) return 0;
+        const age = Date.now() - ls;
+        if (age <= fadeStartMS) return 1;
+        if (age >= fadeOutMS) return 0;
+        return 1 - (age - fadeStartMS) / (fadeOutMS - fadeStartMS);
+      }
+      function nodeFillOpacity(sname) {
+        const ls = nodeFreshness.get(sname);
+        if (ls === undefined) return 0;
+        const age = Date.now() - ls;
+        if (age <= fadeStartMS) return 1;
+        return 0; // Hollow ring once stale, even while still visible.
+      }
+
+      // Handle incoming network statistics events
+      function handleNetworkEvent(storageItem) {
+        const { subject, payload } = storageItem;
+        if (!payload?.connections) return;
+        // Unpack compact keys structure into subKeys, dataKeys, subscribers for internal use
+        const subKeys = [], dataKeys = [], subscribers = {};
+        if (payload.keys) {
+          for (const [ks, entry] of Object.entries(payload.keys)) {
+            if (entry.s) subKeys.push(ks);
+            if (entry.d) dataKeys.push({ key: ks, types: entry.d });
+            if (entry.sub) subscribers[ks] = entry.sub;
+            if (entry.n && !keyDirectory.has(ks)) {
+              const parsed = parseEventName(entry.n);
+              keyDirectory.set(ks, { eventName: entry.n, level: parsed ? s2Level(parsed.cell) : null });
+            }
+          }
+        }
+        networkMap.set(subject, { connections: payload.connections, subKeys, dataKeys, subscribers, lastSeen: Date.now() });
+
+        // Visual pulse on the node whose status we just received
+        nodesGroup.selectAll("circle")
+          .filter(d => d.sname === subject)
+          .transition().duration(150)
+          .attr("r", d => (d.isLocal ? 8 : 6) + 4)
+          .transition().duration(300)
+          .attr("r", d => d.isLocal ? 8 : 6);
+      }
+
+      // --- Layout ---
+      const matrixAreaHeight = 600;
+      const colHalfWidth = 3;
+      const matrixLeft = 50;
+      const axisWidth = 1000;
+      const matrixRight = matrixLeft + axisWidth;
+      const keyStripGap = 12;
+      const keyStripWidth = 220;
+      const totalWidth = matrixRight + keyStripGap + keyStripWidth + 20;
+      const matrixTop = 30;
+      const axisGap = 16;
+      const matrixAreaBottom = matrixTop + matrixAreaHeight;
+      const axisY = matrixAreaBottom + axisGap;
+      const arcAreaHeight = 140;
+      const arcBottom = axisY + arcAreaHeight;
+      const labelAreaHeight = 100;
+      const totalHeight = arcBottom + labelAreaHeight;
+      const keyStripLeft = matrixRight + keyStripGap;
+
+      const maxKey = 1n << 128n;
+
+      // Map a 128-bit key to an x pixel position along the address axis.
+      function keyToX(key) {
+        const shifted = Number(key >> 76n);
+        const maxShifted = Number(maxKey >> 76n);
+        return matrixLeft + (shifted / maxShifted) * axisWidth;
+      }
+
+      // Color based on node type
+      const nodeColor = sname => sname.startsWith('S') ? 'black' : '#cc5500';
+
+      // --- SVG ---
+      const svg = d3.select("#chart")
+        .append("svg")
+        .attr("width", totalWidth)
+        .attr("height", totalHeight);
+
+      // Main group that receives highlight CSS classes
+      const matrixGroup = svg.append("g").attr("class", "matrix-group");
+
+      // Address-space axis line
+      svg.append("line")
+        .attr("x1", matrixLeft).attr("y1", axisY)
+        .attr("x2", matrixRight).attr("y2", axisY)
+        .attr("stroke", "#bbb").attr("stroke-width", 1);
+
+      // Axis labels
+      svg.append("text")
+        .attr("x", matrixLeft).attr("y", axisY + 18)
+        .attr("text-anchor", "start").attr("font-size", "10px").attr("fill", "#999")
+        .text("0x0000...");
+      svg.append("text")
+        .attr("x", matrixRight).attr("y", axisY + 18)
+        .attr("text-anchor", "end").attr("font-size", "10px").attr("fill", "#999")
+        .text("0xFFFF...");
+      const midX = (matrixLeft + matrixRight) / 2;
+      svg.append("line")
+        .attr("x1", midX).attr("y1", axisY - 4)
+        .attr("x2", midX).attr("y2", axisY + 4)
+        .attr("stroke", "#ccc").attr("stroke-width", 1);
+      svg.append("text")
+        .attr("x", midX).attr("y", axisY + 18)
+        .attr("text-anchor", "middle").attr("font-size", "10px").attr("fill", "#bbb")
+        .text("0x8000...");
+
+      // SVG groups (layered order: backgrounds → marks → arcs → nodes → labels)
+      const colBgGroup = matrixGroup.append("g");
+      const rowBgGroup = matrixGroup.append("g");
+      const dotGroup = matrixGroup.append("g");
+      const arcsGroup = matrixGroup.append("g");
+      const arcLabelsGroup = svg.append("g");
+      const nodesGroup = svg.append("g");
+      const labelsGroup = svg.append("g");
+      const subscriberMarkGroup = svg.append("g"); // subscriber indicators on axis
+      const keyStripBgGroup = svg.append("g");  // key strip backgrounds/pips
+      const keyStripLabelGroup = svg.append("g"); // key strip labels
+
+      // Tooltip
+      const tooltip = d3.select("body")
+        .append("div")
+        .attr("class", "tooltip")
+        .style("opacity", 0);
+      const chartEl = document.getElementById("chart");
+      function positionTooltip(event) {
+        const chartRight = chartEl.getBoundingClientRect().right + window.scrollX;
+        const tooltipWidth = tooltip.node().offsetWidth;
+        const left = Math.min(event.pageX + 10, chartRight - tooltipWidth);
+        tooltip.style("left", left + "px").style("top", (event.pageY + 25) + "px");
+      }
+
+      // Legend
+      const legend = svg.append("g").attr("transform", `translate(${matrixLeft}, ${totalHeight - 25})`);
+      [{ label: 'sub', color: typeColors.sub },
+       { label: 'pub', color: typeColors.pub },
+       { label: 'raw', color: typeColors.raw }].forEach((item, i) => {
+        const g = legend.append("g").attr("transform", `translate(${i * 70}, 0)`);
+        g.append("rect").attr("width", 12).attr("height", 12).attr("fill", item.color).attr("opacity", 0.8);
+        g.append("text").attr("x", 16).attr("y", 10).attr("font-size", "11px").attr("fill", "#555").text(item.label);
+      });
+
+      // --- Highlight state ---
+      let hoveredSname = null;
+      let hoveredKeyStr = null;
+      let hoveredRowId = null; // stable row ID for maintaining hover across updates
+      let activeColIdx = null;
+      let activeRowIdx = null;
+      let currentNodes = [];   // rebuilt each update, sorted by DHT key
+      let currentKeyList = []; // rebuilt each update, sorted by firstSeen
+      let previousRowIds = new Set(); // row IDs from the last update
+      const previousRowHashtags = new Map(); // row ID → Set of hashtag names (for detecting tag changes)
+      const removedRows = new Map(); // row ID → { row, removedAt }
+      const removedRowDurationMS = 30000; // show removed rows for 30s
+      const newRowDurationMS = 60000; // highlight new rows for 60s
+
+      function highlightNodeCol(colIdx) {
+        if (colIdx === activeColIdx) return;
+
+        // Clear previous column highlight
+        if (activeColIdx !== null) {
+          colBgGroup.selectAll("rect").filter((d, i) => i === activeColIdx).classed("active", false);
+          matrixGroup.selectAll(`.col-${activeColIdx}`).classed("col-active", false);
+          arcsGroup.selectAll("path").classed("arc-active", false).attr("stroke", "#999");
+          arcLabelsGroup.selectAll("*").remove();
+        }
+        // Clear any row highlight
+        if (activeRowIdx !== null) {
+          rowBgGroup.selectAll("rect.row-bg").filter(d => d.id === hoveredRowId).classed("active", false);
+          matrixGroup.selectAll(`.row-${activeRowIdx}`).classed("row-active", false);
+          activeRowIdx = null;
+          hoveredRowId = null;
+          hoveredKeyStr = null;
+        }
+
+        activeColIdx = colIdx;
+
+        if (colIdx !== null) {
+          matrixGroup.classed("highlight-key", false).classed("highlight-node", true);
+          colBgGroup.selectAll("rect").filter((d, i) => i === colIdx).classed("active", true);
+          matrixGroup.selectAll(`.col-${colIdx}`).classed("col-active", true);
+          hoveredSname = currentNodes[colIdx]?.sname;
+
+          // Highlight arcs for this node's reported connections
+          const reportedConns = new Set(networkMap.get(hoveredSname)?.connections || []);
+          arcsGroup.selectAll("path").each(function(d) {
+            const isMatch =
+              (d.source.sname === hoveredSname && reportedConns.has(d.target.sname)) ||
+              (d.target.sname === hoveredSname && reportedConns.has(d.source.sname));
+            const el = d3.select(this);
+            el.classed("arc-active", isMatch);
+            if (isMatch) {
+              const t = Math.pow(Math.max(0, Math.min(1, (d.commonPrefix + 1) / 8)), 0.5);
+              el.attr("stroke", d3.interpolateRgb('blue', 'red')(t));
+            }
+          });
+
+          // Arc labels at each apex
+          arcLabelsGroup.selectAll("*").remove();
+          for (const l of currentLinks) {
+            const isMatch =
+              (l.source.sname === hoveredSname && reportedConns.has(l.target.sname)) ||
+              (l.target.sname === hoveredSname && reportedConns.has(l.source.sname));
+            if (!isMatch || !l.commonPrefix) continue;
+            arcLabelsGroup.append("text")
+              .attr("x", l.labelX)
+              .attr("y", l.labelY)
+              .attr("text-anchor", "middle")
+              .attr("font-size", "10px")
+              .attr("font-weight", "bold")
+              .attr("fill", "#333")
+              .attr("paint-order", "stroke")
+              .attr("stroke", "white")
+              .attr("stroke-width", "3px")
+              .attr("stroke-linejoin", "round")
+              .text(l.commonPrefix);
+          }
+        } else {
+          matrixGroup.classed("highlight-node", false);
+          hoveredSname = null;
+        }
+      }
+
+      function highlightKeyRow(rowIdx) {
+        if (rowIdx === activeRowIdx) return;
+
+        // Clear previous row highlight
+        if (activeRowIdx !== null) {
+          rowBgGroup.selectAll("rect.row-bg").filter(d => d.id === hoveredRowId).classed("active", false);
+          matrixGroup.selectAll(`.row-${activeRowIdx}`).classed("row-active", false);
+          subscriberMarkGroup.selectAll("*").remove();
+        }
+        // Clear any column highlight
+        if (activeColIdx !== null) {
+          colBgGroup.selectAll("rect").filter((d, i) => i === activeColIdx).classed("active", false);
+          matrixGroup.selectAll(`.col-${activeColIdx}`).classed("col-active", false);
+          arcsGroup.selectAll("path").classed("arc-active", false).attr("stroke", "#999");
+          arcLabelsGroup.selectAll("*").remove();
+          activeColIdx = null;
+          hoveredSname = null;
+        }
+
+        activeRowIdx = rowIdx;
+        hoveredRowId = rowIdx !== null ? currentKeyList[rowIdx]?.id : null;
+
+        if (rowIdx !== null) {
+          matrixGroup.classed("highlight-node", false).classed("highlight-key", true);
+          rowBgGroup.selectAll("rect.row-bg").filter(d => d.id === hoveredRowId).classed("active", true);
+          matrixGroup.selectAll(`.row-${rowIdx}`).classed("row-active", true);
+          hoveredKeyStr = currentKeyList[rowIdx]?.label;
+
+          // Show subscriber markers as triangles below the node circles
+          const row = currentKeyList[rowIdx];
+          subscriberMarkGroup.selectAll("*").remove();
+          if (row?.subscribers?.size) {
+            const subNodes = currentNodes.filter(n => row.subscribers.has(n.sname));
+            for (const nd of subNodes) {
+              const x = nd.x;
+              const y = axisY + 24;
+              subscriberMarkGroup.append("path")
+                .attr("d", `M${x},${y} L${x-7},${y+10} L${x+7},${y+10} Z`)
+                .attr("fill", "#e41a1c")
+                .attr("opacity", 0.9);
+            }
+          }
+        } else {
+          matrixGroup.classed("highlight-key", false);
+          subscriberMarkGroup.selectAll("*").remove();
+          hoveredKeyStr = null;
+        }
+      }
+
+      function clearAllHighlight() {
+        highlightNodeCol(null);
+        highlightKeyRow(null);
+        tooltip.style("opacity", 0);
+      }
+
+      // --- Matrix overlay (for column hover) ---
+      const matrixOverlay = svg.append("rect")
+        .attr("x", matrixLeft).attr("y", matrixTop)
+        .attr("width", axisWidth).attr("height", matrixAreaHeight)
+        .attr("fill", "transparent")
+        .attr("pointer-events", "all")
+        .attr("cursor", "crosshair");
+
+      matrixOverlay.on("mousemove", (event) => {
+        const [mx] = d3.pointer(event);
+
+        // Find nearest node column by x position
+        let nearestIdx = null;
+        let nearestDist = Infinity;
+        for (let i = 0; i < currentNodes.length; i++) {
+          const dist = Math.abs(mx - currentNodes[i].x);
+          if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
+        }
+        // Only highlight if within reasonable range
+        if (nearestDist > colHalfWidth * 4) nearestIdx = null;
+
+        highlightNodeCol(nearestIdx);
+
+        if (nearestIdx !== null) {
+          const nd = currentNodes[nearestIdx];
+          const conns = networkMap.get(nd.sname);
+          const connCount = conns ? conns.connections.length : '?';
+          const keyHex = nd.key.toString(16).padStart(32, '0');
+          const subCount = nd.subKeys?.length || 0;
+          const dataCount = nd.dataKeys?.length || 0;
+          tooltip.style("opacity", 0.9);
+          tooltip.html(
+            `<strong>${nd.sname}${nd.isLocal ? ' (self)' : ''}</strong><br/>` +
+            `Key: ${keyHex}<br/>` +
+            `Connections: ${connCount}, Subs: ${subCount}, Data: ${dataCount}`);
+          positionTooltip(event);
+        } else {
+          tooltip.style("opacity", 0);
+        }
+      });
+
+      matrixOverlay.on("mouseleave", () => {
+        clearAllHighlight();
+      });
+
+      // --- Key strip overlay (for row hover) ---
+      const keyStripOverlay = svg.append("rect")
+        .attr("x", keyStripLeft).attr("y", matrixTop)
+        .attr("width", keyStripWidth).attr("height", matrixAreaHeight)
+        .attr("fill", "transparent")
+        .attr("pointer-events", "all")
+        .attr("cursor", "pointer");
+
+      // Per-update layout values used by key strip hover
+      let usedTop = matrixAreaBottom;
+
+      keyStripOverlay.on("mousemove", (event) => {
+        const [, my] = d3.pointer(event);
+        const relY = my - usedTop;
+        let rowIdx = -1;
+        for (let i = 0; i < currentKeyList.length; i++) {
+          const row = currentKeyList[i];
+          if (relY >= row.y && relY < row.y + row.height) { rowIdx = i; break; }
+        }
+        if (rowIdx >= 0 && rowIdx < currentKeyList.length) {
+          highlightKeyRow(rowIdx);
+          const row = currentKeyList[rowIdx];
+          tooltip.style("opacity", 0.9);
+          if (row.isGroup) {
+            // Tag breakdown, pubs first (bold), then subs
+            const pubLines = [], subLines = [];
+            for (const [tag, info] of row.hashtags) {
+              const typeLabel = info.types.has('pub') ? 'pub' : info.types.has('raw') ? 'data' : 'sub';
+              const kc = info.keyCount;
+              const line = `${tag} (${typeLabel}, ${kc} key${kc === 1 ? '' : 's'})`;
+              if (info.types.has('pub')) pubLines.push(`<strong>${line}</strong>`);
+              else subLines.push(line);
+            }
+            const tagLines = [...pubLines, ...subLines];
+            // Level breakdown: which levels have subscriptions
+            const levelNums = [...row.levels.keys()].sort((a, b) => b - a);
+            const subLevels = levelNums.filter(lv => row.levels.get(lv).hasSubscribers);
+            const levelInfo = levelNums.length
+              ? `Levels ${levelNums[0]}–${levelNums[levelNums.length - 1]}` +
+                (subLevels.length ? `, subs at: ${subLevels.join(', ')}` : '')
+              : '';
+            // Subscribers
+            const subSnames = [...row.subscribers];
+            const subLabel = subSnames.length
+              ? subSnames.map(s => s.slice(0, 8)).join(', ')
+              : '';
+            const nKeys = row.keyStrs.length;
+            let html = `<strong>Region ${row.geoPrefix}</strong> (${nKeys} key${nKeys === 1 ? '' : 's'})<br/>`;
+            html += tagLines.join('<br/>');
+            if (levelInfo) html += `<br/>${levelInfo}`;
+            if (subLabel) html += `<br/>Subscribers: ${subLabel}`;
+            tooltip.html(html);
+          } else {
+            const typeName = row.type === 'sub' ? 'Subscription' : row.type === 'pub' ? 'Published' : 'Stored';
+            tooltip.html(
+              `<strong>${typeName}</strong><br/>` +
+              `${row.label}`);
+          }
+          positionTooltip(event);
+        } else {
+          highlightKeyRow(null);
+          tooltip.style("opacity", 0);
+        }
+      });
+
+      keyStripOverlay.on("mouseleave", () => {
+        clearAllHighlight();
+      });
+
+      // --- Node hover (circles and labels trigger column highlight) ---
+      function nodeMouseover(event, d) {
+        const colIdx = currentNodes.findIndex(n => n.sname === d.sname);
+        if (colIdx >= 0) highlightNodeCol(colIdx);
+        const conns = networkMap.get(d.sname);
+        const connCount = conns ? conns.connections.length : '?';
+        const keyHex = d.key.toString(16).padStart(32, '0');
+        tooltip.style("opacity", 0.9);
+        tooltip.html(
+          `<strong>${d.sname}${d.isLocal ? ' (self)' : ''}</strong><br/>` +
+          `Key: ${keyHex}<br/>` +
+          `Connections: ${connCount}`);
+        positionTooltip(event);
+      }
+      function nodeMouseout() {
+        clearAllHighlight();
+      }
+
+      async function updateVisualization() {
+        if (!contact || !contact.node) return;
+
+        const now = Date.now();
+
+        // Include local node's own connections (always fresh)
+        const localSname = contact.node.sname;
+        const localConnections = contact.node.contacts
+          .filter(c => c.connection)
+          .map(c => c.sname);
+        const localSubKeys = [];
+        const localDataKeys = [];
+        const localSubscribers = {};
+        for (const [k, bag] of contact.host.storage) {
+          const ks = k.toString();
+          const types = Object.keys(bag.types).filter(t =>
+            Object.values(bag.types[t]).some(item => !item.isCancelled));
+          if (types.some(t => t === 'sub' || t === 'event' || t === 'ext')) {
+            localSubKeys.push(ks);
+            const subs = bag.types.sub;
+            if (subs) {
+              const names = Object.values(subs).filter(item => !item.isCancelled).map(item => item.subject);
+              if (names.length) localSubscribers[ks] = names;
+            }
+          }
+          const dataTypes = types.filter(t => t === 'raw' || t === 'pub');
+          if (dataTypes.length) localDataKeys.push({ key: ks, types: dataTypes });
+          const name = contact.host.keyNames?.get(ks);
+          if (name && !keyDirectory.has(ks)) {
+            const parsed = parseEventName(name);
+            keyDirectory.set(ks, { eventName: name, level: parsed ? s2Level(parsed.cell) : null });
+          }
+        }
+        networkMap.set(localSname, { connections: localConnections, subKeys: localSubKeys, dataKeys: localDataKeys, subscribers: localSubscribers, lastSeen: now });
+
+        // Prune entries that haven't been refreshed within the fade-out window
+        for (const [sname, data] of networkMap) {
+          if (now - data.lastSeen > fadeOutMS) networkMap.delete(sname);
+        }
+
+        // Rebuild keySubscribers from all nodes' subscriber data
+        keySubscribers.clear();
+        for (const [, data] of networkMap) {
+          const subs = data.subscribers;
+          if (!subs) continue;
+          for (const [keyStr, names] of Object.entries(subs)) {
+            if (!keySubscribers.has(keyStr)) keySubscribers.set(keyStr, new Set());
+            const set = keySubscribers.get(keyStr);
+            for (const name of names) set.add(name);
+          }
+        }
+
+        // Compute per-node freshness
+        nodeFreshness = new Map();
+        for (const [sname, data] of networkMap) {
+          const ls = data.lastSeen;
+          if (!nodeFreshness.has(sname) || ls > nodeFreshness.get(sname))
+            nodeFreshness.set(sname, ls);
+          for (const conn of data.connections) {
+            if (!nodeFreshness.has(conn) || ls > nodeFreshness.get(conn))
+              nodeFreshness.set(conn, ls);
+          }
+        }
+
+        // Collect all unique snames
+        const allSnames = new Set();
+        for (const [sname, data] of networkMap) {
+          allSnames.add(sname);
+          data.connections.forEach(c => allSnames.add(c));
+        }
+
+        // Add new nodes
+        for (const sname of allSnames) {
+          if (!nodeData.has(sname)) {
+            const key = await snameToKey(sname);
+            nodeData.set(sname, { sname, key, x: keyToX(key) });
+          }
+          const nd = nodeData.get(sname);
+          nd.isLocal = (sname === localSname);
+          const entry = networkMap.get(sname);
+          nd.subKeys = entry?.subKeys || [];
+          nd.dataKeys = entry?.dataKeys || [];
+        }
+
+        // Remove departed nodes
+        for (const sname of nodeData.keys()) {
+          if (!allSnames.has(sname)) nodeData.delete(sname);
+        }
+
+        // Sort nodes by DHT key for consistent column ordering
+        const nodes = Array.from(nodeData.values()).sort((a, b) =>
+          a.key < b.key ? -1 : a.key > b.key ? 1 : 0
+        );
+        currentNodes = nodes;
+
+        // --- Collect all storage keys across all nodes ---
+        const activeKeys = new Map(); // keyStr → type
+        for (const nd of nodes) {
+          for (const ks of nd.subKeys) {
+            if (!activeKeys.has(ks)) activeKeys.set(ks, 'sub');
+          }
+          for (const entry of nd.dataKeys) {
+            const { key, types } = typeof entry === 'string' ? { key: entry, types: [] } : entry;
+            const type = types.includes('pub') ? 'pub' : 'raw';
+            // Data types take precedence over sub if both present
+            activeKeys.set(key, type);
+          }
+        }
+
+        // Update storageKeyInfo with first-seen timestamps
+        for (const [ks, type] of activeKeys) {
+          if (!storageKeyInfo.has(ks)) {
+            storageKeyInfo.set(ks, { type, firstSeen: now });
+          } else {
+            storageKeyInfo.get(ks).type = type; // update type in case it changed
+          }
+        }
+        // Prune keys no longer held by anyone
+        for (const ks of storageKeyInfo.keys()) {
+          if (!activeKeys.has(ks)) storageKeyInfo.delete(ks);
+        }
+
+        // Build ordered key list: oldest first (top), newest last (bottom)
+        // Skip keys with no known name yet — they'll appear once the originating node's stats arrive.
+        const keyList = Array.from(storageKeyInfo.entries())
+          .filter(([keyStr]) => keyDirectory.has(keyStr))
+          .map(([keyStr, info]) => ({ keyStr, type: info.type, firstSeen: info.firstSeen }))
+          .sort((a, b) => a.firstSeen - b.firstSeen);
+
+        // Count holders per key
+        const keyHolderCounts = new Map();
+        for (const k of keyList) keyHolderCounts.set(k.keyStr, 0);
+        for (const nd of nodes) {
+          for (const ks of nd.subKeys) {
+            if (keyHolderCounts.has(ks)) keyHolderCounts.set(ks, keyHolderCounts.get(ks) + 1);
+          }
+          for (const entry of nd.dataKeys) {
+            const key = typeof entry === 'string' ? entry : entry.key;
+            if (keyHolderCounts.has(key)) keyHolderCounts.set(key, keyHolderCounts.get(key) + 1);
+          }
+        }
+        for (const k of keyList) k.holderCount = keyHolderCounts.get(k.keyStr) || 0;
+
+        // Build grouped rows (collapsing cell levels per hashtag)
+        const groupedRows = buildGroupedRows(keyList);
+
+        // Detect hashtag removals within rows: if a row lost hashtags since last update, bump its
+        // lastChanged and re-sort/reposition rows. We compare hashtag sets rather than keyStrs because
+        // DHT propagation causes transient key fluctuations that would trigger false positives.
+        let needsResort = false;
+        for (const row of groupedRows) {
+          const prev = previousRowHashtags.get(row.id);
+          if (prev && prev.size > 0) {
+            const curr = new Set(row.hashtags.keys());
+            for (const tag of prev) {
+              if (!curr.has(tag)) { row.lastChanged = now; needsResort = true; break; }
+            }
+          }
+          previousRowHashtags.set(row.id, new Set(row.hashtags.keys()));
+        }
+        if (needsResort) {
+          groupedRows.sort((a, b) => a.lastChanged - b.lastChanged);
+          let y = 0;
+          for (const row of groupedRows) {
+            row.y = y;
+            y += row.height + rowSpacing;
+          }
+        }
+        // Clean up tracking for rows that no longer exist
+        const currentRowIdSet = new Set(groupedRows.map(r => r.id));
+        for (const id of previousRowHashtags.keys()) {
+          if (!currentRowIdSet.has(id)) previousRowHashtags.delete(id);
+        }
+
+        // Track removed rows: rows present last update but not this one
+        const currentRowIds = new Set(groupedRows.map(r => r.id));
+        for (const id of previousRowIds) {
+          if (!currentRowIds.has(id)) {
+            // Find the row data from the previous currentKeyList
+            const oldRow = currentKeyList.find(r => r.id === id);
+            if (oldRow) removedRows.set(id, { row: oldRow, removedAt: now });
+          }
+        }
+        // Rows that reappeared are no longer removed
+        for (const id of currentRowIds) removedRows.delete(id);
+        // Expire old removed rows
+        for (const [id, info] of removedRows) {
+          if (now - info.removedAt > removedRowDurationMS) removedRows.delete(id);
+        }
+        previousRowIds = currentRowIds;
+
+        // Build removed-row list for rendering at the top, with fade opacity
+        const removedRowList = [...removedRows.values()].map(({ row, removedAt }) => {
+          const age = now - removedAt;
+          const opacity = Math.max(0, 1 - age / removedRowDurationMS);
+          return { ...row, isRemoved: true, removedOpacity: opacity };
+        });
+        // Assign positions for removed rows (rendered above active rows)
+        let removedHeight = 0;
+        for (const row of removedRowList) {
+          row.height = row.isSpatial ? spatialRowHeight : nonSpatialRowHeight;
+          row.y = removedHeight;
+          removedHeight += row.height + rowSpacing;
+        }
+        const removedSectionHeight = removedHeight > 0 ? removedHeight + rowSpacing * 2 : 0;
+
+        // Offset active rows below removed section, and recompute their y positions
+        for (const row of groupedRows) {
+          row.y += removedSectionHeight;
+        }
+
+        currentKeyList = groupedRows;
+
+        // --- Per-update layout ---
+        const numRows = groupedRows.length;
+        const allRows = [...removedRowList, ...groupedRows];
+        const totalRowsHeight = allRows.length > 0
+          ? allRows[allRows.length - 1].y + allRows[allRows.length - 1].height
+          : 0;
+        // Bottom-align: newest keys appear just above the axis
+        usedTop = matrixAreaBottom - totalRowsHeight;
+
+        // Row index map: keyStr → row index (multiple keyStrs can map to the same row)
+        const keyIdxMap = new Map();
+        groupedRows.forEach((row, i) => {
+          for (const ks of row.keyStrs) keyIdxMap.set(ks, i);
+        });
+
+        // Node index map
+        const nodeIdxMap = new Map();
+        nodes.forEach((n, i) => nodeIdxMap.set(n.sname, i));
+
+        const totalKeys = storageKeyInfo.size;
+        document.getElementById("nodeCount").textContent =
+          `(${nodes.length} nodes, ${totalKeys} keys in ${numRows} rows)`;
+
+        // --- Build marks ---
+        // For grouped rows, deduplicate per (node, row) — a node holding multiple keys
+        // in the same group produces one mark with the most significant type.
+        const typePriority = { pub: 3, raw: 2, sub: 1 };
+        const markMap = new Map(); // "ni|ki" → mark
+        const marks = [];
+        for (let ni = 0; ni < nodes.length; ni++) {
+          const nd = nodes[ni];
+          const opacity = freshnessOpacity(nd.sname);
+          function noteMark(ks, type) {
+            const ki = keyIdxMap.get(ks);
+            if (ki === undefined) return;
+            const id = ni + '|' + ki;
+            const existing = markMap.get(id);
+            if (existing && typePriority[existing.type] >= typePriority[type]) return;
+            const row = groupedRows[ki];
+            const mark = {
+              id, ni, ki, sname: nd.sname, type,
+              x: nd.x - colHalfWidth,
+              y: usedTop + row.y,
+              h: row.height,
+              opacity
+            };
+            markMap.set(id, mark);
+          }
+          for (const ks of nd.subKeys) noteMark(ks, 'sub');
+          for (const entry of nd.dataKeys) {
+            const { key, types } = typeof entry === 'string' ? { key: entry, types: [] } : entry;
+            noteMark(key, types.includes('pub') ? 'pub' : 'raw');
+          }
+        }
+        marks.push(...markMap.values());
+
+        // --- Render column backgrounds ---
+        const colBgJoin = colBgGroup.selectAll("rect").data(nodes, d => d.sname);
+        colBgJoin.exit().remove();
+        colBgJoin.enter()
+          .append("rect")
+          .attr("class", "col-bg")
+          .merge(colBgJoin)
+          .attr("x", d => d.x - colHalfWidth)
+          .attr("y", usedTop)
+          .attr("width", colHalfWidth * 2)
+          .attr("height", totalRowsHeight);
+
+        // --- Render row backgrounds (active + removed) ---
+        const allRowsBg = allRows.map(r => ({
+          ...r,
+          bgOpacity: r.isRemoved ? 0.15 * r.removedOpacity : 1,
+          newHighlight: !r.isRemoved && (now - r.firstSeen < newRowDurationMS)
+            ? Math.max(0, 1 - (now - r.firstSeen) / newRowDurationMS) : 0,
+        }));
+        const rowBgJoin = rowBgGroup.selectAll("rect.row-bg").data(allRowsBg, d => d.id);
+        rowBgJoin.exit().remove();
+        rowBgJoin.enter()
+          .append("rect")
+          .attr("class", "row-bg")
+          .merge(rowBgJoin)
+          .attr("x", matrixLeft)
+          .attr("y", d => usedTop + d.y)
+          .attr("width", axisWidth)
+          .attr("height", d => d.height)
+          .attr("opacity", d => d.bgOpacity);
+
+        // New-row highlight overlay (green tint that fades over 60s)
+        const newRowData = allRowsBg.filter(d => d.newHighlight > 0);
+        const newRowJoin = rowBgGroup.selectAll("rect.new-row-highlight").data(newRowData, d => d.id);
+        newRowJoin.exit().remove();
+        newRowJoin.enter()
+          .append("rect")
+          .attr("class", "new-row-highlight")
+          .attr("pointer-events", "none")
+          .merge(newRowJoin)
+          .attr("x", matrixLeft)
+          .attr("y", d => usedTop + d.y)
+          .attr("width", axisWidth + keyStripWidth)
+          .attr("height", d => d.height)
+          .attr("fill", "#4caf50")
+          .attr("opacity", d => 0.15 * d.newHighlight);
+
+        // --- Render marks ---
+        const dotJoin = dotGroup.selectAll("rect").data(marks, d => d.id);
+        dotJoin.exit().remove();
+        dotJoin.enter()
+          .append("rect")
+          .merge(dotJoin)
+          .attr("class", d => `mark col-${d.ni} row-${d.ki}`)
+          .attr("x", d => d.x)
+          .attr("y", d => d.y)
+          .attr("width", colHalfWidth * 2)
+          .attr("height", d => d.h)
+          .attr("fill", d => typeColors[d.type])
+          .attr("opacity", d => 0.7 * d.opacity);
+
+        // --- Render arcs (below axis) ---
+        const linkSet = new Set();
+        const links = [];
+        for (const [sname, data] of networkMap) {
+          for (const target of data.connections) {
+            const pair = [sname, target].sort().join('|');
+            if (linkSet.has(pair)) continue;
+            linkSet.add(pair);
+            const s = nodeData.get(sname);
+            const t = nodeData.get(target);
+            if (s && t) {
+              const distance = s.key ^ t.key;
+              const commonPrefix = Node.commonPrefixLength(distance);
+              const span = Math.abs(s.x - t.x);
+              const h = Math.max(15, (span / axisWidth) * arcAreaHeight * 0.85);
+              const mx = (s.x + t.x) / 2;
+              const controlY = axisY + 2 * h; // below axis
+              links.push({
+                id: pair, source: s, target: t,
+                commonPrefix, arcHeight: h,
+                path: `M ${s.x},${axisY} Q ${mx},${controlY} ${t.x},${axisY}`,
+                labelX: mx,
+                labelY: axisY + h + 14 // below the arc apex
+              });
+            }
+          }
+        }
+        currentLinks = links;
+
+        const arcJoin = arcsGroup.selectAll("path").data(links, d => d.id);
+        arcJoin.exit().remove();
+        arcJoin.enter()
+          .append("path")
+          .attr("class", "arc")
+          .attr("fill", "none")
+          .merge(arcJoin)
+          .attr("d", d => d.path)
+          .attr("stroke", "#999")
+          .attr("stroke-width", 1.2)
+          .attr("opacity", d => {
+            const f = Math.min(freshnessOpacity(d.source.sname), freshnessOpacity(d.target.sname));
+            return 0.3 * f;
+          });
+
+        // --- Render nodes on axis ---
+        const nodeJoin = nodesGroup.selectAll("circle").data(nodes, d => d.sname);
+        nodeJoin.exit().remove();
+        nodeJoin.enter()
+          .append("circle")
+          .attr("cy", axisY)
+          .on("mouseover", nodeMouseover)
+          .on("mouseout", nodeMouseout)
+          .merge(nodeJoin)
+          .attr("cx", d => d.x)
+          .attr("r", d => d.isLocal ? 8 : 6)
+          .attr("fill", d => d.isLocal ? 'red' : nodeColor(d.sname))
+          .attr("fill-opacity", d => d.isLocal ? 1 : nodeFillOpacity(d.sname))
+          .attr("stroke", d => d.isLocal ? 'darkred' : nodeColor(d.sname))
+          .attr("stroke-width", 2)
+          .attr("opacity", d => freshnessOpacity(d.sname));
+
+        // --- Render node labels (rotated, below arcs) ---
+        const labelJoin = labelsGroup.selectAll("text").data(nodes, d => d.sname);
+        labelJoin.exit().remove();
+        labelJoin.enter()
+          .append("text")
+          .attr("class", "node-label")
+          .attr("text-anchor", "start")
+          .attr("dominant-baseline", "central")
+          .on("mouseover", nodeMouseover)
+          .on("mouseout", nodeMouseout)
+          .merge(labelJoin)
+          .attr("transform", d => `translate(${d.x}, ${arcBottom - 16}) rotate(90)`)
+          .attr("opacity", d => freshnessOpacity(d.sname))
+          .text(d => d.sname.slice(0, 12));
+
+        // --- Render key strip ---
+        // Background
+        keyStripBgGroup.selectAll("rect.strip-bg").data([1])
+          .join("rect")
+          .attr("class", "strip-bg")
+          .attr("x", keyStripLeft)
+          .attr("y", usedTop)
+          .attr("width", keyStripWidth)
+          .attr("height", totalRowsHeight || 1)
+          .attr("fill", "#fafafa")
+          .attr("stroke", "#e0e0e0")
+          .attr("stroke-width", 0.5);
+
+        // Type-colored pips
+        const stripOpacity = d => d.isRemoved ? d.removedOpacity * 0.4 : 1;
+        const pipJoin = keyStripBgGroup.selectAll("rect.strip-pip").data(allRows, d => d.id);
+        pipJoin.exit().remove();
+        pipJoin.enter()
+          .append("rect")
+          .attr("class", "strip-pip")
+          .attr("pointer-events", "none")
+          .merge(pipJoin)
+          .attr("x", keyStripLeft + 2)
+          .attr("y", d => usedTop + d.y + d.height / 2 - 3)
+          .attr("width", 6)
+          .attr("height", 6)
+          .attr("fill", d => typeColors[d.type])
+          .attr("opacity", stripOpacity);
+
+        // Labels (left side of key strip)
+        const labelX = keyStripLeft + 12;
+        const stripLabelJoin = keyStripLabelGroup.selectAll("text.strip-label").data(allRows, d => d.id);
+        stripLabelJoin.exit().remove();
+        stripLabelJoin.enter()
+          .append("text")
+          .attr("class", "strip-label")
+          .attr("pointer-events", "none")
+          .attr("fill", "#555")
+          .attr("dominant-baseline", "central")
+          .merge(stripLabelJoin)
+          .attr("font-size", d => (d.isSpatial ? "11px" : "10px"))
+          .attr("x", labelX)
+          .attr("y", d => usedTop + d.y + d.height / 2)
+          .attr("opacity", stripOpacity)
+          .attr("text-decoration", d => d.isRemoved ? "line-through" : "none")
+          .each(function(d) {
+            const el = d3.select(this);
+            el.selectAll("*").remove();
+            if (d.isGroup && d.labelParts?.length) {
+              const prefix = d.geoPrefix || '';
+              el.append("tspan").text(prefix + ' ');
+              d.labelParts.forEach((p, i) => {
+                if (i > 0) el.append("tspan").text(', ');
+                el.append("tspan")
+                  .attr("font-weight", p.bold ? "bold" : "normal")
+                  .text(p.text);
+              });
+              const overflow = d.label.match(/\+\d+$/);
+              if (overflow) el.append("tspan").text(' ' + overflow[0]);
+            } else {
+              el.text(d.label);
+            }
+          });
+
+        // Level indicator bars for spatial grouped rows (right side of key strip)
+        const levelBarCellW = 3; // pixels per level slot
+        const levelBarTotalW = numLevels * levelBarCellW;
+        const levelBarX = keyStripLeft + keyStripWidth - levelBarTotalW - 4;
+        const levelBarPad = 2; // vertical padding within row
+
+        // Bar backgrounds (one per spatial group)
+        const barBgData = allRows.filter(r => r.isSpatial);
+        const barBgJoin = keyStripLabelGroup.selectAll("rect.level-bar-bg").data(barBgData, d => d.id);
+        barBgJoin.exit().remove();
+        barBgJoin.enter()
+          .append("rect")
+          .attr("class", "level-bar-bg")
+          .attr("pointer-events", "none")
+          .merge(barBgJoin)
+          .attr("x", levelBarX)
+          .attr("y", d => usedTop + d.y + levelBarPad)
+          .attr("width", levelBarTotalW)
+          .attr("height", d => d.height - 2 * levelBarPad)
+          .attr("fill", "#e0e0e0")
+          .attr("opacity", stripOpacity)
+          .attr("rx", 2);
+
+        // Level blobs: level 16 on left (smallest bar), level 0 on right (tallest bar).
+        // Height: level 0 → full barH, level 16 → 2px.
+        const levelSegments = [];
+        for (const row of allRows) {
+          if (!row.isSpatial || !row.levels.size) continue;
+          const rowOpacity = row.isRemoved ? row.removedOpacity * 0.4 : 1;
+          const barH = row.height - 2 * levelBarPad;
+          for (let lv = 0; lv < numLevels; lv++) {
+            const info = row.levels.get(lv);
+            if (!info) continue;
+            const blobH = Math.max(2, ((numLevels - 1 - lv) / (numLevels - 1)) * barH);
+            levelSegments.push({
+              id: row.id + '|' + lv,
+              lv, type: info.type, hasSubscribers: info.hasSubscribers,
+              x: levelBarX + (numLevels - 1 - lv) * levelBarCellW,
+              y: usedTop + row.y + levelBarPad + (barH - blobH), // bottom-aligned within bar
+              w: levelBarCellW - 1,
+              h: blobH,
+              rowOpacity
+            });
+          }
+        }
+        const lvJoin = keyStripLabelGroup.selectAll("rect.level-seg").data(levelSegments, d => d.id);
+        lvJoin.exit().remove();
+        lvJoin.enter()
+          .append("rect")
+          .attr("class", "level-seg")
+          .attr("pointer-events", "none")
+          .merge(lvJoin)
+          .attr("x", d => d.x)
+          .attr("y", d => d.y)
+          .attr("width", d => d.w)
+          .attr("height", d => d.h)
+          .attr("fill", d => d.hasSubscribers ? '#333' : typeColors[d.type])
+          .attr("opacity", d => (d.hasSubscribers ? 1 : 0.5) * d.rowOpacity)
+          .attr("rx", 1);
+
+        // Update key strip overlay position to match used area
+        keyStripOverlay
+          .attr("y", usedTop)
+          .attr("height", totalRowsHeight || 1);
+
+        // "Keys" header above strip
+        keyStripBgGroup.selectAll("text.strip-header").data([1])
+          .join("text")
+          .attr("class", "strip-header")
+          .attr("x", keyStripLeft + keyStripWidth / 2)
+          .attr("y", usedTop - 6)
+          .attr("text-anchor", "middle")
+          .attr("font-size", "10px")
+          .attr("fill", "#666")
+          .text(`Keys (${totalKeys} → ${numRows} rows)`);
+
+        // --- Re-apply hover highlight if active ---
+        // (so periodic data updates don't flash away the highlight)
+        if (hoveredSname) {
+          const colIdx = currentNodes.findIndex(n => n.sname === hoveredSname);
+          activeColIdx = null; // force re-application
+          if (colIdx >= 0) highlightNodeCol(colIdx);
+        } else if (hoveredRowId) {
+          const rowIdx = currentKeyList.findIndex(k => k.id === hoveredRowId);
+          activeRowIdx = null; // force re-application
+          if (rowIdx >= 0) highlightKeyRow(rowIdx);
+        }
+      }
+
+      async function connect() {
+        document.getElementById("status").textContent = "Connecting...";
+        document.getElementById("status").className = "";
+
+        try {
+          const name = uuidv4();
+          contact = globalThis.contact = await WebContact.create({ name });
+          const bootstrapName = await contact.fetchBootstrap(bootstrapBase);
+          console.log('connecting to', bootstrapName);
+          const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
+          await contact.join(bootstrapContact);
+
+          // Subscribe to network statistics events from all nodes
+          contact.host.subscribe({
+            eventName: 'network statistics',
+            handler: handleNetworkEvent,
+            autoRenewal: true
+          });
+
+          document.getElementById("status").textContent = "Connected";
+          document.getElementById("status").className = "connected";
+
+          updateVisualization();
+          updateInterval = setInterval(updateVisualization, 2000);
+        } catch (err) {
+          document.getElementById("status").textContent = "Connection failed: " + err.message;
+          console.error(err);
+        }
+      }
+
+      function disconnect() {
+        if (updateInterval) {
+          clearInterval(updateInterval);
+          updateInterval = null;
+        }
+        if (contact) {
+          contact.disconnect();
+        }
+        networkMap.clear();
+        nodeData.clear();
+        storageKeyInfo.clear();
+        keyDirectory.clear();
+        keySubscribers.clear();
+        document.getElementById("status").textContent = "Disconnected";
+        document.getElementById("status").className = "";
+      }
+
+      // Handle visibility changes
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          disconnect();
+        } else {
+          connect();
+        }
+      });
+
+      // Initial connection
+      await connect();
+    </script>
+  </body>
+</html>
