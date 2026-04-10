@@ -11,3 +11,6 @@ CLAUDE.md
 claude-assisted-debugging.txt
 kdht-annotations
 kdht-reference.html
+*.log
+*copy*.html
+*.patch
