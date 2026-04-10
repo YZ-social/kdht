@@ -168,7 +168,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     closed.then(() => closedDone = true);
 
     const result = await Promise.race([responsePromise, timeout, closed]);
-    if (!result) {
+    if (!result && !this.isDeadToMe) {
       this.host.flog('failed to send', method, 'to', this.isRunning ? 'running' : 'closed', this.sname, 'on behalf of', sender, 'because:', timeoutDone ? 'TIMEOUT' : (closedDone ? 'CLOSED' : 'unknown'));
     }
     return result;
@@ -178,6 +178,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   static fragmentId = 0;
   pendingFragments = {};
   async send(message) { // Promise to send through previously opened connection promise and resolve to the number of chunks sent.
+    if (this.isDeadToMe) return 0; // Already removed; don't log or trigger further removal cycles.
     let channel = await this.connection;
     // null channel implies no connection
     if (!channel || channel.readyState !== 'open') {
