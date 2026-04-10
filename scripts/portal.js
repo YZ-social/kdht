@@ -87,7 +87,7 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   const startupSeconds = argv.fixedSpacing * argv.nPortals + 1.5 * argv.variableSpacing;
   console.log(`Starting ${argv.nPortals} portals over ${startupSeconds} seconds.`);
 
-} else { // A portal node through which client's can connect.
+} else { // A portal node through which clients can connect.
   const PortalNode = await import('./node.js');
   const {baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, verbose} = argv;
   const contact = await PortalNode.setup({baseURL, externalBaseURL, fixedSpacing, variableSpacing, info, debug: verbose});

@@ -55,7 +55,7 @@ if (cluster.isPrimary) {
     cluster.fork();
   }
   cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and restart them.
-    if (code !== 0 && code !== 99) console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
+    if (code !== 0 && code !== 99) console.error(`\n\n*** Crashed worker ${worker.id} received code: ${code} signal: ${signal}. ***\n`);
     cluster.fork();
   });
 } else {

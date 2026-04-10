@@ -102,7 +102,7 @@ export class PubStorageItem extends StorageItem { // A published datum.
   }
   merge1(now, storageBag, node, key) {
     const publicationItem = super.merge1(now, storageBag, node, key);
-    // We DO fire newly cancelled publication on existing (uncancelled) subsccriptions.
+    // We DO fire newly cancelled publication on existing (uncancelled) subscriptions.
     if (!publicationItem) return publicationItem;
     const extensionItem = this.matchingExtension(storageBag);
     if (extensionItem) {
@@ -137,7 +137,7 @@ export class ExtStorageItem extends StorageItem { // Extended expiration on a pu
     const extensionItem = super.merge1(now, storageBag, node, key);
     // Side effect of successful merge is to reset the expiration of any matching 'pub'.
     const publicationItem = this.matchingPublication(storageBag);
-    if (publicationItem) {
+    if (publicationItem && !publicationItem.isCancelled) {
       const timeout = Math.max(publicationItem.getTimeout(now),
 			       this.getTimeout(now));
       publicationItem.resetTimer({now, storageBag, node, key, timeout});

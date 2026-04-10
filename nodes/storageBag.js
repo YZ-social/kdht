@@ -140,8 +140,14 @@ export class StorageItem {
     if (issuedTime <= existingTime) return false;
     return true;
   }
-  getTimeout(now) {
-    const { issuedTime, expiration } = this;
+  getTimeout(now) { // Return the number of milliseconds to until we should delete the data.
+
+    // Kind of sillly, but the refreshTimeIntervalMS is currently the expected average session length,
+    // and we refresh data every two such intervals. We need to keep cancellations around long enough
+    // to survive one such refresh, so that a late node doesn't put the data back.
+    if (this.isCancelled) return Node.refreshTimeIntervalMS * 4;
+
+    const { issuedTime, expiration} = this;
     return issuedTime + expiration - now;
   }
   resetTimer({now, bag, node, key, timeout = this.getTimeout(now), timer = this.timer}) {
