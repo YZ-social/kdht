@@ -84,7 +84,7 @@ router.post('/join/:from/:to', cors(), async (req, res, next) => { // Handler fo
 // Run a TURN server on the default port (3478).
 var server = new Turn({
   externalIps: await fetch('https://api.ipify.org?format=text').then(response => response.text()), // I'd rather WebRTC.getPublicIP() but that's not working when webrtc needs turn.
-  logLevel: 'ALL',
+  log: msg => { if (!/ENOTFOUND|Fatal error.*IPV6/.test(String(msg))) console.log(msg); },
   authMech: 'none', //'long-term',
   //credentials: { username: "password" }
 });
