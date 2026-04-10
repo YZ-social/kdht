@@ -4,6 +4,7 @@ import { StorageItem, StorageBag } from './storageBag.js';
 export class NodePubSub extends NodeProbe {
   eventHandlers = new Map(); // key => function(key, StorageItem));
   renewals = new Map(); // key => timer
+  keyNames = new Map(); // keyStr => eventName (for diagnostics)
   clearRenewals() {
     this.storage.values().forEach(bag => clearTimeout(bag.timer));
   }
@@ -14,6 +15,7 @@ export class NodePubSub extends NodeProbe {
     // Each storing node will expire after min(expiration, SubStorageItem.expiration).
     // Renewal is triggered here, as long as we are connected.
     key = await key;
+    if (eventName) this.keyNames.set(key.toString(), eventName);
     const subject = this.name;
     const issuedTime = Date.now();
     const renewal = autoRenewal && handler && 0.9 * Math.min(expiration, SubStorageItem.expiration);
@@ -42,6 +44,7 @@ export class NodePubSub extends NodeProbe {
 	.then(key => this.publish({eventName, key, payload, subject, issuedTime, immediate, ...rest}));
     }
 
+    if (eventName) this.keyNames.set(key.toString(), eventName);
     if (immediate && this.eventHandlers.get(key)) {
       this.event(key, {subject, issuedTime, payload, ...rest}); // Receive event now, without waiting for network. We will ignore the echo.
     }
