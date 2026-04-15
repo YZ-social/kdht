@@ -27,7 +27,7 @@ export class NodeProbe extends NodeMessages {
     // this.log('step added contact', contact.sname);
     if (this.constructor.isContactsResult(results)) { // Keep only those that we have not seen, and note the new ones we have.
       const rawResults = results;
-      results = results.filter(helper => !keysSeen.has(helper.key) && keysSeen.add(helper.key)); // add() returns the Set, which is truthy
+      results = results.filter(helper => helper.contact.isRunning && !keysSeen.has(helper.key) && keysSeen.add(helper.key)); // add() returns the Set, which is truthy
       // Results are (helpers around) contacts, with distance from the target. Set them up for this host, with contact as sponsor.
       results = results.map(h => new Helper(this.ensureContact(h.contact, contact), h.distance));
       if (trace) {
