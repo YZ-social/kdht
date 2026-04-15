@@ -120,10 +120,10 @@ export class StorageItem {
     return rest; // Without the stuff we added, but including any other properties defined by the app.
   }
   merge1(now, bag, node, key) { // Add this into subjects if allowed and return this, else null.
-    const {type, subject, payload, issuedTime, expiration, debug} = this;
+    const {type, subject, issuedTime, expiration, debug} = this;
     let {issuedTime:existingTime = 0, timer} = bag.types[type]?.[subject] || {};
 
-    const allowed = this.allowedTime(existingTime, now, issuedTime);
+    const allowed = this.allowedTime(existingTime, now, bag);
     if (debug) node?.flog('merging', {type, key, subject, existingTime, issuedTime, now, expiration,
 				      staticExpiration: this.constructor.expiration,
 				      isFuture: issuedTime > now, isEarlier: issuedTime <= existingTime, allowed, self:this});
@@ -135,22 +135,28 @@ export class StorageItem {
     subjects[subject] = this;
     return this;
   }
-  allowedTime(existingTime, now, issuedTime) { // Keep only the latest unexpired
+  allowedTime(existingTime, now, bag) { // Is it valid?
+    const {issuedTime} = this;
     if (issuedTime > now) return false; // Cannot stake out the future. TODO: allow some clock skew.
-    if (issuedTime <= existingTime) return false;
+    if (issuedTime <= existingTime) return false; // Keep only the latest unexpired
+    const expires = this.getTimeout(now, bag);
+    if (expires < 0) return false; // Don't merge expired data, even if it is latest.
     return true;
   }
-  getTimeout(now) { // Return the number of milliseconds to until we should delete the data.
-
+  getLastUpdatedTime(bag) { // Subclasses may extend based on other items in bag.
+    return this.issuedTime;
+  }
+  getTimeout(now, bag) { // Return the number of milliseconds to until we should delete the data.
+    let expiration = this.expiration;
+    const lastUpdatedTime = this.getLastUpdatedTime(bag);
     // Kind of sillly, but the refreshTimeIntervalMS is currently the expected average session length,
     // and we refresh data every two such intervals. We need to keep cancellations around long enough
     // to survive one such refresh, so that a late node doesn't put the data back.
-    if (this.isCancelled) return Node.refreshTimeIntervalMS * 4;
+    if (this.isCancelled) expiration = Math.min(expiration, Node.refreshTimeIntervalMS * 5);
 
-    const { issuedTime, expiration} = this;
-    return issuedTime + expiration - now;
+    return lastUpdatedTime + expiration - now;
   }
-  resetTimer({now, bag, node, key, timeout = this.getTimeout(now), timer = this.timer}) {
+  resetTimer({now, bag, node, key, timeout = this.getTimeout(now, bag), timer = this.timer}) {
     clearTimeout(timer);
     this.timer = timeout < Infinity && setTimeout(() => this.delete(bag, node, key), timeout);
   }

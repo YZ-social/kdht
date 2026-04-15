@@ -97,19 +97,18 @@ SubStorageItem.register();
 export class PubStorageItem extends StorageItem { // A published datum.
   static type = 'pub';
   static expiration = 24 * 60 * 60e3; // 24 hours
+  getLastUpdatedTime(bag) {
+    const extension = this.matchingExtension(bag);
+    const updateTime = extension?.issuedTime || 0;
+    return Math.max(this.issuedTime, updateTime);
+  }
   matchingExtension(storageBag) { // Extention matching this publication, if any.
-    return storageBag.types.ext?.[this.subject];
+    return storageBag?.types.ext?.[this.subject];
   }
   merge1(now, storageBag, node, key) {
     const publicationItem = super.merge1(now, storageBag, node, key);
     // We DO fire newly cancelled publication on existing (uncancelled) subscriptions.
     if (!publicationItem) return publicationItem;
-    const extensionItem = this.matchingExtension(storageBag);
-    if (extensionItem) {
-      const timeout = Math.max(extensionItem.getTimeout(now),
-			       this.getTimeout(now));
-      this.resetTimer({now, storageBag, node, key, timeout});
-    }
     const subscriptions = Object.values(storageBag.types.sub || {});
     if (this.debug) node?.flog('subscripts for new publication', key, publicationItem, subscriptions);
     for (const subscriberItem of subscriptions) {
@@ -138,9 +137,7 @@ export class ExtStorageItem extends StorageItem { // Extended expiration on a pu
     // Side effect of successful merge is to reset the expiration of any matching 'pub'.
     const publicationItem = this.matchingPublication(storageBag);
     if (publicationItem && !publicationItem.isCancelled) {
-      const timeout = Math.max(publicationItem.getTimeout(now),
-			       this.getTimeout(now));
-      publicationItem.resetTimer({now, storageBag, node, key, timeout});
+      publicationItem.resetTimer({now, storageBag, node, key});
     }
     return extensionItem;
   }
