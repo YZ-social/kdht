@@ -45,13 +45,13 @@ export class NodePubSub extends NodeProbe {
     if (immediate && this.eventHandlers.get(key)) {
       this.event(key, {subject, issuedTime, payload, ...rest}); // Receive event now, without waiting for network. We will ignore the echo.
     }
-    return this.storeValue(key, [{...rest, type: 'pub', subject, payload, issuedTime}]);
+    return this.storeValue(key, [{...rest, type: payload === undefined ? 'ext' : 'pub', subject, payload, issuedTime}]);
   }
-  async extend({eventName, key = NodeProbe.key(eventName), subject, issuedTime = Date.now(), ...rest}) {
-    // Extend the expiration on key/subject, as if the original publisher had republished the same data.
-    key = await key;
-    return await this.storeValue(key, [{...rest, type: 'ext', subject, issuedTime}]);
-  }
+  // async extend({eventName, key = NodeProbe.key(eventName), subject, issuedTime = Date.now(), ...rest}) {
+  //   // Extend the expiration on key/subject, as if the original publisher had republished the same data.
+  //   key = await key;
+  //   return await this.storeValue(key, [{...rest, type: 'ext', subject, issuedTime}]);
+  // }
   ourEventData = new Map(); // The current data to which we have subscribed.
   event(key, {subject, issuedTime, payload, ...rest}) { // Handler for 'event' RPC. Dispatches to the handler.
     let existingValue = this.ourEventData.get(key);
