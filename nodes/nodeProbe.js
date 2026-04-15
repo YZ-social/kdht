@@ -19,7 +19,7 @@ export class NodeProbe extends NodeMessages {
     // this.log('step with', contact.sname);
     let results = await contact.sendRPC(finder, targetKey);
     if (!results) { // disconnected
-      if (!contact.isDeadToMe) this.ilog('removing unresponsive contact', contact.sname, {running: contact.isRunning, connected: !!contact.connection});
+      this.ilog('removing unresponsive contact', contact.sname, {running: contact.isRunning, connected: !!contact.connection});
       this.removeContact(contact);
       return null; // signal that there is *no* response from this contact - to distinguish from a response that confirms that the contact is alive, even if there are (after filtering) no new contacts to try.
     }
