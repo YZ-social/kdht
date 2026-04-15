@@ -148,6 +148,7 @@ export class StorageItem {
   }
   getTimeout(now, bag) { // Return the number of milliseconds to until we should delete the data.
     let expiration = this.expiration;
+
     const lastUpdatedTime = this.getLastUpdatedTime(bag);
     // Kind of sillly, but the refreshTimeIntervalMS is currently the expected average session length,
     // and we refresh data every two such intervals. We need to keep cancellations around long enough

@@ -47,11 +47,6 @@ export class NodePubSub extends NodeProbe {
     }
     return this.storeValue(key, [{...rest, type: payload === undefined ? 'ext' : 'pub', subject, payload, issuedTime}]);
   }
-  // async extend({eventName, key = NodeProbe.key(eventName), subject, issuedTime = Date.now(), ...rest}) {
-  //   // Extend the expiration on key/subject, as if the original publisher had republished the same data.
-  //   key = await key;
-  //   return await this.storeValue(key, [{...rest, type: 'ext', subject, issuedTime}]);
-  // }
   ourEventData = new Map(); // The current data to which we have subscribed.
   event(key, {subject, issuedTime, payload, ...rest}) { // Handler for 'event' RPC. Dispatches to the handler.
     let existingValue = this.ourEventData.get(key);
@@ -127,7 +122,7 @@ PubStorageItem.register();
 export class ExtStorageItem extends StorageItem { // Extended expiration on a published item.
   // Signed data just like 'pub' and 'sub', but typically by a different owner than the 'pub'.
   static type = 'ext';
-  static expiration = 10 * 60e3; // 10 minutes
+  static expiration = PubStorageItem.expiration;
   matchingPublication(storageBag) { // Publication matching this extension, if any.
     return storageBag.types.pub?.[this.subject];
   }
