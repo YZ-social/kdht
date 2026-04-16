@@ -11,8 +11,8 @@ export class SimulatedContact extends Contact {
   async createConnection() {
     return this.isOpen = this.connection = this.node.contact;
   }
-  disconnectTransport(andNotify = true) {
-    super.disconnectTransport(andNotify);
+  disconnectTransport(notification = 'close') {
+    super.disconnectTransport(notification);
     this.connection = null;
   }
   async send(message) {
@@ -37,17 +37,18 @@ export class SimulatedContact extends Contact {
 
 export class SimulatedConnectionContact extends SimulatedContact {
   connection = null; // The cached connection (to another node's connected contact back to us) over which messages can be directly sent, if any.
-  async disconnectTransport(andNotify = true) {
-    const farContactForUs = await this.connection;
-    if (!farContactForUs) return;
-    this.disconnectTime = Date.now();
-    Node.assert(farContactForUs.key === this.host.key, 'Far contact backpointer', farContactForUs.node.name, 'does not point to us', this.host.name);
-    Node.assert(farContactForUs.host.key === this.key, 'Far contact host', farContactForUs.host.name, 'is not hosted at contact', this.name);
-    super.disconnectTransport(andNotify);
-    this.isOpen = farContactForUs.isOpen = false;
-    this.connection = farContactForUs.connection = null;
-    if (!this.host.anyOpen) this.host.contact.detached(this.host.stopRefresh() ? this.host.contact : false);
-    if (!farContactForUs.host.anyOpen) farContactForUs.host.contact.detached(false);
+  disconnectTransport(notification = 'close') {
+    return this.connection?.then(farContactForUs => {
+      if (!farContactForUs) return;
+      this.disconnectTime = Date.now();
+      Node.assert(farContactForUs.key === this.host.key, 'Far contact backpointer', farContactForUs.node.name, 'does not point to us', this.host.name);
+      Node.assert(farContactForUs.host.key === this.key, 'Far contact host', farContactForUs.host.name, 'is not hosted at contact', this.name);
+      super.disconnectTransport(notification);
+      this.isOpen = farContactForUs.isOpen = false;
+      this.connection = farContactForUs.connection = null;
+      if (!this.host.anyOpen) this.host.contact.detached(this.host.stopRefresh() ? this.host.contact : false);
+      if (!farContactForUs.host.anyOpen) farContactForUs.host.contact.detached(false);
+    });
   }
     
   createConnection() {

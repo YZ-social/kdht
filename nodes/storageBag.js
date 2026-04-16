@@ -72,7 +72,7 @@ export class StorageBag {
   }
   delete(node, key, type, subject) { // Delete this.types[type][subject], and any empty parents through node.storage.
     const subjects = this.types[type];
-    if (!subject) return;
+    if (!subjects) return;
     delete subjects[subject];
     this.items = null; // Clear items cache.
     if (Object.keys(subjects).length) return;

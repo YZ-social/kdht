@@ -125,6 +125,11 @@ export class Contact {
   storeValue(key, value) { return this.attachment.then(home => home.host.storeValue(key, value)); }
   join(other) { return this.host.join(other).then(home => home.attached(home)); }
   replicateStorage() { return this.host.replicateStorage(); }
+  disconnectTransports() { // Send polite termination message to each open contact, with no await.
+    for (const contact of this.host.connections) {
+      contact.disconnectTransport('bye');
+    }
+  }
   async bootstrapJoin(...baseURLs) { // Find a contact to bootstrap, and join it.
     let bootstrapName = '', baseURL = '';
     if (!baseURLs.length) baseURLs = [new URL('/kdht', globalThis.location).href];
@@ -195,8 +200,8 @@ export class Contact {
     this.host.clearContactDictionaryExpirations();
     this.host.isRunning = false;
   }
-  disconnectTransport(andNotify = true) { // There are asynchronous things that happen, but they each get triggered synchronously
-    if (andNotify && this.connection) this.synchronousSend(['-', 'close']);  // May have already sent "bye" and closed.
+  disconnectTransport(notification = 'close') { // There are asynchronous things that happen, but they each get triggered synchronously
+    if (notification && this.connection) this.synchronousSend(['-', notification]);  // May have already sent "bye" and closed.
   }
   close() { // The sender is closing their connection, but not necessarilly disconnected entirely (e.g., maybe maxTransports)
     this.host.ilog('closing disconnected contact', this.sname);
@@ -205,6 +210,7 @@ export class Contact {
   }
   bye() { // The sender is disconnecting from the network
     this.host.ilog('removing disconnected contact', this.sname);
+    this.host.removeSubscriber(this.name);
     const bucket = this.host.removeContact(this);
     this.disconnectTransport(false);
     bucket?.refresh(); // Accelerate the bucket refresh

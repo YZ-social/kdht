@@ -31,10 +31,14 @@ method `connect(baseURL = new URL('/kdht', globalThis.location).href)`
 Connects through the portal at the specified baseURL. Returns a promise that resolves when connected and `attachement` has resolved. The portal is used only for initial WebRTC signaling to connect to the first other node, after which subsequent connections are made through the network itself. Note that the default is meaningless in NodeJS applications, and must be explicitly supplied.
 
 method `disconnect()`
-Disconnects from all other nodes. Returns a promise that resolves when disconnected and `detachement` has resolved.
+Asynchronously disconnects from all other nodes. Returns a promise that resolves when disconnected and `detachement` has resolved.
+
+method `disconnectTransports()`
+Synchronously terminates every connection. Use this if your application is being shutdown and you are not being given time to asynchronously disconnect.
 
 method `replicateStorage()`
-Use this if your application is not disconnecting, but may be shutdown by the operating system, such as when a browser document visibility changes to hidden.
+Asynchronously copies and stored data to other nodes. Use this if your application is not disconnecting, but may be shutdown by the operating system, such as when a browser document visibility changes to hidden.
+
 
 method `subscribe({eventName, key, handler, expiration = 60 * 60e3, autoRenewal = false})`
 Arranges with the network to call `handler(item, key)` when someone on the network publishes to the key. The subscription lasts only for `expiration` milliseconds (clamped to one hour), after which the subscription is removed from the network and the instance, and must be renewed if needed. The `autoRenewal` parameter can be specified truthy to automatically renew the subscription before expiration, for as long as the instance is attached to the network.

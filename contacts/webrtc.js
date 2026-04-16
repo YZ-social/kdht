@@ -244,13 +244,13 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       await this.receiveRPC(messageTag, ...data);
     }
   }
-  async disconnectTransport(andNotify = true) {
-    if (!this.connection) return;
+  disconnectTransport(notification = 'close') {
+    if (!this.connection) return null;
     const webrtc = this.webrtc;
     const dataChannel = this.unsafeData;
-    super.disconnectTransport(andNotify);
+    super.disconnectTransport(notification);
     this.connection = this.webrtc = null;
     dataChannel?.close();
-    await webrtc?.close();
+    return webrtc?.close();
   }
 }

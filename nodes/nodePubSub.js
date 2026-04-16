@@ -8,6 +8,12 @@ export class NodePubSub extends NodeProbe {
   clearRenewals() {
     this.storage.values().forEach(bag => clearTimeout(bag.timer));
   }
+  removeSubscriber(name) { // Remove any/all subscriptions we are storing for the node of the given name.
+    for (const key of this.storage.keys()) {
+      const bag = this.storage.get(key);
+      bag.delete(this, key, 'sub', name);
+    }
+  }
   async subscribe({eventName, key = NodeProbe.key(eventName), handler, expiration = SubStorageItem.expiration, autoRenewal = false, ...rest}) {
     // Subscribe to events at key, which can be specified by name or directly.
     // Cancel by specifying same subject as before, and null payload.
