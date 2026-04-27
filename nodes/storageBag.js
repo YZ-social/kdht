@@ -166,6 +166,7 @@ export class StorageItem {
   }
   delete(bag, node, key, type = this.type, subject = this.subject) {
     this.clearStorageExpiration();
+    if (!bag) return; // How can this be?
     bag.delete(node, key, type, subject);
   }
 }

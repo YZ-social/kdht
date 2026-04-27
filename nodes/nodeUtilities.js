@@ -57,6 +57,16 @@ export class NodeUtilities {
     this.publishStatistics(name);
   }
   async publishStatistics(triggerName) { // Publish totals.
+    // Publish through the portal through which we entered.
+    const publish = this.constructor.publishStatistics;
+    if (!publish) return Promise.resolve();
+    if (typeof(publish) === 'string') // Publish through post to server
+      return fetch(`${publish}/stats/${this.sname}`, {
+	method: 'POST',
+	headers: { 'Content-Type': 'application/json', 'Connection': 'close' },
+	body: JSON.stringify(this.getStatisticsJSON())
+      });
+    // Publish through DHT.
     const key = this.constructor.statisticsPubKey ||= await this.constructor.key('network statistics');
     return this.contact.publish({key, // contact.publish doesn't fire until we are attached.
 				 subject: this.sname,

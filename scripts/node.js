@@ -29,6 +29,9 @@ export async function setup({baseURL, externalBaseURL = '', info = true, debug, 
   process.send(contact.sname); // Report in to server as available for others to bootstrap through.
   if (bootstrap) await contact.join(bootstrap);
   else contact.attached(contact); // No bootstrap to join; resolve attachment so publish/subscribe work.
+
+  Node.publishStatistics = externalBaseURL || baseURL; // For now.
+
   process.on('SIGINT', async () => {
     console.log(process.title, 'Shutdown for Ctrl+C');
     await contact.disconnect();

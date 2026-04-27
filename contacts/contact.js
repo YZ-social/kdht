@@ -144,6 +144,8 @@ export class Contact {
     this.host.ilog('entering network through', baseURL, bootstrapName);
     const bootstrapContact = await this.ensureRemoteContact(bootstrapName, baseURL);
     await this.join(bootstrapContact);
+    this.baseURL = baseURL; // In case this host contact needs to know what it connected through.
+    Node.publishStatistics = baseURL; // for now
     return this;
   }
 

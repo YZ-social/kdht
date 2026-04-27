@@ -89,3 +89,15 @@ var server = new Turn({
   //credentials: { username: "password" }
 });
 server.start();
+
+// post node stats and "get" all node stats, but getting uses post in case an application caches all get in a service worker.
+const stats = {}; // tag => nodeStatistics
+router.options('/stats/:tag', cors());
+router.post('/stats/:tag', cors(), (req, res, next) => {
+  stats[req.params.tag] = req.body;
+  res.sendStatus(200);
+});
+router.options('/stats', cors());
+router.post('/stats', cors(), (req, res, next) => {
+  res.send(stats);
+});

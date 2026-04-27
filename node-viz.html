@@ -732,40 +732,47 @@
         clearAllHighlight();
       }
 
-      async function updateVisualization() {
-        if (!contact || !contact.node) return;
+      async function updateVisualization(data) {
+        if (data) {
+	  console.log(data);
+	  for (const [subject, payload] of Object.entries(data)) {
+	      handleNetworkEvent({subject, payload});
+	  }
+	} else if (!contact || !contact.node) return;
 
         const now = Date.now();
-
-        // Include local node's own connections (always fresh)
-        const localSname = contact.node.sname;
-        const localConnections = contact.node.contacts
-          .filter(c => c.connection)
-          .map(c => c.sname);
-        const localSubKeys = [];
-        const localDataKeys = [];
-        const localSubscribers = {};
-        for (const [k, bag] of contact.host.storage) {
-          const ks = k.toString();
-          const types = Object.keys(bag.types).filter(t =>
-            Object.values(bag.types[t]).some(item => !item.isCancelled));
-          if (types.some(t => t === 'sub' || t === 'event' || t === 'ext')) {
-            localSubKeys.push(ks);
-            const subs = bag.types.sub;
-            if (subs) {
-              const names = Object.values(subs).filter(item => !item.isCancelled).map(item => item.subject);
-              if (names.length) localSubscribers[ks] = names;
+	let localSname = '';
+	if (contact) {
+          // Include local node's own connections (always fresh)
+          localSname = contact.node.sname;
+          const localConnections = contact.node.contacts
+		.filter(c => c.connection)
+		.map(c => c.sname);
+          const localSubKeys = [];
+          const localDataKeys = [];
+          const localSubscribers = {};
+          for (const [k, bag] of contact.host.storage) {
+            const ks = k.toString();
+            const types = Object.keys(bag.types).filter(t =>
+              Object.values(bag.types[t]).some(item => !item.isCancelled));
+            if (types.some(t => t === 'sub' || t === 'event' || t === 'ext')) {
+              localSubKeys.push(ks);
+              const subs = bag.types.sub;
+              if (subs) {
+		const names = Object.values(subs).filter(item => !item.isCancelled).map(item => item.subject);
+		if (names.length) localSubscribers[ks] = names;
+              }
+            }
+            const dataTypes = types.filter(t => t === 'raw' || t === 'pub');
+            if (dataTypes.length) localDataKeys.push({ key: ks, types: dataTypes });
+            const name = contact.host.keyNames?.get(ks);
+            if (name && !keyDirectory.has(ks)) {
+              const parsed = parseEventName(name);
+              keyDirectory.set(ks, { eventName: name, level: parsed ? s2Level(parsed.cell) : null });
             }
           }
-          const dataTypes = types.filter(t => t === 'raw' || t === 'pub');
-          if (dataTypes.length) localDataKeys.push({ key: ks, types: dataTypes });
-          const name = contact.host.keyNames?.get(ks);
-          if (name && !keyDirectory.has(ks)) {
-            const parsed = parseEventName(name);
-            keyDirectory.set(ks, { eventName: name, level: parsed ? s2Level(parsed.cell) : null });
-          }
-        }
-        networkMap.set(localSname, { connections: localConnections, subKeys: localSubKeys, dataKeys: localDataKeys, subscribers: localSubscribers, lastSeen: now });
+          networkMap.set(localSname, { connections: localConnections, subKeys: localSubKeys, dataKeys: localDataKeys, subscribers: localSubscribers, lastSeen: now });
+	}
 
         // Prune entries that haven't been refreshed within the fade-out window
         for (const [sname, data] of networkMap) {
@@ -1295,30 +1302,49 @@
         document.getElementById("status").textContent = "Connecting...";
         document.getElementById("status").className = "";
 
-        try {
-          const name = uuidv4();
-          contact = globalThis.contact = await WebContact.create({ name });
-          const bootstrapName = await contact.fetchBootstrap(bootstrapBase);
-          console.log('connecting to', bootstrapName);
-          const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
-          await contact.join(bootstrapContact);
+	// Fetch from the portal we entered through.
+	async function update() {
+	  try {
+	    const response = await fetch(`${bootstrapBase}/stats`, {
+	      method: 'POST',
+	      headers: { 'Content-Type': 'application/json', 'Connection': 'close' }
+	    });
+	    if (!response.ok) throw new Error(response.statusText);
+	    updateVisualization(await response.json());
+	    document.getElementById("status").textContent = "Fetched";
+            document.getElementById("status").className = "connected";
+	  } catch (err) {
+	    document.getElementById("status").textContent = "Connection failed: " + err.message;
+            console.error(err);
+	  }
+	}
+	updateInterval = setInterval(update, 2e3);
 
-          // Subscribe to network statistics events from all nodes
-          contact.host.subscribe({
-            eventName: 'network statistics',
-            handler: handleNetworkEvent,
-            autoRenewal: true
-          });
+	// Subscribe through network
+        // try {
+        //   const name = uuidv4();
+        //   contact = globalThis.contact = await WebContact.create({ name });
+        //   const bootstrapName = await contact.fetchBootstrap(bootstrapBase);
+        //   console.log('connecting to', bootstrapName);
+        //   const bootstrapContact = globalThis.bootstrapContact = await contact.ensureRemoteContact(bootstrapName, bootstrapBase);
+        //   await contact.join(bootstrapContact);
 
-          document.getElementById("status").textContent = "Connected";
-          document.getElementById("status").className = "connected";
+        //   // Subscribe to network statistics events from all nodes
+        //   contact.host.subscribe({
+        //     eventName: 'network statistics',
+        //     handler: handleNetworkEvent,
+        //     autoRenewal: true
+        //   });
 
-          updateVisualization();
-          updateInterval = setInterval(updateVisualization, 2000);
-        } catch (err) {
-          document.getElementById("status").textContent = "Connection failed: " + err.message;
-          console.error(err);
-        }
+        //   document.getElementById("status").textContent = "Connected";
+        //   document.getElementById("status").className = "connected";
+
+        //   updateVisualization();
+        //   updateInterval = setInterval(updateVisualization, 2000);
+        // } catch (err) {
+        //   document.getElementById("status").textContent = "Connection failed: " + err.message;
+        //   console.error(err);
+        // }
       }
 
       function disconnect() {
