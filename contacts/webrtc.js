@@ -174,7 +174,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     return result;
   }
 
-  static maxMessageSize = 18e3; // A bit less than 16 * 1024.
   static fragmentId = 0;
   pendingFragments = {};
   async send(message) { // Promise to send through previously opened connection promise and resolve to the number of chunks sent.
@@ -189,7 +188,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     }
     try {
       const payload = JSON.stringify(message);
-      const size = this.constructor.maxMessageSize;
+      const sctp = this.webrtc?.pc?.sctp;
+      if (!sctp) return 0;
+      const size = sctp.maxMessageSize - 100;
       if (payload.length < size) {
 	channel.send(payload);
 	return 1;
@@ -199,7 +200,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       const numChunks = Math.ceil(payload.length / size);
       const id = this.constructor.fragmentId++;
       const meta = ['fragments', id, numChunks];
-      this.host.ilog(`Fragmenting large message ${id} into ${numChunks} chunks.`, meta);
+      this.host.ilog(`Fragmenting large message ${id} into ${numChunks} chunks of ${size}.`, meta);
       channel.send(JSON.stringify(meta));
       // Optimization opportunity: rely on messages being ordered and skip redundant info. Is it worth it?
       for (let i = 0, o = 0; i < numChunks; ++i, o += size) {
