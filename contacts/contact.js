@@ -163,9 +163,15 @@ export class Contact {
     Node.assert(host.key !== node.key, 'connecting to self', host, node);
     if (connection) return this;
     const start = Date.now();
+
+    // A connection could be started from the other side, and the initial signals can cross on the wire.
+    // Here we create another way to have that path resolve this connection promise.
+    const {promise, resolve} = Promise.withResolvers();
+    this.earlyConnectResolver = resolve;
+
     this.connection =
       this.host.contact.connectionQueue = this.host.contact.connectionQueue.then(() =>
-         this.createConnection()
+        Promise.race([this.createConnection(), promise])
       );
     await this.connection;
     this.noteConnection(start);

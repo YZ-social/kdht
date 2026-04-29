@@ -32,8 +32,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     if (contact.webrtc?.pc) return await contact.webrtc.respond(signals);
 
     const start = Date.now();
-    contact.connection = contact.createConnection(false)
-      .finally(() => contact.noteConnection(start));
+    const resolver = contact.earlyConnectResolver;
+    const connection = contact.createConnection(false).finally(() => contact.noteConnection(start));
+    if (resolver) connection.then(channel => resolver(channel));
+    else contact.connection = connection;
     return await contact.webrtc?.respond(signals);
   }
   static iceServers = [{
@@ -58,7 +60,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     // If timeoutMS is non-zero and a connection is not established within that time, connection and closed resolve to null.
     //
     // This is synchronous: all side-effects (assignments to this) happen immediately.
-    this.host.log('starting connection', this.sname, this.counter, 'initiate', initiate);
+    if (this.webrtc) return new Promise(resolve => {}); // We received signals while we were queued. Those signals will resolve our queue promise which is racing against the promise we return now.
+
+    this.host.log('=>', this.sname, 'starting connection', this.counter, 'initiate:', initiate, 'webrtc:', !!this.webrtc, 'connection:', !!this.connection);
     this.host.noteContactForTransport(this);
     const { host, node, bootstrapHost } = this;
     let {promise, resolve} = Promise.withResolvers(); // That this specific contact has closed. Commpare host.contact.detachment.
@@ -73,7 +77,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       this.host.log('connection closed to', this.sname, 'normal:', !!normalClosure);
       if (this.webrtc && !this.host.isStopped()) {
 	// If called by timeout, normalClosure is falsy.
-	if (normalClosure) this.host.ilog('connection to', this.sname, 'was not politely closed. Removing contact.');
+	if (normalClosure && this.isRunning) this.host.ilog('=>', this.sname, 'was not politely closed. Removing contact.');
 	this.host.removeContact(this);
       }
       this.unsafeData?.removeEventListener('close', ondatachannelclose);
