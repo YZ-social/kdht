@@ -45,6 +45,13 @@ export class NodeStorage extends NodeRefresh {
 
     return stored.toJSON();
   }
+  removeLocally(key) { // Not our problem any more.
+    this.storage.get(key)?.clearStorageExpirations();
+    this.storage.delete(key);
+    // Defensive programming. The caller will not have actually scheduled the next timer yet.
+    clearTimeout(this.timers.get(key));
+    this.timers.delete(key);
+  }
 
   async replicateStorage() { // Replicate all of our data.
     if (!this.storage.size) return;

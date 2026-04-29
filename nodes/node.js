@@ -80,8 +80,8 @@ export class Node extends NodePubSub {
     if (trace) this.flog(`storeValue(${targetKey}): locateNodes found ${contacts.length} contacts`);
     const storedTo = []; // Track where we stored for diagnostics, and for seeing if we no longer need to store.
 
-    // Do what we can in parallel right away. This might not all be the very closest, but those stored will take care of migrating.
-    const connected = contacts.filter(contact => contact.connection).slice(0, k);
+    // Do what we can in parallel right away, without expanding the set beyond the k closest.
+    const connected = contacts.slice(0, k).filter(contact => contact.connection);
     await Promise.all(connected.map(async contact => {
       await contact.sendRPC('store', targetKey, value);
       storedTo.push(contact.name);
@@ -116,7 +116,7 @@ export class Node extends NodePubSub {
     }
     if (!storedTo.includes(this.name) && this.storage.has(targetKey)) {
       this.ilog('is now too distant from', targetKey, 'to store', value.map(item => item.type));
-      this.storage.delete(targetKey);
+      this.removeLocally(targetKey);
     }
     return k - remaining;
   }

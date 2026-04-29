@@ -45,7 +45,7 @@ export class NodeRefresh extends NodeKeys {
     //    E.g., bucket index 1 === 1 and stored value key BigInt(1) === BigInt(1), but 1 !== BigInt(1)
     if (this.isStopped()) return;
     const start = Date.now();
-    clearInterval(this.timers.get(timerKey));
+    clearTimeout(this.timers.get(timerKey));
     this.timers.set(timerKey, setTimeout(async () => {
       const now = Date.now();
       const elapsed = now - start;
