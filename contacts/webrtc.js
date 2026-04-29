@@ -190,7 +190,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       const payload = JSON.stringify(message);
       const sctp = this.webrtc?.pc?.sctp;
       if (!sctp) return 0;
-      const size = sctp.maxMessageSize - 100;
+      const size = sctp.maxMessageSize ? (sctp.maxMessageSize - 100) : Infinity;
       if (payload.length < size) {
 	channel.send(payload);
 	return 1;
@@ -223,7 +223,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     switch (messageTag) {
     case 'fragments':
       const [id, numChunks] = data;
-      let fragments = this.pendingFragments[id] ||= {message: []}; // Might have been set by an early frag.
+      let fragments = this.pendingFragments[id] ||= {message: Array(numChunks)}; // Might have been set by an early frag.
       fragments.message.length = fragments.remaining = numChunks;
       //console.log('receiving', this.pendingFragments[id]);
       break;
@@ -232,7 +232,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       let frag = this.pendingFragments[fid];
       // Even though the messages should arrive in order, it is possible that the message handler
       // won't be called in order.
-      if (!frag) frag = this.pendingFragments[fid] = {message: []};
+      if (!frag) frag = this.pendingFragments[fid] = {message: Array(i + 1)};
       frag.message[i] = fragment;
       //console.log('got fragment', i, 'of', fid, 'size', fragment.length, fragment.slice(0, 200));
       if ((frag.remaining === undefined) || (0 !== --frag.remaining)) return;
