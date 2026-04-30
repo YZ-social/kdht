@@ -94,10 +94,15 @@ server.start();
 const stats = {}; // tag => nodeStatistics
 router.options('/stats/:tag', cors());
 router.post('/stats/:tag', cors(), (req, res, next) => {
-  stats[req.params.tag] = req.body;
+  const data = stats[req.params.tag] = req.body;
+  data.issuedTime = Date.now();
   res.sendStatus(200);
 });
 router.options('/stats', cors());
 router.post('/stats', cors(), (req, res, next) => {
+  const staleTime = Date.now() - 15e3; // purge stale items
+  for (const key in stats) {
+    if (stats[key].issuedTime < staleTime) delete stats[key];
+  }
   res.send(stats);
 });

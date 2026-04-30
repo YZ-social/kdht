@@ -734,7 +734,6 @@
 
       async function updateVisualization(data) {
         if (data) {
-	  console.log(data);
 	  for (const [subject, payload] of Object.entries(data)) {
 	      handleNetworkEvent({subject, payload});
 	  }
