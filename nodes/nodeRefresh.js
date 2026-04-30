@@ -3,6 +3,9 @@ import { NodeKeys } from './nodeKeys.js';
 // The mechanics of periodic refresh (of buckets or stored data).
 export class NodeRefresh extends NodeKeys {
   static refreshTimeIntervalMS = 15e3; // Original paper for desktop filesharing was 60 minutes.
+  get internalRefreshMS() {
+    return this.refreshTimeIntervalMS * 2;
+  }
   constructor ({refreshTimeIntervalMS = NodeRefresh.refreshTimeIntervalMS, ...properties}) {
     super({refreshTimeIntervalMS, ...properties});
   }
@@ -20,7 +23,7 @@ export class NodeRefresh extends NodeKeys {
   // The refreshTimeIntervalMS is the number of nominal number milliseconds we expect to be able to handle for short session timems.
   // The actual period between bucket and data refreshes may be more or less than this, depending on how well we deal with churn.
   // That actual average time between refereshes is the default target value here. E.g., this.refreshTimeIntervalMS / 2, or 1.5 * this.refreshTimeIntervalMS, etc.
-  fuzzyInterval(target = 2 * this.refreshTimeIntervalMS, margin = target/2) { // Like static fuzzyInterval with target defaulting to refreshTimeIntervalMS/2.
+  fuzzyInterval(target = this.internalRefreshMS, margin = target/2) { // Like static fuzzyInterval with target defaulting to refreshTimeIntervalMS/2.
     return this.constructor.fuzzyInterval(target, margin);
   }
   static fuzzyInterval(target, margin = target/2) {
