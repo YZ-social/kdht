@@ -19,8 +19,10 @@ export class NodeProbe extends NodeMessages {
     // this.log('step with', contact.sname);
     let results = await contact.sendRPC(finder, targetKey);
     if (!results) { // disconnected
-      this.ilog('removing unresponsive contact', contact.sname, {finder, running: contact.isRunning, connected: !!contact.connection});
-      this.removeContact(contact);
+      if (contact.isRunning) this.ilog('=>', contact.sname, results === null ? 'CLOSED' : 'TIMEOUT', finder);
+      if (results === null) { // Hard close before timeout.
+	this.removeContact(contact);
+      }
       return null; // signal that there is *no* response from this contact - to distinguish from a response that confirms that the contact is alive, even if there are (after filtering) no new contacts to try.
     }
     this.addToRoutingTable(contact); // Live node, so update bucket.

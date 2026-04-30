@@ -179,7 +179,7 @@ export class Contact {
   }
   noteConnection(start) { // Log and not statistic
     this.host.noteStatistic('connection', start);
-    this.host.ilog(this.isOpen ? 'connected to' : 'failed connecting to', this.sname, 'in', Date.now() - start, 'ms.');
+    this.host.ilog('=>', this.sname, this.isOpen ? 'connected' : 'failed connection', 'in', Date.now() - start, 'ms.');
   }
 
   async disconnect(replicateStorage = !this.host.isStopped()) { // Disconnect host node and all it's connections. Stages are:
@@ -240,11 +240,11 @@ export class Contact {
     return result;
   }
   static recursiveHopsLimit = 15;
-  rpcTimeout(method, nChunks, ...rest) { // Promise to resolve to null at appriate timeout for RPC method
+  rpcTimeout(method, nChunks, ...rest) { // Promise to resolve to undefined at apropriate timeout for RPC method.
     let hops = 1;
     if (method === 'signals') hops = rest[3] ? Contact.recursiveHopsLimit : 2;
     const delay = hops * Contact.maxPingMS * (1 + Math.log(nChunks));
-    return Node.delay(delay, null);
+    return Node.delay(delay);
   }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;

@@ -164,18 +164,9 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     if (!this.webrtc) return 0;
     const responsePromise = this.getResponsePromise(messageTag);
     const closed = this.closed;
-
     const nChunks = await this.send([messageTag, method, sender, ...rest]);
     const timeout = this.rpcTimeout(method, nChunks, ...rest);
-    let timeoutDone = false, closedDone = false;
-    timeout.then(() => timeoutDone = true);
-    closed.then(() => closedDone = true);
-
-    const result = await Promise.race([responsePromise, timeout, closed]);
-    if (!result && !this.isDeadToMe) {
-      this.host.flog('failed to send', method, 'to', this.isRunning ? 'running' : 'closed', this.sname, 'on behalf of', sender, 'because:', timeoutDone ? 'TIMEOUT' : (closedDone ? 'CLOSED' : 'unknown'));
-    }
-    return result;
+    return await Promise.race([responsePromise, timeout, closed]);
   }
 
   static fragmentId = 0;
