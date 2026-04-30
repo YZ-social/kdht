@@ -39,6 +39,7 @@ export class NodeRefresh extends NodeKeys {
   clearRefreshTimers() {
     this.timers.values().forEach(timer => clearTimeout(timer));
   }
+  refreshQueue = Promise.resolve();
   schedule(timerKey, statisticsKey, thunk, timeout = this.fuzzyInterval()) {
     // Schedule thunk() to occur at a fuzzyInterval from now, cancelling any
     // existing timer at the same key. This is used in such a way that:
@@ -57,7 +58,11 @@ export class NodeRefresh extends NodeKeys {
       if (this.isStopped()) return;
       this.log('refresh', statisticsKey, timerKey, 'last/lag ms:', elapsed.toLocaleString(), lag.toLocaleString());
       if (lag > 250) console.log(`** System is overloaded by ${lag.toLocaleString()} ms. **`);
-      await thunk();
+      // Each bucket or storage item never schedules anything until that bucket or storage item's refresh is complete.
+      // However, different items can overlap in execution, which doesn't work well under high CPU load.
+      // Here we it comes time to actually execute, we just do one refresh a time, which further delays the next refresh
+      // of any kind.
+      await (this.refreshQueue = this.refreshQueue.then(() => thunk()));
       this.noteStatistic(statisticsKey, now);
     }, timeout));
   }
