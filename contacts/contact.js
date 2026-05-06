@@ -193,7 +193,7 @@ export class Contact {
     if (this.host.refreshTimeIntervalMS) this.host.ilog('disconnecting from network');
     if (replicateStorage) {
       await this.replicateStorage(); // Included in following stats.
-      await this.host.publishStatistics(); // Stored in nodes as understood from the replication above.
+      await this.host.publishStatistics().catch(e => console.log('Statistics upload', e.message)); // Stored in nodes as understood from the replication above.
     }
     this.host.stopRefresh();
     this.host.clearRefreshTimers();
