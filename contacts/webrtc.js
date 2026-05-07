@@ -241,7 +241,6 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     }
   }
   disconnectTransport(notification = 'close') {
-    if (!this.connection) return null;
     const webrtc = this.webrtc;
     const dataChannel = this.unsafeData;
     super.disconnectTransport(notification);

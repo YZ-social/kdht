@@ -112,7 +112,7 @@ export class Contact {
       cache: 'no-store',
       body: null,
       headers: { 'Connection': 'close' }
-    })).catch(() => {});
+    })).catch(console.info);
     if (!this.checkResponse(response)) { // The portal webserver is not available.
       return '';
     }
@@ -200,13 +200,11 @@ export class Contact {
     this.host.clearStorageExpirations();
     this.host.clearRenewals();
     for (const contact of this.host.connections) {
-      const far = await contact.connection;
-      if (!far) return;
-      contact.synchronousSend(['-', 'bye']); // May have already been closed by other side.
-      await contact.disconnectTransport(false); // no need to send 'close' after 'bye'
+      await contact.disconnectTransport('bye');
     }
     this.host.clearContactDictionaryExpirations();
     this.host.isRunning = false;
+    this.detached(this);
   }
   disconnectTransport(notification = 'close') { // There are asynchronous things that happen, but they each get triggered synchronously
     if (notification && this.connection) this.synchronousSend(['-', notification]);  // May have already sent "bye" and closed.
