@@ -4,13 +4,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebContact, Node } from '../index.js';
 
 export async function setup({baseURL, externalBaseURL = '', info = true, debug, fixedSpacing, variableSpacing}) {
-  const hostName = uuidv4();
-  process.title = 'kdht-portal-' + hostName;
   // For debugging:
   // process.on('uncaughtException', error => console.error(hostName, 'Global uncaught exception:', error));
   // process.on('unhandledRejection', error => console.error(hostName, 'Global unhandled promise rejection:', error));
 
-  const contact = await WebContact.create({name: hostName, isServerNode: true, info, debug});
+  let contact = await WebContact.create({isServerNode: true, info, debug});
+  process.title = 'kdht-portal-' + contact.name;
+
   // Handle signaling that comes as a message from the server.
   process.on('message', async ([senderSname, ...incomingSignals]) => { // Signals from a sender through the server.
     const response = await contact.signals(senderSname, ...incomingSignals);
@@ -21,16 +21,14 @@ export async function setup({baseURL, externalBaseURL = '', info = true, debug, 
 
   const isFirst = cluster.worker.id === 1; // The primary/server is 0.
   const joinURL = isFirst ? externalBaseURL : baseURL;
-
-  if (!isFirst) await Node.delay(Node.fuzzyInterval(variableSpacing * 1e3));
-  // Determine boostrap BEFORE we send in our own name.
-  const bootstrapName = joinURL && await contact.fetchBootstrap(joinURL);
-  const bootstrap = joinURL && await contact.ensureRemoteContact(bootstrapName, joinURL);
+  if (joinURL) {
+    await Node.delay(Node.fuzzyInterval(variableSpacing * 1e3));
+    await Promise.race([contact.connect(joinURL), Node.delay(4e3)]);
+  } else {
+    contact.attached(contact);
+    Node.publishStatistics = contact.baseURL = baseURL;
+  }
   process.send(contact.sname); // Report in to server as available for others to bootstrap through.
-  if (bootstrap) await contact.join(bootstrap);
-  else contact.attached(contact); // No bootstrap to join; resolve attachment so publish/subscribe work.
-
-  Node.publishStatistics = externalBaseURL || baseURL; // For now.
 
   process.on('SIGINT', async () => {
     console.log(process.title, 'Shutdown for Ctrl+C');
