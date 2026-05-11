@@ -132,7 +132,7 @@ export class Contact {
   }
   async bootstrapJoin(...baseURLs) { // Find a contact to bootstrap, and join it.
     let bootstrapName = '', baseURL = '';
-    if (!baseURLs.length) baseURLs = [new URL('/kdht', globalThis.location).href];
+    if (!baseURLs.length) baseURLs = [new URL('/kdht', globalThis.location || 'http://localhost:3000').href];
     for (const candidate of baseURLs) {
       bootstrapName = await this.fetchBootstrap(candidate);
       if (bootstrapName) {
@@ -197,14 +197,17 @@ export class Contact {
     }
     this.host.stopRefresh();
     this.host.clearRefreshTimers();
-    this.host.clearStorageExpirations();
     this.host.clearRenewals();
+    this.host.clearStorage();
+    this.host.clearContactDictionaryExpirations();
     for (const contact of this.host.connections) {
       await contact.disconnectTransport('bye');
     }
-    this.host.clearContactDictionaryExpirations();
+    this._sponsors.clear();
     this.host.isRunning = false;
     this.detached(this);
+    this.connectionQueue = this.attachment = this.detachment = null;
+    return this;
   }
   disconnectTransport(notification = 'close') { // There are asynchronous things that happen, but they each get triggered synchronously
     if (notification && this.connection) this.synchronousSend(['-', notification]);  // May have already sent "bye" and closed.

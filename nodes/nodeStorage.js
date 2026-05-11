@@ -4,8 +4,8 @@ import { StorageBag } from './storageBag.js';
 // Keeping application data.
 export class NodeStorage extends NodeRefresh {
   storage = new Map(); // keys must be preserved as bigint, not converted to string.
-  clearStorageExpirations() {
-    this.storage.values().forEach(bag => bag.clearStorageExpirations());
+  clearStorage() {
+    this.storage.keys().forEach(key => this.removeLocally(key));
   }
   // TODO: store across sessions
 

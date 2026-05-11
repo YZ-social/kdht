@@ -38,6 +38,7 @@ export class NodeRefresh extends NodeKeys {
   timers = new Map();
   clearRefreshTimers() {
     this.timers.values().forEach(timer => clearTimeout(timer));
+    this.timers.clear();
   }
   refreshQueue = Promise.resolve();
   schedule(timerKey, statisticsKey, thunk, timeout = this.fuzzyInterval()) {
