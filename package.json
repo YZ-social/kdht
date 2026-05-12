@@ -24,6 +24,7 @@
   "dependencies": {
     "@yz-social/webrtc": "^0.1.13",
     "node-turn": "^0.0.6",
+    "turn-server": "^0.2.1",
     "uuid": "^14.0.0"
   },
   "overrides": {

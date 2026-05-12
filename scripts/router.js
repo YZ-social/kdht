@@ -1,10 +1,14 @@
+import path from 'node:path';
+import os from 'node:os';
+import process from 'node:process';
 import cluster from 'node:cluster';
 import express from 'express';
 import cors from 'cors';
-import Turn from 'node-turn';
+import { createServer as turnServer } from 'turn-server';
+import NodeTurn from 'node-turn';
 
 // The /name and /join routes are configured here to provide preflight approval from any site, allowing web apps
-// at mirrors to reach the dht through this portal if those sites go down, and vice versa. Note that non-browser
+// at mirrors to reach the dht through this portal if the originating mirror goes down, and vice versa. Note that non-browser
 // apps can always do so, as CORS does not block requests, but rather it blocks browser code from using the responses
 // unless allowed here.
 
@@ -82,13 +86,54 @@ router.post('/join/:from/:to', cors(), async (req, res, next) => { // Handler fo
 });
 
 // Run a TURN server on the default port (3478).
-var server = new Turn({
-  externalIps: await fetch('https://api.ipify.org?format=text').then(response => response.text()), // I'd rather WebRTC.getPublicIP() but that's not working when webrtc needs turn.
-  log: msg => { if (!/ENOTFOUND|Fatal error.*IPV6/.test(String(msg))) console.log(msg); },
-  authMech: 'none', //'long-term',
-  //credentials: { username: "password" }
+const externalIp = await fetch('https://api.ipify.org?format=text').then(response => response.text());
+const internalIp = Object.values(os.networkInterfaces()).flat().find(datum => !datum.internal && datum.family === 'IPv4').address;
+async function getConf(filename, defaults) { // Tries to find filename in current working directory, else defaults.
+  const config = await import(path.resolve(filename))
+    .catch(error => {
+      if (error.code === 'ERR_MODULE_NOT_FOUND') return {default: defaults};
+      throw error;
+    });
+  console.log({internalIp, externalIp, config: config.default});
+  return config;
+}
+if (true) { // Experimenting between two implmentations.
+  const conf = getConf('node-turn-conf.js', {
+    externalIps: [externalIp],
+    //minPort: 51021, maxPort: 61000, // Avoiding conflicts on the AT&T BRG320 Gateway
+    authMech: 'none',
+    debugLevel: 'debug'
+  });
+  const server = new NodeTurn(conf.default);
+  server.start();
+
+} else {
+  const conf = getConf('turn-server-conf.js', {
+    authMech: 'none',
+    relay: {
+      externalIp,
+      //portRange: [51021, 61000] // Avoiding confict on the AT&T BRG320 Gateway
+    }
+  });
+  const server = turnServer(conf);
+  function handle (name) {
+    server.on(name, (...args) => {
+      console.log(new Date(), name, ...args);
+      const f = args.find(a => typeof(a) === 'function');
+      if (f) f(true);
+    });
+  }
+  [
+    'listening', 'accept', 'authenticate', 'authorize', 'quota', 'beforeAllocate', 'beforeRefresh', 'beforePermission', 'beforeChannelBind', 'beforeConnect', 'beforeRelay', 'beforeData', 'redirect',
+    //'onRelayed',
+   // 'allocate', 'relay', 'message', 'refresh', 'allocate:expired', 'permission', 'channel', 'error', 'data', 'change_request', 'connect_peer', 'connection_bind', 'success', 'error_response', 'timeout', 'contextChanged', 'close'
+  ].forEach(handle);
+  server.listen({ port: 3478 });
+}
+router.get('/turnURL', cors(), (req, res, next) => { // Answer a turn: url that tries to use IP address so as to avoid "realm" issues.
+  res.json(`turn:${req.hostname === 'localhost' ? internalIp : externalIp}:3478?transport=udp`);
 });
-server.start();
+
 
 // post node stats and "get" all node stats, but getting uses post in case an application caches all get in a service worker.
 const stats = {}; // tag => nodeStatistics

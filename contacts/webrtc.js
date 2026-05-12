@@ -1,4 +1,4 @@
-const { BigInt } = globalThis; // For linters.
+const { BigInt, URL } = globalThis; // For linters.
 import { v4 as uuidv4 } from 'uuid';
 import { Node } from '../nodes/node.js';
 import { Helper } from '../nodes/helper.js';
@@ -11,7 +11,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
   get key() { return this.node.key; }   // Key of remote node as a BigInt.
   get isServerNode() { return this.node.isServerNode; } // It it reachable through a server.
   get webrtcLabel() {
-    return `@${this.host.contact.sname} ==> ${this.sname}`;
+    return `@${this.host.contact.sname} => ${this.sname}`;
   }
   static generateName() { return uuidv4(); }
 
@@ -22,7 +22,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       body: JSON.stringify(signalsToSend)
     }).catch(e => this.host.flog(e));
     if (!this.checkResponse(response)) return [];
-    return this.checkSignals(await response?.json());
+    return await this.checkSignals(await response?.json());
   }
   async signals(senderSname, ...signals) { // Accept directed WebRTC signals from a sender sname, creating if necessary the
     // new contact on host to receive them, and promising a response.
@@ -38,17 +38,23 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     else contact.connection = connection;
     return await contact.webrtc?.respond(signals);
   }
-  static iceServers = [{
-    urls: 'stun:stun.l.google.com:19302'
-  }, {
-    urls: [
-      `turn:${globalThis.location?.hostname || 'localhost'}:3478`, // FIXME getPublicIP()
-      `turn:${globalThis.location?.hostname || 'localhost'}:3478?transport=tcp`, // FIXME getPublicIP()
-    ],
-    // Even with no auth at server, some RTCPeerConnection requires creds for turn.
-    username: "dummy",
-    credential: "nothing"
-  }];
+  static async configure() {
+    // Ask the portal for the turnURL with specific IP address, rather than using location.hostname.
+    WebContact.iceConfiguration = {
+      iceServers: [{
+	urls: [await fetch(new URL('/kdht/turnURL', globalThis.location || 'http://localhost:3000').href).then(response => response.json())],
+	// WebRTC will generally fail to parse an empty credential, despite what the spec says.
+	// However, the actual value is ignored if the username is "anonymous" and the TURN server has no auth.
+	// (I have not gotten Firefox or Node/wrtc to work at all with anonymous.)
+	username: "anonymous", credential: "none"
+      }],
+      //iceTransportPolicy: 'relay' // Use this to test that the TURN server actually works.
+    };
+  }
+  static async create(...rest) {
+    if (!this.iceConfiguration) await this.configure();
+    return super.create(...rest);
+  }
   createConnection(initiate = true, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
     // Return a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
@@ -68,9 +74,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     let {promise, resolve} = Promise.withResolvers(); // That this specific contact has closed. Commpare host.contact.detachment.
     this.closed = promise;
 
+    const conf = this.constructor.iceConfiguration;
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
 					     debug: host.debug,
-					     configuration: {iceServers: this.constructor.iceServers},
+					     configuration: conf,
 					     polite: this.host.key < this.node.key});
     const onmessage = event => this.receiveWebRTC(event.data);
     const ondatachannelclose = async normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
