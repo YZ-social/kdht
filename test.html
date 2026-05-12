@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" href="./jasmine-standalone-5.7.1/lib/jasmine-5.7.1/jasmine.css">
+    <script src="./jasmine-standalone-5.7.1/lib/jasmine-5.7.1/jasmine.js"></script>
+    <script src="./jasmine-standalone-5.7.1/lib/jasmine-5.7.1/jasmine-html.js"></script>
+    <script src="./jasmine-standalone-5.7.1/lib/jasmine-5.7.1/boot0.js"></script>
+    <!-- optional: include a file here that configures the Jasmine env -->
+    <script src="./jasmine-standalone-5.7.1/lib/jasmine-5.7.1/boot1.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "uuid": "https://unpkg.com/uuid@13.0.0/dist/index.js",
+	  "@yz-social/webrtc": "./webrtc/index.js"
+        }
+      }
+    </script>
+    <script type="module">
+      import './spec/testWebrtc.js';
+    </script>
+  </head>
+</html>
