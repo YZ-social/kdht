@@ -1,9 +1,7 @@
 import cluster from 'node:cluster';
 import express from 'express';
 import cors from 'cors';
-import { WebRTC } from '@yz-social/webrtc';
 import Turn from 'node-turn';
-import { Node } from '../index.js';
 
 // The /name and /join routes are configured here to provide preflight approval from any site, allowing web apps
 // at mirrors to reach the dht through this portal if those sites go down, and vice versa. Note that non-browser
@@ -30,7 +28,9 @@ function initWorker(worker) {
     }
   });
 }
-Object.values(cluster.workers).forEach(initWorker);
+export function initWorkers() {
+  Object.values(cluster.workers).forEach(initWorker);
+}
 cluster.on('exit', (worker, code, signal) => { // Tell us about dead workers and restart them.
   console.error(`\n\n*** Crashed worker ${worker.id}:${worker.tag} received code: ${code} signal: ${signal}. ***\n`);
   delete worker.tag; // So that it isn't used by /name/random.
@@ -45,8 +45,8 @@ router.post('/name/random', cors(), (req, res, next) => { // Answer the actual s
   // Dead workers are eventually removed from cluster.workers, but one might catch it before then.
   while (!worker?.tag) {
     let list = Object.values(portals);
-    const index = Node.randomInteger(list.length);
-    worker =  list[index];
+    const index = Math.floor(Math.random() * list.length);
+    worker = list[index];
     if (!worker) return res.sendStatus(403);
   }
   return res.json(worker.tag);

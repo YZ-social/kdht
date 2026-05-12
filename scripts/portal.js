@@ -8,7 +8,6 @@ import {cpus, availableParallelism } from 'node:os';
 import { fileURLToPath } from 'url';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
-import { Node } from '../index.js';
 
 const logicalCores = availableParallelism();
 
@@ -70,22 +69,22 @@ if (cluster.isPrimary) { // Parent process with portal webserver through which c
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   const app = express();
-  //fixme if (argv.verbose)
-    app.use(logger(':date[iso] :status :method :url :res[content-length] - :response-time ms'));
-
-  for (let i = 0; i < argv.nPortals; i++) cluster.fork();
-  const portalServer = await import('./router.js');
+  const { router, initWorkers } = await import('./router.js');
+  app.use(logger(':date[iso] :status :method :url :res[content-length] - :response-time ms'));
   
   // Portal server
   app.set('port', parseInt((new URL(argv.baseURL)).port || '80'));
   console.log(new Date(), process.title, 'startup on port', app.get('port'), 'in', __dirname);
   app.use(express.json());
 
-  app.use('/kdht', portalServer.router);
+  app.use('/kdht', router);
   app.use(express.static(path.resolve(__dirname, '..')));
   app.listen(app.get('port'));
   const startupSeconds = argv.fixedSpacing * argv.nPortals + 1.5 * argv.variableSpacing;
   console.log(`Starting ${argv.nPortals} portals over ${startupSeconds} seconds.`);
+
+  for (let i = 0; i < argv.nPortals; i++) cluster.fork();
+  initWorkers();
 
 } else { // A portal node through which clients can connect.
   const PortalNode = await import('./node.js');
