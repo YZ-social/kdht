@@ -22,7 +22,7 @@
     "test": "npx jasmine && npm run testWebrtc && echo '-- SUCCESS --' || echo '**** FAIL ****'"
   },
   "dependencies": {
-    "@yz-social/webrtc": "^0.1.12",
+    "@yz-social/webrtc": "^0.1.13",
     "node-turn": "^0.0.6",
     "uuid": "^14.0.0"
   },
