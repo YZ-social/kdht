@@ -95,21 +95,29 @@ async function getConf(filename, defaults) { // Tries to find filename in curren
       throw error;
     });
   console.log({internalIp, externalIp, config: config.default});
-  return config;
+  return config.default;
 }
 if (true) { // Experimenting between two implmentations.
-  const conf = getConf('node-turn-conf.js', {
+  const conf = await getConf('node-turn-conf.js', {
     externalIps: [externalIp],
     //minPort: 51021, maxPort: 61000, // Avoiding conflicts on the AT&T BRG320 Gateway
     authMech: 'none',
-    debugLevel: 'debug'
+    // authMech: 'long-term',
+    // realm: 'yz',
+    // credentials: {dummy: 'junk'},
+    debugLevel: 'info'
   });
-  const server = new NodeTurn(conf.default);
+  const server = new NodeTurn(conf);
   server.start();
 
 } else {
-  const conf = getConf('turn-server-conf.js', {
-    authMech: 'none',
+  const conf = await getConf('turn-server-conf.js', {
+    auth: {
+      mechanism: 'none'
+      // mechanism: 'long-term',
+      // realm: 'yz',
+      // credentials: { dummy: 'junk' }
+    },
     relay: {
       externalIp,
       //portRange: [51021, 61000] // Avoiding confict on the AT&T BRG320 Gateway
@@ -123,11 +131,11 @@ if (true) { // Experimenting between two implmentations.
       if (f) f(true);
     });
   }
-  [
-    'listening', 'accept', 'authenticate', 'authorize', 'quota', 'beforeAllocate', 'beforeRefresh', 'beforePermission', 'beforeChannelBind', 'beforeConnect', 'beforeRelay', 'beforeData', 'redirect',
-    //'onRelayed',
-   // 'allocate', 'relay', 'message', 'refresh', 'allocate:expired', 'permission', 'channel', 'error', 'data', 'change_request', 'connect_peer', 'connection_bind', 'success', 'error_response', 'timeout', 'contextChanged', 'close'
-  ].forEach(handle);
+  // [
+  //   'listening', 'accept', 'authenticate', 'authorize', 'quota', 'beforeAllocate', 'beforeRefresh', 'beforePermission', 'beforeChannelBind', 'beforeConnect', 'beforeRelay', 'beforeData', 'redirect',
+  //   //'onRelayed',
+  //  // 'allocate', 'relay', 'message', 'refresh', 'allocate:expired', 'permission', 'channel', 'error', 'data', 'change_request', 'connect_peer', 'connection_bind', 'success', 'error_response', 'timeout', 'contextChanged', 'close'
+  // ].forEach(handle);
   server.listen({ port: 3478 });
 }
 router.get('/turnURL', cors(), (req, res, next) => { // Answer a turn: url that tries to use IP address so as to avoid "realm" issues.

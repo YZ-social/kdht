@@ -6,6 +6,7 @@ import { Contact } from '../contacts/contact.js';
 // through Contact sendRPC.
 export class NodeMessages extends NodeContacts {
   ping(key) { // Respond with 'pong'. (RPC mechanism doesn't call unless connected.)
+    this.log('ping');
     return 'pong'; // Answer something truthy. See isValueResult.
   }
   store(key, value) { // Tell the node to store key => value, returning truthy.

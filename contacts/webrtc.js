@@ -47,6 +47,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	// However, the actual value is ignored if the username is "anonymous" and the TURN server has no auth.
 	// (I have not gotten Firefox or Node/wrtc to work at all with anonymous.)
 	username: "anonymous", credential: "none"
+	//username: "dummy@yz", credential: "junk"
       }],
       //iceTransportPolicy: 'relay' // Use this to test that the TURN server actually works.
     };
@@ -55,7 +56,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     if (!this.iceConfiguration) await this.configure();
     return super.create(...rest);
   }
-  createConnection(initiate = true, timeoutMS = this.host.timeoutMS || 30e3) { // Ensure we are connected, if possible.
+  createConnection(initiate = true, timeoutMS = this.host.timeoutMS || 50e3) { // Ensure we are connected, if possible.
     // Return a promise for an open webrtc data channel:
     //   this.send(string) puts data on the channel
     //   incomming messages are dispatched to receiveWebRTC(string)
@@ -74,6 +75,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     let {promise, resolve} = Promise.withResolvers(); // That this specific contact has closed. Commpare host.contact.detachment.
     this.closed = promise;
 
+    let pinger;
     const conf = this.constructor.iceConfiguration;
     const webrtc = this.webrtc = new WebRTC({name: this.webrtcLabel,
 					     debug: host.debug,
@@ -82,6 +84,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     const onmessage = event => this.receiveWebRTC(event.data);
     const ondatachannelclose = async normalClosure => { // Does NOT mean that the far side has gone away. It could just be over maxTransports.
       this.host.log('connection closed to', this.sname, 'normal:', !!normalClosure);
+      clearInterval(pinger);
       if (this.webrtc && !this.host.isStopped()) {
 	// If called by timeout, normalClosure is falsy.
 	if (normalClosure && this.isRunning) this.host.ilog('=>', this.sname, 'was not politely closed. Removing contact.');
@@ -91,7 +94,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       this.unsafeData?.removeEventListener('message', onmessage);
       await this.webrtc?.close();
       webrtc.closed = this.webrtc = this.connection = this.unsafeData = null;
-      resolve(null); // closed promise
+      resolve('CLOSED'); // closed promise
       if (!this.anyOpen) this.host.contact.detached(!this.host.isStopped() ? this.host.contact : false);
     };
     if (initiate) {
@@ -114,10 +117,16 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
       dataChannel.addEventListener('message', onmessage);
       if (host.info || host.debug) await webrtc.reportConnection(true);
       if (webrtc.statsElapsed > 500) this.host.flog(`** slow connection to ${this.sname} took ${webrtc.statsElapsed.toLocaleString()} ms. **`);
+
+      pinger = setInterval(async () => {
+	const pong = await this.sendRPC('ping', this.key);
+	this.host.log('=>', this.sname, 'pong');
+      }, 2e3);
     });
     if (!timeoutMS) return channelPromise;
     const timerPromise = new Promise(expired => {
       timeout = setTimeout(async () => {
+	this.host.flog('=>', this.sname, '*************** timeout expiration');
 	if (this.host.isStopped()) return expired(null);
 	ondatachannelclose();
 	this.host.removeContact(this); // fixme?

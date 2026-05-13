@@ -245,7 +245,7 @@ export class Contact {
     let hops = 1;
     if (method === 'signals') hops = rest[3] ? Contact.recursiveHopsLimit : 2;
     const delay = hops * Contact.maxPingMS * (1 + Math.log(nChunks));
-    return Node.delay(delay);
+    return Node.delay(delay, 'TIMEOUT');
   }
   async sendRPC(method, ...rest) { // Promise the result of a network call to node, or null if not possible.
     const sender = this.host.contact;

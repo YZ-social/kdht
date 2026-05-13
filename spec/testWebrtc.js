@@ -32,10 +32,10 @@ if (startAndStopPortal) {
   const showBots = true;
   const logicalCores = availableParallelism();
   console.log(`Model description "${cpus()[0].model}", ${logicalCores} logical cores.`);
-  const thrash = false//true;
+  const thrash = true;
   const rude = thrash && false;
-  const nPortals = 10//Math.max(2, logicalCores - 1);
-  const nBots = 20//Math.max(2, ((thrash || rude) ? 0.75 : 1.75) * logicalCores);
+  const nPortals = Math.max(2, logicalCores - 1);
+  const nBots = Math.max(2, ((thrash || rude) ? 0.75 : 1.75) * logicalCores);
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);

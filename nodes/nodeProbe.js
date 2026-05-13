@@ -16,14 +16,19 @@ export class NodeProbe extends NodeMessages {
   async step(targetKey, finder, helper, keysSeen, trace) {
     // Get up to k previously unseen Helpers from helper, adding results to keysSeen.
     const contact = helper.contact;
+    //if (!contact.isRunning) return null;
     // this.log('step with', contact.sname);
     let results = await contact.sendRPC(finder, targetKey);
-    if (!results) { // disconnected
-      if (contact.isRunning) this.ilog('=>', contact.sname, results === null ? 'CLOSED' : 'TIMEOUT', finder);
-      if (results === null) { // Hard close before timeout.
-	this.removeContact(contact);
-      }
-      return null; // signal that there is *no* response from this contact - to distinguish from a response that confirms that the contact is alive, even if there are (after filtering) no new contacts to try.
+    switch (results) {
+    case 'CLOSE':
+      this.removeContact(contact);
+    case 'TIMEOUT':  // fall through
+    case null:
+      if (contact.isRunning) this.ilog('=>', contact.sname, results, finder, 'connection:', contact.webrtc?.pc?.connectionState, 'data:', contact.unsafeData?.readyState, contact.unsafeData?.bufferedAmount);
+      return null;
+      break;
+    default:
+      ;
     }
     this.addToRoutingTable(contact); // Live node, so update bucket.
     // this.log('step added contact', contact.sname);
