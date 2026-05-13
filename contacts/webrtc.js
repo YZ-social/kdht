@@ -38,11 +38,13 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     else contact.connection = connection;
     return await contact.webrtc?.respond(signals);
   }
-  static async configure() {
+  static async configure(baseURL = new URL('/kdht/', globalThis.location || 'http://localhost:3000')) {
     // Ask the portal for the turnURL with specific IP address, rather than using location.hostname.
     WebContact.iceConfiguration = {
       iceServers: [{
-	urls: [await fetch(new URL('/kdht/turnURL', globalThis.location || 'http://localhost:3000').href).then(response => response.json())],
+	urls: 'stun:stun.l.google.com:19302'
+      }, {
+	urls: await fetch(new URL('./turnURL', baseURL).href).then(response => response.json()),
 	// WebRTC will generally fail to parse an empty credential, despite what the spec says.
 	// However, the actual value is ignored if the username is "anonymous" and the TURN server has no auth.
 	// (I have not gotten Firefox or Node/wrtc to work at all with anonymous.)
@@ -120,7 +122,7 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 
       pinger = setInterval(async () => {
 	const pong = await this.sendRPC('ping', this.key);
-	this.host.log('=>', this.sname, 'pong');
+	this.host.log('=>', this.sname, 'ping', pong);
       }, 2e3);
     });
     if (!timeoutMS) return channelPromise;
@@ -199,9 +201,8 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
     }
     try {
       const payload = JSON.stringify(message);
-      const sctp = this.webrtc?.pc?.sctp;
-      if (!sctp) return 0;
-      const size = sctp.maxMessageSize ? (sctp.maxMessageSize - 100) : Infinity;
+      let sctp = this.webrtc?.pc?.sctp; // We might be renogitating.
+      const size = sctp ? (sctp.maxMessageSize ? (sctp.maxMessageSize - 100) : Infinity) : 16e3;
       if (payload.length < size) {
 	channel.send(payload);
 	return 1;
@@ -220,9 +221,10 @@ export class WebContact extends Contact { // Our wrapper for the means of contac
 	//this.host.ilog('send', sub.slice(0, 200), 'to', this.name);
 	channel.send(sub);
       }
+      this.host.flog('chunks', numChunks, id, meta);
       return numChunks;
     } catch (e) { // Some webrtc can change readyState in background.
-      this.host.log(e);
+      this.host.flog(e);
       return 0;
     }
   }

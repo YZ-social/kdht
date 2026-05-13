@@ -35,7 +35,7 @@ if (startAndStopPortal) {
   const thrash = true;
   const rude = thrash && false;
   const nPortals = Math.max(2, logicalCores - 1);
-  const nBots = Math.max(2, ((thrash || rude) ? 0.75 : 1.75) * logicalCores);
+  const nBots = Math.max(2, ((thrash || rude) ? 0.5 : 1) * logicalCores);
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
